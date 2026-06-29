@@ -98,9 +98,14 @@ async def tiktok_hashtag(tag: str, count: int = Query(30, le=50), x_service_toke
 @app.get("/tiktok/search")
 async def tiktok_search(q: str, count: int = Query(30, le=50), x_service_token: str | None = Header(None)):
     _auth(x_service_token)
+    # TikTok-Api v7 has no stable video search; map the query to a hashtag
+    # (the reliable path). "skincare lokal" -> "skincarelokal".
+    import re
+
+    tag = re.sub(r"[^a-z0-9]", "", q.lower()) or q.lower().replace(" ", "")
     try:
-        items = await _tiktok(lambda api: api.search.videos(q, count=count))
-        return {"ok": True, "items": items}
+        items = await _tiktok(lambda api: api.hashtag(name=tag).videos(count=count))
+        return {"ok": True, "items": items, "via": f"hashtag:{tag}"}
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "items": [], "error": str(e)}
 
