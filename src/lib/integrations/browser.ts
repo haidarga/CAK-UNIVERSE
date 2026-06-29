@@ -35,7 +35,13 @@ export async function withLightpanda<T>(fn: (page: Page) => Promise<T>): Promise
   let browser: Browser | null = null;
   let page: Page | null = null;
   try {
-    browser = await puppeteer.connect({ browserWSEndpoint: endpoint });
+    // Support both endpoint styles:
+    //  - http(s)://host:port  → a real Chrome's DevTools (auto-discovers the ws url)
+    //  - ws://host:port       → Lightpanda / a direct CDP websocket
+    const isHttp = /^https?:\/\//i.test(endpoint);
+    browser = await puppeteer.connect(
+      isHttp ? { browserURL: endpoint } : { browserWSEndpoint: endpoint },
+    );
     page = await browser.newPage();
     page.setDefaultNavigationTimeout(NAV_TIMEOUT_MS);
     page.setDefaultTimeout(NAV_TIMEOUT_MS);

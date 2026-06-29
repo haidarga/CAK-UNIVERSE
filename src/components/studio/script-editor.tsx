@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Save, Loader2, Type, Check, AlertCircle } from "lucide-react";
 import type { Brand, Persona, Hook, EmbeddedResource, ContentPipeline } from "@/lib/types";
 import { checkGuardrails } from "@/lib/guardrails";
@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import GlassCard from "@/components/glass-card";
 import AiAssistInline from "@/components/ai-assist-inline";
 import { EmbedList } from "@/components/embed-resource";
+import SyncLinkControl from "@/components/sync/sync-link-control";
 import GuardrailBanner from "./guardrail-banner";
 import HookChips from "./hook-chips";
 import { Field, Select } from "./form-controls";
@@ -19,6 +20,26 @@ interface ScriptEditorProps {
   embeds: EmbeddedResource[];
   /** Existing scripted pipeline items, to seed/edit. */
   items: ContentPipeline[];
+  /**
+   * A planned direction (from the Content Plan queue) to load into the editor.
+   * When this changes, the editor prefills title/format/pillar and seeds the
+   * draft with the direction's hook + notes as a starting brief.
+   */
+  loadItem?: ContentPipeline | null;
+  /** Called after a successful save so the parent can refresh the queues. */
+  onSaved?: () => void;
+}
+
+/** Seed the draft body from a direction's hook + notes (a starting brief). */
+function seedDraftFromDirection(item: ContentPipeline): string {
+  if (item.script?.text?.trim()) return item.script.text;
+  const dir = item.content_direction;
+  const parts = [
+    dir?.hook ? `Hook: ${dir.hook}` : "",
+    dir?.narrative_theme ? `Theme: ${dir.narrative_theme}` : "",
+    dir?.research_notes ? `Notes: ${dir.research_notes}` : "",
+  ].filter(Boolean);
+  return parts.join("\n\n");
 }
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -38,7 +59,15 @@ function buildEnhanceContext(brand: Brand, persona: Persona | null, pillar: stri
   return parts.filter(Boolean).join("\n");
 }
 
-export default function ScriptEditor({ brand, personas, hooks, embeds, items }: ScriptEditorProps) {
+export default function ScriptEditor({
+  brand,
+  personas,
+  hooks,
+  embeds,
+  items,
+  loadItem,
+  onSaved,
+}: ScriptEditorProps) {
   const pillars = brand.emotional_pillars.length ? brand.emotional_pillars : ["general"];
 
   const [title, setTitle] = useState("");
@@ -50,8 +79,29 @@ export default function ScriptEditor({ brand, personas, hooks, embeds, items }: 
   const [hookSuggestions, setHookSuggestions] = useState<string[]>([]);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Pipeline id of the recent script currently loaded into the editor,
+  // used to scope Google Doc/Sheet sync links. null until one is opened.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const persona = personas.find((p) => p.id === personaId) ?? null;
+
+  /** Load a pipeline item (planned direction or existing script) into the form. */
+  function loadIntoEditor(it: ContentPipeline, seedBrief: boolean) {
+    setTitle(it.content_direction?.title ?? "");
+    setDraft(seedBrief ? seedDraftFromDirection(it) : (it.script?.text ?? ""));
+    if (it.emotional_pillar) setPillar(it.emotional_pillar);
+    if (it.content_format) setFormat(it.content_format);
+    if (it.persona_id) setPersonaId(it.persona_id);
+    setSelectedId(it.id);
+    setSaveState("idle");
+    setSaveError(null);
+  }
+
+  // When the parent hands a planned direction to write, prefill from it.
+  useEffect(() => {
+    if (loadItem) loadIntoEditor(loadItem, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadItem?.id]);
 
   const guardrail = useMemo(
     () => checkGuardrails(draft, brand.guardrails),
@@ -91,27 +141,71 @@ export default function ScriptEditor({ brand, personas, hooks, embeds, items }: 
     setSaveState("saving");
     setSaveError(null);
     try {
-      const res = await fetch("/api/pipeline", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          brand_id: brand.id,
-          content_direction: { title: title.trim(), format, emotional_pillar: pillar },
-          content_type: "script",
-          emotional_pillar: pillar,
-          content_format: format,
-          persona_id: personaId || null,
-          script: { text: draft, version: 1 },
-          stage: "scripted",
-        }),
-      });
-      const json: { success?: boolean; error?: string } = await res.json();
-      if (!res.ok || json.success === false) throw new Error(json.error ?? "Save failed");
+      if (selectedId) {
+        await saveExistingItem(selectedId);
+      } else {
+        await createNewScript();
+      }
       setSaveState("saved");
+      onSaved?.();
       setTimeout(() => setSaveState("idle"), 2500);
     } catch (e) {
       setSaveState("error");
       setSaveError(e instanceof Error ? e.message : "Save failed");
+    }
+  }
+
+  /** Brand-new ad-hoc script: create a fresh pipeline row at "scripted". */
+  async function createNewScript() {
+    const res = await fetch("/api/pipeline", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        brand_id: brand.id,
+        content_direction: { title: title.trim(), format, emotional_pillar: pillar },
+        content_type: "script",
+        emotional_pillar: pillar,
+        content_format: format,
+        persona_id: personaId || null,
+        script: { text: draft, version: 1 },
+        stage: "scripted",
+      }),
+    });
+    const json: { success?: boolean; error?: string } = await res.json();
+    if (!res.ok || json.success === false) throw new Error(json.error ?? "Save failed");
+  }
+
+  /**
+   * Existing pipeline row (a planned direction or a script in progress):
+   * persist the script + content fields, then advance the SAME row to
+   * "scripted" so it moves out of the To-Write queue.
+   */
+  async function saveExistingItem(id: string) {
+    const patchRes = await fetch(`/api/pipeline/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content_direction: { title: title.trim(), format, emotional_pillar: pillar },
+        content_type: "script",
+        emotional_pillar: pillar,
+        content_format: format,
+        persona_id: personaId || null,
+        script: { text: draft, version: 1 },
+      }),
+    });
+    const patchJson: { success?: boolean; error?: string } = await patchRes.json();
+    if (!patchRes.ok || patchJson.success === false) {
+      throw new Error(patchJson.error ?? "Save failed");
+    }
+
+    const stageRes = await fetch(`/api/pipeline/${id}/stage`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage: "scripted", changed_by: "script_writer" }),
+    });
+    const stageJson: { success?: boolean; error?: string } = await stageRes.json();
+    if (!stageRes.ok || stageJson.success === false) {
+      throw new Error(stageJson.error ?? "Failed to advance stage");
     }
   }
 
@@ -250,6 +344,12 @@ export default function ScriptEditor({ brand, personas, hooks, embeds, items }: 
           <EmbedList resources={embeds} />
         </GlassCard>
 
+        {selectedId && (
+          <GlassCard title="Google sync" noHover>
+            <SyncLinkControl pipelineId={selectedId} field="script" />
+          </GlassCard>
+        )}
+
         {items.length > 0 && (
           <GlassCard title="Recent scripts" noHover>
             <ul className="flex flex-col gap-1.5">
@@ -257,12 +357,7 @@ export default function ScriptEditor({ brand, personas, hooks, embeds, items }: 
                 <li key={it.id}>
                   <button
                     type="button"
-                    onClick={() => {
-                      setTitle(it.content_direction?.title ?? "");
-                      setDraft(it.script?.text ?? "");
-                      if (it.emotional_pillar) setPillar(it.emotional_pillar);
-                      if (it.content_format) setFormat(it.content_format);
-                    }}
+                    onClick={() => loadIntoEditor(it, false)}
                     className="w-full truncate rounded-lg px-2.5 py-2 text-left text-sm text-fg/80 transition-colors hover:bg-surface-2/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
                   >
                     {it.content_direction?.title ?? "Untitled script"}

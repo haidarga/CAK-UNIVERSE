@@ -7,9 +7,10 @@
 // ============================================================
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Sparkles, X, SendHorizonal, RotateCcw, Eraser } from "lucide-react";
+import { Sparkles, X, SendHorizonal, RotateCcw, History, SquarePen } from "lucide-react";
 import { useCopilot } from "./use-copilot";
 import { CopilotMessageBubble, CopilotTyping } from "./copilot-message";
+import CopilotThreadList from "./thread-list";
 
 const SUGGESTIONS = [
   "Analisa halaman ini",
@@ -27,18 +28,40 @@ function friendlyTab(pathname: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export default function CopilotDock({ memberRole }: { memberRole?: string }) {
+export default function CopilotDock({
+  memberRole,
+  memberId,
+}: {
+  memberRole?: string;
+  memberId?: string;
+}) {
   const pathname = usePathname() || "/";
   const [open, setOpen] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [draft, setDraft] = useState("");
-  const { messages, loading, send, retry, clear, hasError } = useCopilot({
+  const {
+    messages,
+    loading,
+    send,
+    retry,
+    hasError,
+    threadId,
+    threads,
+    newChat,
+    switchThread,
+    deleteThread,
+  } = useCopilot({
     route: pathname,
     memberRole,
+    memberId,
   });
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const tab = friendlyTab(pathname);
+  const hasHistory = !!memberId;
+  const activeThread = threads.find((t) => t.id === threadId);
+  const subtitle = hasHistory ? activeThread?.title || "New chat" : tab;
 
   // Auto-scroll to the newest message.
   useEffect(() => {
@@ -57,8 +80,20 @@ export default function CopilotDock({ memberRole }: { memberRole?: string }) {
   }, [open]);
 
   function submit(text: string) {
+    setShowHistory(false);
     void send(text);
     setDraft("");
+  }
+
+  function handleNewChat() {
+    setShowHistory(false);
+    newChat();
+    inputRef.current?.focus();
+  }
+
+  function handleSwitch(id: string) {
+    setShowHistory(false);
+    void switchThread(id);
   }
 
   function onInputKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -98,24 +133,36 @@ export default function CopilotDock({ memberRole }: { memberRole?: string }) {
               <span className="glow-primary grid size-9 place-items-center rounded-xl bg-primary/15" aria-hidden>
                 <Sparkles className="size-5 text-primary" strokeWidth={1.5} />
               </span>
-              <div className="leading-none">
+              <div className="min-w-0 leading-none">
                 <p className="font-display text-sm font-bold tracking-tight text-fg">CAK AI Copilot</p>
-                <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.16em] text-muted">
-                  {tab}
+                <p className="mt-1 max-w-[180px] truncate text-[10px] font-medium uppercase tracking-[0.16em] text-muted">
+                  {subtitle}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-1">
-              {messages.length > 0 && (
-                <button
-                  type="button"
-                  onClick={clear}
-                  className="btn-icon"
-                  aria-label="Clear conversation"
-                  title="Clear conversation"
-                >
-                  <Eraser className="size-4" strokeWidth={1.5} aria-hidden />
-                </button>
+              {hasHistory && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowHistory((v) => !v)}
+                    className="btn-icon"
+                    aria-label="Chat history"
+                    aria-pressed={showHistory}
+                    title="Chat history"
+                  >
+                    <History className="size-4" strokeWidth={1.5} aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleNewChat}
+                    className="btn-icon"
+                    aria-label="New chat"
+                    title="New chat"
+                  >
+                    <SquarePen className="size-4" strokeWidth={1.5} aria-hidden />
+                  </button>
+                </>
               )}
               <button
                 type="button"
@@ -128,25 +175,38 @@ export default function CopilotDock({ memberRole }: { memberRole?: string }) {
             </div>
           </header>
 
-          {/* Messages */}
-          <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-            {messages.length === 0 ? (
-              <EmptyState onPick={submit} />
-            ) : (
-              messages.map((m) => <CopilotMessageBubble key={m.id} message={m} />)
-            )}
-            {loading && <CopilotTyping />}
-            {hasError && !loading && (
-              <div className="flex justify-center">
-                <button type="button" onClick={retry} className="chip gap-1.5">
-                  <RotateCcw className="size-3.5" strokeWidth={1.5} aria-hidden />
-                  Coba lagi
-                </button>
-              </div>
-            )}
-          </div>
+          {/* Messages (or history overlay) */}
+          {showHistory && hasHistory ? (
+            <div className="flex-1 overflow-hidden">
+              <CopilotThreadList
+                threads={threads}
+                activeId={threadId}
+                onSelect={handleSwitch}
+                onDelete={(id) => void deleteThread(id)}
+                onNewChat={handleNewChat}
+              />
+            </div>
+          ) : (
+            <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+              {messages.length === 0 ? (
+                <EmptyState onPick={submit} />
+              ) : (
+                messages.map((m) => <CopilotMessageBubble key={m.id} message={m} />)
+              )}
+              {loading && <CopilotTyping />}
+              {hasError && !loading && (
+                <div className="flex justify-center">
+                  <button type="button" onClick={retry} className="chip gap-1.5">
+                    <RotateCcw className="size-3.5" strokeWidth={1.5} aria-hidden />
+                    Coba lagi
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
-          {/* Composer */}
+          {/* Composer (hidden while browsing history) */}
+          {!(showHistory && hasHistory) && (
           <div className="border-t border-border p-3">
             <label htmlFor="copilot-input" className="sr-only">
               Message CAK AI Copilot
@@ -173,6 +233,7 @@ export default function CopilotDock({ memberRole }: { memberRole?: string }) {
               </button>
             </div>
           </div>
+          )}
         </div>
       )}
     </>

@@ -5,6 +5,7 @@
 // ============================================================
 import { admin, nowIso } from "@/lib/supabase";
 import { ok, err } from "@/lib/api";
+import { PIPELINE_STAGES, type PipelineStage } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -34,6 +35,9 @@ interface CreatePipelineBody {
   content_direction?: unknown;
   content_type?: string;
   emotional_pillar?: string;
+  content_format?: string;
+  script?: unknown;
+  stage?: string;
 }
 
 export async function POST(req: Request) {
@@ -47,6 +51,22 @@ export async function POST(req: Request) {
 
     if (!body.brand_id) return err("brand_id is required", 400);
 
+    // Resolve stage:
+    //  - explicit `stage` wins (must be valid),
+    //  - else "direction_set" when a content_direction is provided (a planned item),
+    //  - else fall back to "briefed".
+    let stage: PipelineStage;
+    if (body.stage) {
+      if (!PIPELINE_STAGES.includes(body.stage as PipelineStage)) {
+        return err(`invalid stage; must be one of: ${PIPELINE_STAGES.join(", ")}`, 400);
+      }
+      stage = body.stage as PipelineStage;
+    } else if (body.content_direction) {
+      stage = "direction_set";
+    } else {
+      stage = "briefed";
+    }
+
     const now = nowIso();
     const insert = {
       brand_id: body.brand_id,
@@ -55,8 +75,10 @@ export async function POST(req: Request) {
       content_direction: body.content_direction ?? null,
       content_type: body.content_type ?? null,
       emotional_pillar: body.emotional_pillar ?? null,
-      stage: "briefed",
-      stage_history: [{ stage: "briefed", changed_at: now, changed_by: "system" }],
+      content_format: body.content_format ?? null,
+      script: body.script ?? null,
+      stage,
+      stage_history: [{ stage, changed_at: now, changed_by: "system" }],
       created_at: now,
       updated_at: now,
     };

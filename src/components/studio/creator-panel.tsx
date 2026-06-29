@@ -13,6 +13,8 @@ interface CreatorPanelProps {
   scriptText: string;
   contextLine?: string;
   initialShots: Shot[];
+  /** Whether shot generation is allowed (gated to reviewed/produced stages). */
+  canGenerate?: boolean;
 }
 
 type State = "idle" | "running" | "error";
@@ -31,6 +33,7 @@ export default function CreatorPanel({
   scriptText,
   contextLine,
   initialShots,
+  canGenerate = true,
 }: CreatorPanelProps) {
   const [shots, setShots] = useState<Shot[]>(initialShots);
   const [state, setState] = useState<State>("idle");
@@ -103,27 +106,33 @@ export default function CreatorPanel({
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={generate}
-            disabled={state === "running" || !scriptText}
-            className={cn(
-              "btn",
-              state === "error"
-                ? "border-danger/40 bg-danger/10 text-danger"
-                : "btn-primary",
-              (state === "running" || !scriptText) && "cursor-not-allowed opacity-70",
-            )}
-          >
-            {state === "running" ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden />
-            ) : state === "error" ? (
-              <AlertTriangle className="size-4" strokeWidth={1.5} aria-hidden />
-            ) : (
-              <Clapperboard className="size-4" strokeWidth={1.5} aria-hidden />
-            )}
-            {state === "running" ? "Generating shots…" : shots.length > 0 ? "Regenerate shots" : "Generate Shots"}
-          </button>
+          {canGenerate ? (
+            <button
+              type="button"
+              onClick={generate}
+              disabled={state === "running" || !scriptText}
+              className={cn(
+                "btn",
+                state === "error"
+                  ? "border-danger/40 bg-danger/10 text-danger"
+                  : "btn-primary",
+                (state === "running" || !scriptText) && "cursor-not-allowed opacity-70",
+              )}
+            >
+              {state === "running" ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              ) : state === "error" ? (
+                <AlertTriangle className="size-4" strokeWidth={1.5} aria-hidden />
+              ) : (
+                <Clapperboard className="size-4" strokeWidth={1.5} aria-hidden />
+              )}
+              {state === "running" ? "Generating shots…" : shots.length > 0 ? "Regenerate shots" : "Generate Shots"}
+            </button>
+          ) : (
+            <span className="chip border-border/60 bg-surface-2/60 text-muted">
+              Menunggu review
+            </span>
+          )}
           {shots.length > 0 && (
             <span className="tnum text-xs text-muted">
               {shots.length} shots · {Math.round(totalDuration)}s

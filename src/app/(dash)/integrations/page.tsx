@@ -24,6 +24,7 @@ import type { ProviderCategory } from "@/lib/integrations/registry";
 import PageHeader from "@/components/page-header";
 import EmptyState from "@/components/empty-state";
 import SyncButton from "@/components/integrations/sync-button";
+import GoogleConnectButton from "@/components/integrations/google-connect-button";
 import { cn, relativeTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -225,7 +226,11 @@ function ProviderCard({ entry, delay = 0 }: { entry: CatalogEntry; delay?: numbe
               </span>
             )}
           </div>
-          <SyncButton provider={entry.id} disabled={!entry.configured} />
+          {entry.auth === "oauth" ? (
+            <GoogleConnectButton />
+          ) : (
+            <SyncButton provider={entry.id} disabled={!entry.configured} />
+          )}
         </footer>
       </div>
     </article>

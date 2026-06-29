@@ -6,8 +6,8 @@
 import type { IntegrationConnector, ProviderId } from "../registry";
 import { GithubConnector } from "./github";
 import { LightpandaConnector } from "./lightpanda";
+import { YoutubeConnector } from "./youtube";
 import {
-  YouTubeConnector,
   SocialGrowthEngineerConnector,
   PostizConnector,
   GoogleDocsConnector,
@@ -22,7 +22,7 @@ const CONNECTORS: Record<ProviderId, () => IntegrationConnector> = {
   // The constructor arg controls which ProviderId the SyncResult reports under.
   tiktok: () => new LightpandaConnector("tiktok"),
   instagram: () => new LightpandaConnector("instagram"),
-  youtube: () => new YouTubeConnector(),
+  youtube: () => new YoutubeConnector(),
   social_growth_engineer: () => new SocialGrowthEngineerConnector(),
   postiz: () => new PostizConnector(),
   google_docs: () => new GoogleDocsConnector(),

@@ -5,11 +5,14 @@ import type { Persona, Hook, EmbeddedResource } from "@/lib/types";
 import PageHeader from "@/components/page-header";
 import BrandSelector from "@/components/brand-selector";
 import EmptyState from "@/components/empty-state";
-import ScriptEditor from "@/components/studio/script-editor";
+import ScriptWorkspace from "@/components/studio/script-workspace";
 
 export const dynamic = "force-dynamic";
 
+// Scripts already in flight (the writer's running work).
 const SCRIPT_STAGES = ["scripted", "script_reviewed", "guardrail_review"];
+// Planned directions from the strategist, waiting to be written.
+const TO_WRITE_STAGES = ["direction_set", "briefed"];
 
 async function loadPersonas(brandId: string): Promise<Persona[]> {
   try {
@@ -62,14 +65,15 @@ export default async function ScriptStudioPage({
   const { brand } = await searchParams;
   const { brands, selected } = await loadBrands(brand);
 
-  const [personas, hooks, embeds, items] = selected
+  const [personas, hooks, embeds, items, toWrite] = selected
     ? await Promise.all([
         loadPersonas(selected.id),
         loadHooks(selected.id),
         loadEmbeds(selected.id),
         loadPipeline(selected.id, SCRIPT_STAGES),
+        loadPipeline(selected.id, TO_WRITE_STAGES),
       ])
-    : [[], [], [], []];
+    : [[], [], [], [], []];
 
   return (
     <>
@@ -94,12 +98,13 @@ export default async function ScriptStudioPage({
         </div>
       ) : (
         <div className="animate-fade-up">
-          <ScriptEditor
+          <ScriptWorkspace
             brand={selected}
             personas={personas}
             hooks={hooks}
             embeds={embeds}
-            items={items}
+            toWrite={toWrite}
+            inProgress={items}
           />
         </div>
       )}

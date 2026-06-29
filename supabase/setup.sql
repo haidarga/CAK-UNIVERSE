@@ -1,13 +1,11 @@
 -- ============================================================
--- CAK AI Ecosystem — COMBINED SETUP (migrations 001 → 005)
+-- CAK AI Ecosystem — COMBINED SETUP (migrations 001 → 007)
 -- Paste this whole file into the Supabase SQL Editor and Run.
 -- Idempotent: safe to re-run.
 -- ============================================================
 
 
--- >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
--- FILE: migrations/001_initial_schema.sql
--- >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+-- >>> FILE: migrations/001_initial_schema.sql >>>
 -- ============================================================
 -- CAK AI Ecosystem — MIGRATION 001: INITIAL SCHEMA
 -- Central Intelligence Hub (CIH) — single source of truth.
@@ -290,9 +288,7 @@ create trigger trg_pipeline_updated before update on content_pipeline
   for each row execute function set_updated_at();
 
 
--- >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
--- FILE: migrations/002_work_os.sql
--- >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+-- >>> FILE: migrations/002_work_os.sql >>>
 -- ============================================================
 -- CAK AI Ecosystem — MIGRATION 002: WORK OS LAYER
 -- Turns the platform into a company operating system:
@@ -443,9 +439,7 @@ create trigger trg_dev_issues_updated before update on dev_issues
   for each row execute function set_updated_at();
 
 
--- >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
--- FILE: migrations/003_integrations.sql
--- >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+-- >>> FILE: migrations/003_integrations.sql >>>
 -- ============================================================
 -- CAK AI Ecosystem — MIGRATION 003: INTEGRATION LAYER
 -- One platform that embeds external tools (Google Docs/Sheets/Drive,
@@ -511,9 +505,7 @@ create trigger trg_integrations_updated before update on integration_connections
   for each row execute function set_updated_at();
 
 
--- >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
--- FILE: migrations/004_warmup.sql
--- >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+-- >>> FILE: migrations/004_warmup.sql >>>
 -- ============================================================
 -- CAK AI Ecosystem — MIGRATION 004: WARMUP AUTOMATION
 -- Real account warmup: connected accounts perform human-like
@@ -568,9 +560,7 @@ create index if not exists idx_warmup_actions_run on warmup_actions(run_id);
 create index if not exists idx_accounts_last_warmup on accounts(last_warmup_at);
 
 
--- >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
--- FILE: migrations/005_account_connections.sql
--- >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+-- >>> FILE: migrations/005_account_connections.sql >>>
 -- ============================================================
 -- CAK AI Ecosystem — MIGRATION 005: ACCOUNT CONNECTIONS
 -- Connect each real TikTok/IG account once, then reuse its session
@@ -608,5 +598,105 @@ create index if not exists idx_account_connections_status on account_connections
 
 drop trigger if exists trg_account_connections_updated on account_connections;
 create trigger trg_account_connections_updated before update on account_connections
+  for each row execute function set_updated_at();
+
+
+-- >>> FILE: migrations/006_copilot.sql >>>
+-- ============================================================
+-- CAK AI Ecosystem — MIGRATION 006: COPILOT MEMORY
+-- Persist Copilot conversations per team member so chatrooms are
+-- saved and the assistant has memory across sessions.
+-- Run AFTER 005_account_connections.sql.
+-- ============================================================
+
+create table if not exists copilot_threads (
+  id uuid primary key default uuid_generate_v4(),
+  member_id uuid references team_members(id) on delete cascade,
+  title text,
+  route text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  last_message_at timestamptz default now()
+);
+
+create table if not exists copilot_messages (
+  id uuid primary key default uuid_generate_v4(),
+  thread_id uuid references copilot_threads(id) on delete cascade,
+  member_id uuid references team_members(id) on delete set null,
+  role text not null,                    -- user | assistant
+  content text not null,
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_copilot_threads_member on copilot_threads(member_id, last_message_at desc);
+create index if not exists idx_copilot_messages_thread on copilot_messages(thread_id, created_at);
+
+drop trigger if exists trg_copilot_threads_updated on copilot_threads;
+create trigger trg_copilot_threads_updated before update on copilot_threads
+  for each row execute function set_updated_at();
+
+
+-- >>> FILE: migrations/007_google_sync.sql >>>
+-- ============================================================
+-- CAK AI Ecosystem — MIGRATION 007: GOOGLE OAUTH + 2-WAY SYNC
+-- Connect Google (Docs/Sheets/Drive) via OAuth, and link external
+-- docs/sheets to platform records for bidirectional sync.
+-- SECURITY: oauth_tokens holds access/refresh tokens — service-role
+-- only, NEVER exposed to the browser. Encrypt at rest in production.
+-- Run AFTER 006_copilot.sql.
+-- ============================================================
+
+create table if not exists oauth_tokens (
+  id uuid primary key default uuid_generate_v4(),
+  provider text not null,                 -- google
+  account_email text,
+  access_token text,
+  refresh_token text,
+  scope text,
+  token_type text,
+  expires_at timestamptz,
+  connected_by uuid references team_members(id) on delete set null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique (provider, account_email)
+);
+
+-- Links a Google Doc/Sheet to a platform record for 2-way sync.
+create table if not exists sync_links (
+  id uuid primary key default uuid_generate_v4(),
+  kind text not null,                     -- doc | sheet
+  external_id text not null,
+  external_url text,
+
+  -- what platform record this maps to (one of these is set)
+  pipeline_id uuid references content_pipeline(id) on delete cascade,
+  brand_id uuid references brands(id) on delete cascade,
+  -- which field on the record the doc/sheet mirrors (e.g. script.text)
+  field text default 'script',
+  range text,                             -- A1 range for sheets
+
+  -- sync bookkeeping
+  last_remote_rev text,                   -- Drive revision / modifiedTime
+  last_local_hash text,                   -- hash of the platform value
+  last_synced_at timestamptz,
+  last_direction text,                    -- pull | push | none | conflict
+  status text default 'active',           -- active | paused | error
+  last_error text,
+
+  created_by uuid references team_members(id) on delete set null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create index if not exists idx_oauth_provider on oauth_tokens(provider);
+create index if not exists idx_sync_links_status on sync_links(status);
+create index if not exists idx_sync_links_pipeline on sync_links(pipeline_id);
+
+drop trigger if exists trg_oauth_tokens_updated on oauth_tokens;
+create trigger trg_oauth_tokens_updated before update on oauth_tokens
+  for each row execute function set_updated_at();
+
+drop trigger if exists trg_sync_links_updated on sync_links;
+create trigger trg_sync_links_updated before update on sync_links
   for each row execute function set_updated_at();
 

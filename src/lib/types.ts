@@ -322,6 +322,45 @@ export interface IntegrationConnection {
   updated_at: string;
 }
 
+export interface SyncLink {
+  id: string;
+  kind: "doc" | "sheet";
+  external_id: string;
+  external_url: string | null;
+  pipeline_id: string | null;
+  brand_id: string | null;
+  field: string;
+  range: string | null;
+  last_remote_rev: string | null;
+  last_local_hash: string | null;
+  last_synced_at: string | null;
+  last_direction: "pull" | "push" | "none" | "conflict" | null;
+  status: "active" | "paused" | "error";
+  last_error: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CopilotThread {
+  id: string;
+  member_id: string | null;
+  title: string | null;
+  route: string | null;
+  created_at: string;
+  updated_at: string;
+  last_message_at: string;
+}
+
+export interface CopilotMessageRow {
+  id: string;
+  thread_id: string;
+  member_id: string | null;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+}
+
 export interface SessionCookie {
   name: string;
   value: string;

@@ -7,8 +7,11 @@ import CreatorPanel from "@/components/studio/creator-panel";
 
 export const dynamic = "force-dynamic";
 
-// Items ready for shot generation: reviewed scripts + already-produced (regenerate).
-const STAGES = ["script_reviewed", "produced"];
+// Stages shown in the creator view. "scripted" items are visible (so creators
+// can see what's coming) but shot generation is gated to GENERATE_STAGES below.
+const STAGES = ["scripted", "script_reviewed", "produced"];
+// Only reviewed scripts + already-produced items can generate shots.
+const GENERATE_STAGES = new Set(["script_reviewed", "produced"]);
 
 export default async function CreatorStudioPage({
   searchParams,
@@ -41,8 +44,8 @@ export default async function CreatorStudioPage({
       ) : items.length === 0 ? (
         <EmptyState
           icon={FileText}
-          title="Nothing ready to produce"
-          hint="Scripts appear here once the Head of Creator marks them as reviewed."
+          title="Nothing in the creator queue"
+          hint="Scripts appear here once written. Shot generation unlocks after the Head of Creator marks them as reviewed."
         />
       ) : (
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
@@ -69,6 +72,7 @@ export default async function CreatorStudioPage({
                   scriptText={scriptText}
                   contextLine={personaCtx}
                   initialShots={item.production_params?.shots ?? []}
+                  canGenerate={GENERATE_STAGES.has(item.stage)}
                 />
               </div>
             );

@@ -6,6 +6,7 @@ import PageHeader from "@/components/page-header";
 import BrandSelector from "@/components/brand-selector";
 import EmptyState from "@/components/empty-state";
 import StrategyBoard from "@/components/studio/strategy-board";
+import TrendResearch from "@/components/studio/trend-research";
 
 export const dynamic = "force-dynamic";
 
@@ -79,7 +80,8 @@ export default async function StrategyStudioPage({
           />
         </div>
       ) : (
-        <div className="animate-fade-up">
+        <div className="animate-fade-up flex flex-col gap-5">
+          <TrendResearch />
           <StrategyBoard brand={selected} trends={trends} embeds={embeds} recent={recent} />
         </div>
       )}
