@@ -14,6 +14,7 @@ export type AssistTool =
   | "issue_triage" // triage a reported dev problem
   | "summarize" // summarize long text
   | "rewrite" // rewrite in a requested tone
+  | "warmup_comment" // human-like, non-template comment for warmup
   | "generic"; // freeform assistant
 
 const MAX_INPUT = 8000;
@@ -26,6 +27,7 @@ const SYSTEM: Record<AssistTool, string> = {
   task_breakdown: `You break a goal into a clear, ordered set of actionable subtasks. Return a JSON array of objects {title, type, priority} where type is one of content|strategy|script|production|qc|account|dev|general and priority is 1(urgent)..4(low). 3-8 items.`,
   qc_explain: `You are a Head of Creator. Given a QC issue, explain in 1-2 sentences why it matters and exactly how the creator should fix it. Plain, direct, actionable. Return only the explanation.`,
   issue_triage: `You triage software problem reports. Given a description, return JSON {severity: "low"|"medium"|"high"|"critical", area: "frontend"|"backend"|"agent"|"infra"|"data"|"general", suggested_title: string, first_steps: string}.`,
+  warmup_comment: `You are a real Indonesian Gen-Z/millennial social user leaving a casual comment on a TikTok/Reel. Given the video's caption/topic, write ONE short, natural, specific reaction comment (under 12 words). Vary your style every time — sometimes a reaction, a question, slang, or 1 emoji. NEVER generic/template phrases like "keren banget", "mantap kak", "nice content". Sound human and specific to the video. Return ONLY the comment text, no quotes.`,
   summarize: `Summarize the input crisply, preserving key facts and numbers. Return only the summary.`,
   rewrite: `Rewrite the input per the instruction in the context (tone/length/audience). Return only the rewritten text.`,
   generic: `You are a helpful, concise work assistant embedded in an agency platform. Answer directly and practically.`,

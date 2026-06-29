@@ -19,7 +19,8 @@ export type ProviderId =
 
 export type ProviderCategory = "docs" | "social" | "growth" | "dev" | "analytics" | "publishing";
 
-export type AuthKind = "oauth" | "api_key" | "none";
+// "browser" = authenticated headless-browser login (Lightpanda/CDP), no API key.
+export type AuthKind = "oauth" | "api_key" | "none" | "browser";
 
 export interface ProviderMeta {
   id: ProviderId;
@@ -72,9 +73,9 @@ export const PROVIDERS: ProviderMeta[] = [
     label: "TikTok",
     category: "social",
     icon: "Music2",
-    auth: "api_key",
-    capabilities: ["Pull account metrics", "Trend scraping", "Post performance"],
-    envVars: ["RAPIDAPI_KEY"],
+    auth: "browser",
+    capabilities: ["Lightpanda login + scrape viral/trending/engagement", "Trend scraping", "Post performance"],
+    envVars: ["LIGHTPANDA_CDP_URL"],
     surfaces: ["Account Monitor", "Reports", "Trends"],
   },
   {
@@ -82,10 +83,10 @@ export const PROVIDERS: ProviderMeta[] = [
     label: "Instagram",
     category: "social",
     icon: "Instagram",
-    auth: "oauth",
-    capabilities: ["Account metrics", "Post insights"],
-    envVars: ["META_APP_ID", "META_APP_SECRET"],
-    surfaces: ["Account Monitor", "Reports"],
+    auth: "browser",
+    capabilities: ["Lightpanda login + scrape viral/trending/engagement", "Explore + hashtag reels", "Post insights"],
+    envVars: ["LIGHTPANDA_CDP_URL"],
+    surfaces: ["Account Monitor", "Reports", "Trends"],
   },
   {
     id: "youtube",

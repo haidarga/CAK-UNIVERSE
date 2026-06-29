@@ -3,6 +3,7 @@ import { Sparkles } from "lucide-react";
 import Nav from "@/components/nav";
 import NotificationBell from "@/components/notification-bell";
 import MemberCard from "@/components/auth/member-card";
+import CopilotDock from "@/components/copilot/copilot-dock";
 import { getCurrentMember } from "@/lib/auth";
 import type { TeamRole } from "@/lib/constants";
 
@@ -45,6 +46,8 @@ export default async function DashLayout({ children }: { children: ReactNode }) 
         </div>
         <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-10 lg:py-8">{children}</div>
       </main>
+
+      <CopilotDock memberRole={role} />
     </div>
   );
 }

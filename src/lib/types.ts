@@ -322,6 +322,64 @@ export interface IntegrationConnection {
   updated_at: string;
 }
 
+export interface SessionCookie {
+  name: string;
+  value: string;
+  domain?: string;
+  path?: string;
+  secure?: boolean;
+  httpOnly?: boolean;
+  expires?: number;
+}
+
+export interface AccountConnection {
+  id: string;
+  account_id: string;
+  platform: "tiktok" | "instagram";
+  auth_method: "cookie" | "credentials";
+  status: "connected" | "expired" | "disconnected" | "error";
+  session_cookies: SessionCookie[] | null;
+  username: string | null;
+  // password_enc intentionally omitted from the client-facing type
+  label: string | null;
+  last_error: string | null;
+  connected_at: string | null;
+  last_verified_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WarmupRun {
+  id: string;
+  account_id: string;
+  phase: string | null;
+  status: "running" | "completed" | "failed" | "skipped";
+  videos: number;
+  likes: number;
+  comments: number;
+  follows: number;
+  actions_planned: number;
+  actions_done: number;
+  note: string | null;
+  error: string | null;
+  started_at: string;
+  finished_at: string | null;
+  created_at: string;
+}
+
+export interface WarmupActionRow {
+  id: string;
+  run_id: string;
+  account_id: string;
+  type: "scroll" | "watch" | "like" | "comment" | "follow";
+  target_url: string | null;
+  comment_text: string | null;
+  watch_ms: number | null;
+  delay_ms: number | null;
+  status: "done" | "failed" | "skipped";
+  created_at: string;
+}
+
 export interface EmbeddedResource {
   id: string;
   provider: string;

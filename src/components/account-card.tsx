@@ -2,6 +2,8 @@ import { Instagram, Music2, Users, Activity, Send, Clock, AlertTriangle } from "
 import type { Account } from "@/lib/types";
 import { cn, fmtCompact, fmtPct, relativeTime } from "@/lib/utils";
 import PhaseBadge from "./phase-badge";
+import WarmupButton from "./warmup-button";
+import AccountConnect from "./account-connect";
 
 function PlatformIcon({ platform }: { platform: Account["platform"] }) {
   const Icon = platform === "instagram" ? Instagram : Music2;
@@ -93,6 +95,15 @@ export default function AccountCard({ account }: { account: Account }) {
           ))}
         </div>
       )}
+
+      <footer className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
+        <AccountConnect
+          accountId={account.id}
+          platform={account.platform}
+          username={account.username}
+        />
+        <WarmupButton accountId={account.id} />
+      </footer>
     </article>
   );
 }

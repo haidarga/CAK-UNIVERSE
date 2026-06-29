@@ -5,9 +5,8 @@
 // ============================================================
 import type { IntegrationConnector, ProviderId } from "../registry";
 import { GithubConnector } from "./github";
+import { LightpandaConnector } from "./lightpanda";
 import {
-  TikTokConnector,
-  InstagramConnector,
   YouTubeConnector,
   SocialGrowthEngineerConnector,
   PostizConnector,
@@ -19,8 +18,10 @@ import {
 
 const CONNECTORS: Record<ProviderId, () => IntegrationConnector> = {
   github: () => new GithubConnector(),
-  tiktok: () => new TikTokConnector(),
-  instagram: () => new InstagramConnector(),
+  // TikTok + Instagram both run the Lightpanda browser scrape (no API keys).
+  // The constructor arg controls which ProviderId the SyncResult reports under.
+  tiktok: () => new LightpandaConnector("tiktok"),
+  instagram: () => new LightpandaConnector("instagram"),
   youtube: () => new YouTubeConnector(),
   social_growth_engineer: () => new SocialGrowthEngineerConnector(),
   postiz: () => new PostizConnector(),

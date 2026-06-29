@@ -3,6 +3,10 @@
 // env vars straight from the registry meta (single source of truth) and
 // reports a not-yet-wired SyncResult. Replace sync() bodies with real API
 // calls as each integration is built out.
+//
+// NOTE: TikTok + Instagram are NOT here — their primary path is the
+// Lightpanda browser scrape (see connectors/lightpanda.ts), wired directly
+// in connectors/index.ts. No RapidAPI / Meta API for those two.
 // ============================================================
 import { getProvider, type IntegrationConnector, type ProviderId, type SyncResult } from "../registry";
 
@@ -27,18 +31,6 @@ class StubConnector implements IntegrationConnector {
       itemsSynced: 0,
       note: `${this.provider} connector stub — wire API here`,
     };
-  }
-}
-
-export class TikTokConnector extends StubConnector {
-  constructor() {
-    super("tiktok"); // env: RAPIDAPI_KEY
-  }
-}
-
-export class InstagramConnector extends StubConnector {
-  constructor() {
-    super("instagram");
   }
 }
 

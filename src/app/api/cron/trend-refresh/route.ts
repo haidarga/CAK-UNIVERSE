@@ -1,40 +1,41 @@
 // ============================================================
 // GET /api/cron/trend-refresh — refresh the `trends` table via the
-// Lightpanda (CDP) TikTok scraper. Guarded by isAuthorizedCron.
+// Lightpanda (CDP) browser scrape. Guarded by isAuthorizedCron.
 //
-// Primary path: LightpandaConnector scrapes brand-relevant TikTok hashtags
-// and upserts trending content. If LIGHTPANDA_CDP_URL is absent, we fall
-// back to a (not-yet-implemented) RapidAPI path and return gracefully.
+// Primary (and only) path: scrapeAllTrends() drives Lightpanda to scrape
+// VIRAL / TRENDING / HIGH-ENGAGEMENT content from BOTH TikTok AND Instagram
+// (brand-relevant hashtags + IG explore) and upserts into `trends`. No API
+// keys. If LIGHTPANDA_CDP_URL is absent, we degrade gracefully (200 + note)
+// rather than failing the cron — start `lightpanda serve` with a logged-in
+// account to enable it.
 // ============================================================
 import { ok, err, isAuthorizedCron } from "@/lib/api";
-import { LightpandaConnector } from "@/lib/integrations/connectors/lightpanda";
+import { scrapeAllTrends } from "@/lib/integrations/connectors/lightpanda";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+const PLATFORMS = ["tiktok", "instagram"] as const;
 
 export async function GET(req: Request) {
   try {
     if (!isAuthorizedCron(req)) return err("unauthorized", 401);
 
-    const connector = new LightpandaConnector();
-
-    if (!connector.isConfigured()) {
-      // FALLBACK (RapidAPI): not implemented. When LIGHTPANDA_CDP_URL is
-      // unset, a future path would call the TikTok RapidAPI (RAPIDAPI_KEY)
-      // to fetch trending hashtags/videos and upsert them into `trends`.
-      // For now we degrade gracefully rather than failing the cron.
+    if (!process.env.LIGHTPANDA_CDP_URL) {
       return ok({
-        source: "none",
+        source: "lightpanda",
+        platforms: PLATFORMS,
         itemsSynced: 0,
-        note: "LIGHTPANDA_CDP_URL not set; RapidAPI fallback not implemented",
+        note: "LIGHTPANDA_CDP_URL not set; start `lightpanda serve` with a logged-in account",
       });
     }
 
-    const result = await connector.sync();
+    const { itemsSynced, notes } = await scrapeAllTrends();
     return ok({
       source: "lightpanda",
-      itemsSynced: result.itemsSynced,
-      note: result.note ?? result.error ?? "ok",
+      platforms: PLATFORMS,
+      itemsSynced,
+      note: notes.join(" | ") || "ok",
     });
   } catch (e) {
     return err(e instanceof Error ? e.message : "Trend refresh cron failed", 500);
