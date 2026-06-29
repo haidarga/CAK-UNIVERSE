@@ -28,7 +28,7 @@ import { cn, relativeTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-type IconCmp = ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+type IconCmp = ComponentType<{ className?: string; "aria-hidden"?: boolean; strokeWidth?: number }>;
 
 // Safe lookup: registry icon string -> lucide component (fallback Plug).
 const ICONS: Record<string, IconCmp> = {
@@ -87,7 +87,11 @@ export default async function IntegrationsPage() {
   if (catalog.length === 0) {
     return (
       <>
-        <PageHeader title="Integrations" subtitle="Connect external tools into the platform." />
+        <PageHeader
+          eyebrow="Marketplace"
+          title="Integrations"
+          subtitle="Connect external tools into the platform."
+        />
         <EmptyState
           icon={Blocks}
           title="No providers available"
@@ -105,20 +109,25 @@ export default async function IntegrationsPage() {
   return (
     <>
       <PageHeader
+        eyebrow="Marketplace"
         title="Integrations"
         subtitle={`Marketplace of tools wired into the platform — ${connectedCount}/${catalog.length} connected.`}
       />
 
-      <div className="flex flex-col gap-8">
-        {grouped.map((group) => (
-          <section key={group.category}>
-            <h2 className="mb-3 flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-widest text-muted">
-              <Blocks className="size-3.5" aria-hidden />
+      <div className="flex flex-col gap-10">
+        {grouped.map((group, gi) => (
+          <section
+            key={group.category}
+            className="animate-fade-up"
+            style={{ animationDelay: `${gi * 60}ms` }}
+          >
+            <h2 className="eyebrow mb-4 flex items-center gap-2">
+              <Blocks className="size-3.5" strokeWidth={1.5} aria-hidden />
               {CATEGORY_LABEL[group.category]}
             </h2>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {group.items.map((entry) => (
-                <ProviderCard key={entry.id} entry={entry} />
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+              {group.items.map((entry, ci) => (
+                <ProviderCard key={entry.id} entry={entry} delay={gi * 60 + ci * 40} />
               ))}
             </div>
           </section>
@@ -128,83 +137,97 @@ export default async function IntegrationsPage() {
   );
 }
 
-function ProviderCard({ entry }: { entry: CatalogEntry }) {
+function ProviderCard({ entry, delay = 0 }: { entry: CatalogEntry; delay?: number }) {
   const Icon = iconFor(entry.icon);
   const status = statusOf(entry);
   const lastSynced = entry.connection?.last_synced_at ?? null;
   const lastError = entry.connection?.last_error ?? null;
+  const isConnected = status === "connected";
 
   return (
-    <article className="glass glass-hover animate-fade-up flex flex-col gap-4 p-5">
-      <header className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-border/60 bg-surface-2/60">
-            <Icon className="size-5 text-fg" aria-hidden />
-          </span>
-          <div className="min-w-0">
-            <h3 className="truncate text-sm font-semibold text-fg">{entry.label}</h3>
-            <span className="chip mt-1 inline-block capitalize">{entry.category}</span>
-          </div>
-        </div>
-        <StatusPill status={status} />
-      </header>
-
-      <ul className="flex flex-col gap-1.5">
-        {entry.capabilities.map((cap) => (
-          <li key={cap} className="flex items-start gap-2 text-xs text-muted">
-            <Zap className="mt-0.5 size-3 shrink-0 text-accent" aria-hidden />
-            <span>{cap}</span>
-          </li>
-        ))}
-      </ul>
-
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Layers className="size-3 text-muted" aria-hidden />
-        {entry.surfaces.map((s) => (
-          <span key={s} className="chip text-[10px]">
-            {s}
-          </span>
-        ))}
-      </div>
-
-      {entry.envVars.length > 0 && (
-        <div className="rounded-lg border border-border/40 bg-surface-2/40 px-3 py-2">
-          <p className="mb-1 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide text-muted">
-            <KeyRound className="size-3" aria-hidden />
-            Required env
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {entry.envVars.map((v) => (
-              <code
-                key={v}
-                className={cn(
-                  "rounded px-1.5 py-0.5 font-mono text-[10px]",
-                  entry.configured
-                    ? "bg-success/10 text-success"
-                    : "bg-warning/10 text-warning",
-                )}
-              >
-                {v}
-              </code>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <footer className="mt-auto flex items-end justify-between gap-3 border-t border-border/40 pt-3">
-        <div className="min-w-0 text-[10px] text-muted">
-          <span className="flex items-center gap-1">
-            <Clock className="size-3" aria-hidden />
-            {lastSynced ? `Synced ${relativeTime(lastSynced)}` : "Never synced"}
-          </span>
-          {lastError && (
-            <span className="mt-0.5 block truncate text-danger" title={lastError}>
-              {lastError}
+    <article className="bezel animate-fade-up h-full" style={{ animationDelay: `${delay}ms` }}>
+      <div className="glass glass-hover flex h-full flex-col gap-4 p-5">
+        <header className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3.5">
+            <span
+              className={cn(
+                "grid size-12 shrink-0 place-items-center rounded-2xl border transition-colors",
+                isConnected
+                  ? "glow-primary border-primary/40 bg-primary/15 text-primary"
+                  : "border-border/60 bg-surface-2/70 text-fg",
+              )}
+            >
+              <Icon className="size-6" strokeWidth={1.5} aria-hidden />
             </span>
-          )}
+            <div className="min-w-0">
+              <h3 className="font-display truncate text-base font-semibold text-fg">
+                {entry.label}
+              </h3>
+              <span className="chip mt-1.5 inline-block border-border/60 bg-surface-2/60 capitalize text-muted">
+                {entry.category}
+              </span>
+            </div>
+          </div>
+          <StatusPill status={status} />
+        </header>
+
+        <ul className="flex flex-col gap-2">
+          {entry.capabilities.map((cap) => (
+            <li key={cap} className="flex items-start gap-2 text-xs leading-relaxed text-muted">
+              <Zap className="mt-0.5 size-3.5 shrink-0 text-accent" strokeWidth={1.5} aria-hidden />
+              <span>{cap}</span>
+            </li>
+          ))}
+        </ul>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Layers className="size-3.5 text-muted" strokeWidth={1.5} aria-hidden />
+          {entry.surfaces.map((s) => (
+            <span key={s} className="chip border-border/50 bg-surface-2/50 text-[10px] text-muted">
+              {s}
+            </span>
+          ))}
         </div>
-        <SyncButton provider={entry.id} disabled={!entry.configured} />
-      </footer>
+
+        {entry.envVars.length > 0 && (
+          <div className="rounded-xl border border-border/40 bg-surface-2/40 px-3.5 py-2.5">
+            <p className="eyebrow mb-1.5 flex items-center gap-1.5">
+              <KeyRound className="size-3" strokeWidth={1.5} aria-hidden />
+              Required env
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {entry.envVars.map((v) => (
+                <code
+                  key={v}
+                  className={cn(
+                    "rounded-md px-1.5 py-0.5 font-mono text-[10px]",
+                    entry.configured
+                      ? "bg-success/10 text-success"
+                      : "bg-warning/10 text-warning",
+                  )}
+                >
+                  {v}
+                </code>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <footer className="mt-auto flex items-end justify-between gap-3 border-t border-border/40 pt-3.5">
+          <div className="min-w-0 text-[10px] text-muted">
+            <span className="flex items-center gap-1">
+              <Clock className="size-3" strokeWidth={1.5} aria-hidden />
+              {lastSynced ? `Synced ${relativeTime(lastSynced)}` : "Never synced"}
+            </span>
+            {lastError && (
+              <span className="mt-0.5 block truncate text-danger" title={lastError}>
+                {lastError}
+              </span>
+            )}
+          </div>
+          <SyncButton provider={entry.id} disabled={!entry.configured} />
+        </footer>
+      </div>
     </article>
   );
 }
@@ -214,7 +237,7 @@ function StatusPill({ status }: { status: StatusKind }) {
     connected: {
       label: "Connected",
       icon: CheckCircle2,
-      cls: "border-success/40 bg-success/10 text-success",
+      cls: "border-success/40 bg-success/10 text-success shadow-[0_0_18px_-4px] shadow-success/40",
     },
     needs_env: {
       label: "Needs env",
@@ -231,11 +254,11 @@ function StatusPill({ status }: { status: StatusKind }) {
   return (
     <span
       className={cn(
-        "flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium",
+        "flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-medium",
         cls,
       )}
     >
-      <PillIcon className="size-3" aria-hidden />
+      <PillIcon className="size-3" strokeWidth={1.5} aria-hidden />
       {label}
     </span>
   );

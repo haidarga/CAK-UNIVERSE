@@ -22,6 +22,7 @@ export default async function CreatorStudioPage({
   return (
     <>
       <PageHeader
+        eyebrow="Studio"
         title="Creator Studio"
         subtitle="Turn reviewed scripts into a shot-by-shot Seedance plan"
       >
@@ -44,8 +45,8 @@ export default async function CreatorStudioPage({
           hint="Scripts appear here once the Head of Creator marks them as reviewed."
         />
       ) : (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          {items.map((item) => {
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+          {items.map((item, idx) => {
             const title = item.content_direction?.title ?? "Untitled item";
             const scriptText = item.script?.text ?? "";
             const personaCtx = [
@@ -56,15 +57,20 @@ export default async function CreatorStudioPage({
               .join(" · ");
 
             return (
-              <CreatorPanel
+              <div
                 key={item.id}
-                pipelineId={item.id}
-                title={title}
-                stage={item.stage}
-                scriptText={scriptText}
-                contextLine={personaCtx}
-                initialShots={item.production_params?.shots ?? []}
-              />
+                className="animate-fade-up"
+                style={{ animationDelay: `${idx * 60}ms` }}
+              >
+                <CreatorPanel
+                  pipelineId={item.id}
+                  title={title}
+                  stage={item.stage}
+                  scriptText={scriptText}
+                  contextLine={personaCtx}
+                  initialShots={item.production_params?.shots ?? []}
+                />
+              </div>
             );
           })}
         </div>

@@ -53,6 +53,7 @@ export default async function TasksPage() {
   return (
     <>
       <PageHeader
+        eyebrow="Command"
         title="Tasks"
         subtitle="My Tasks & Team Tasks — drag the team toward done"
       />

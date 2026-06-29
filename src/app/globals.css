@@ -1,95 +1,235 @@
-@import url("https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* ============================================================
-   CAK AI Ecosystem — Bento Glass design tokens
-   Dark-first glassmorphism over a deep navy field.
+   CAK AI Ecosystem — "Ethereal Glass" design system
+   Deep OLED field · radial mesh glow · double-bezel glass ·
+   grotesk display type · spring motion.
    ============================================================ */
 :root {
-  --font-sans: "Fira Sans", system-ui, sans-serif;
-  --font-mono: "Fira Code", ui-monospace, monospace;
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+  --font-sans: "Plus Jakarta Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
-  /* Surfaces (R G B triplets, consumed via rgb(var(--x) / a)) */
-  --bg: 8 11 20; /* #080B14 deep navy-black */
-  --surface: 18 23 38; /* glass card base */
-  --surface-2: 26 33 52; /* raised glass */
-  --fg: 226 232 245; /* near-white text */
-  --muted: 138 150 176; /* secondary text */
-  --border: 52 64 92; /* hairline */
+  /* Surfaces (R G B) */
+  --bg: 6 7 12; /* near-OLED */
+  --surface: 19 22 34; /* glass inner core */
+  --surface-2: 28 32 48; /* raised */
+  --fg: 233 237 248;
+  --muted: 140 150 178;
+  --border: 60 70 100;
 
-  --primary: 59 130 246; /* #3B82F6 */
-  --accent: 217 119 6; /* #D97706 amber */
+  --primary: 99 132 255; /* indigo-blue, brighter for glow */
+  --accent: 244 162 56; /* warm amber */
 
-  /* Warmup phase + status palette */
-  --phase-cold: 148 163 184; /* slate/gray */
-  --phase-warming: 245 158 11; /* amber */
-  --phase-warm: 34 197 94; /* green */
-  --phase-active: 20 184 166; /* teal */
-  --phase-paused: 234 179 8; /* yellow */
-  --phase-flagged: 239 68 68; /* red */
+  --phase-cold: 148 163 184;
+  --phase-warming: 245 170 66;
+  --phase-warm: 52 211 153;
+  --phase-active: 45 212 191;
+  --phase-paused: 234 179 8;
+  --phase-flagged: 248 113 113;
 
-  --success: 34 197 94;
-  --warning: 245 158 11;
-  --danger: 239 68 68;
-}
+  --success: 52 211 153;
+  --warning: 245 170 66;
+  --danger: 248 113 113;
 
-/* Light mode (used on report/print surfaces) */
-.light {
-  --bg: 248 250 252;
-  --surface: 255 255 255;
-  --surface-2: 241 245 251;
-  --fg: 30 41 59;
-  --muted: 100 116 139;
-  --border: 219 234 254;
+  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 * {
-  border-color: rgb(var(--border));
+  border-color: rgb(var(--border) / 0.5);
 }
 
 html {
   color-scheme: dark;
+  scroll-behavior: smooth;
 }
 
 body {
-  background:
-    radial-gradient(1200px 600px at 15% -10%, rgba(59, 130, 246, 0.10), transparent 60%),
-    radial-gradient(900px 500px at 110% 10%, rgba(217, 119, 6, 0.08), transparent 55%),
-    rgb(var(--bg));
+  background-color: rgb(var(--bg));
   color: rgb(var(--fg));
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   min-height: 100dvh;
 }
 
-/* Tabular figures for all data readouts */
+/* Radial mesh glow — fixed, behind everything */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(60rem 40rem at 12% -8%, rgba(99, 132, 255, 0.16), transparent 60%),
+    radial-gradient(50rem 36rem at 108% 6%, rgba(244, 162, 56, 0.12), transparent 58%),
+    radial-gradient(46rem 40rem at 78% 116%, rgba(52, 211, 153, 0.10), transparent 60%);
+}
+
+/* Film-grain overlay — fixed, never on scroll containers */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
 .tnum {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
 }
 
-/* ---- Bento glass surface ---- */
 @layer components {
+  /* ---- Double-bezel glass: outer shell + inner core ---- */
+  .bezel {
+    @apply rounded-[1.6rem] p-1.5;
+    background: rgba(255, 255, 255, 0.025);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  }
   .glass {
-    @apply rounded-bento border border-white/[0.06] bg-surface/60 shadow-glass backdrop-blur-bento;
+    @apply rounded-[1.25rem] border border-white/[0.07] bg-surface/50 backdrop-blur-xl;
     background-image: linear-gradient(
-      160deg,
-      rgba(255, 255, 255, 0.05),
-      rgba(255, 255, 255, 0) 45%
+      155deg,
+      rgba(255, 255, 255, 0.06),
+      rgba(255, 255, 255, 0) 42%
     );
+    box-shadow:
+      0 24px 60px -28px rgba(0, 0, 0, 0.85),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+  }
+  .glass-2 {
+    @apply rounded-[1rem] border border-white/[0.06] bg-surface-2/60 backdrop-blur-md;
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
   }
   .glass-hover {
-    @apply transition-all duration-200 hover:-translate-y-0.5 hover:border-white/[0.12] hover:shadow-glass-hover;
+    @apply transition-[transform,box-shadow,border-color] duration-500;
+    transition-timing-function: var(--ease-spring);
   }
+  .glass-hover:hover {
+    transform: translateY(-3px);
+    border-color: rgba(255, 255, 255, 0.16);
+    box-shadow:
+      0 36px 80px -32px rgba(0, 0, 0, 0.9),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.14);
+  }
+
+  /* ---- Micro eyebrow tag ---- */
+  .eyebrow {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04]
+      px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-muted;
+  }
+
+  /* ---- Chip / pill badge ---- */
   .chip {
     @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium;
   }
+
+  /* ---- Island button + nested icon ---- */
+  .btn {
+    @apply inline-flex items-center gap-2 rounded-full bg-white/[0.06] px-5 py-2.5 text-sm
+      font-semibold text-fg ring-1 ring-white/10 transition-all duration-300 active:scale-[0.98];
+    transition-timing-function: var(--ease-spring);
+  }
+  .btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 28px -10px rgba(99, 132, 255, 0.5);
+  }
+  .btn-primary {
+    background: linear-gradient(180deg, rgb(var(--primary)), rgb(var(--primary) / 0.82));
+    @apply text-white ring-0;
+  }
+  .btn-primary:hover {
+    box-shadow: 0 10px 34px -8px rgba(99, 132, 255, 0.7);
+  }
+  .btn-icon {
+    @apply flex size-7 items-center justify-center rounded-full bg-black/20 transition-transform duration-300;
+  }
+  .btn:hover .btn-icon {
+    transform: translate(2px, -1px) scale(1.05);
+  }
+
+  /* ---- Sidebar nav item ---- */
+  .nav-item {
+    @apply relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted
+      transition-colors duration-300;
+  }
+  .nav-item:hover {
+    @apply bg-white/[0.04] text-fg;
+  }
+  .nav-item[data-active="true"] {
+    @apply bg-white/[0.06] text-fg;
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+  }
+  .nav-item[data-active="true"]::before {
+    content: "";
+    position: absolute;
+    left: -0.5rem;
+    top: 50%;
+    height: 1.1rem;
+    width: 3px;
+    transform: translateY(-50%);
+    border-radius: 9999px;
+    background: rgb(var(--primary));
+    box-shadow: 0 0 12px 1px rgb(var(--primary) / 0.8);
+  }
 }
 
-/* Respect reduced motion */
+@layer utilities {
+  .text-gradient {
+    background: linear-gradient(120deg, rgb(var(--fg)), rgb(var(--muted)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .glow-primary {
+    box-shadow: 0 0 0 1px rgb(var(--primary) / 0.4), 0 0 40px -8px rgb(var(--primary) / 0.6);
+  }
+  .animate-fade-up {
+    animation: fade-up 700ms var(--ease-out-soft) both;
+  }
+  .animate-pulse-dot {
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+}
+
+@keyframes fade-up {
+  0% {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -97,17 +237,23 @@ body {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
-/* Scrollbar polish */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgb(var(--border));
+  background: rgb(var(--border) / 0.6);
   border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--border));
+  background-clip: padding-box;
 }
 ::-webkit-scrollbar-track {
   background: transparent;

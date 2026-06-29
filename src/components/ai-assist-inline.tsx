@@ -70,7 +70,7 @@ export default function AiAssistInline({
   }
 
   return (
-    <span className={cn("inline-flex items-center gap-2", className)}>
+    <span className={cn("relative inline-flex items-center gap-2", className)}>
       <button
         type="button"
         onClick={run}
@@ -78,20 +78,34 @@ export default function AiAssistInline({
         aria-busy={loading}
         aria-label={text}
         className={cn(
-          "inline-flex min-h-[32px] cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-primary/60",
-          "border-accent/40 bg-accent/10 text-accent hover:bg-accent/20",
-          loading && "cursor-not-allowed opacity-70",
+          "group relative inline-flex min-h-[32px] cursor-pointer items-center gap-1.5 overflow-hidden rounded-full px-3.5 py-1 text-xs font-semibold",
+          "border border-accent/30 bg-accent/[0.08] text-accent outline-none backdrop-blur-md",
+          "ring-1 ring-inset ring-white/5 transition-all duration-300 [transition-timing-function:var(--ease-spring)]",
+          "hover:border-accent/50 hover:bg-accent/[0.14] hover:shadow-[0_8px_28px_-10px_rgb(244_162_56/0.55)] active:scale-[0.97]",
+          "focus-visible:ring-2 focus-visible:ring-accent/60",
+          loading && "cursor-not-allowed opacity-80",
         )}
       >
+        {/* soft sheen on hover */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/15 to-transparent transition-transform duration-700 group-hover:translate-x-full"
+        />
         {loading ? (
-          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          <Loader2 className="relative size-3.5 animate-spin" aria-hidden />
         ) : (
-          <Sparkles className="size-3.5" aria-hidden />
+          <Sparkles
+            className="relative size-3.5 transition-transform duration-300 group-hover:rotate-12 group-hover:scale-110"
+            aria-hidden
+          />
         )}
-        {text}
+        <span className="relative">{loading ? "Thinking…" : text}</span>
       </button>
       {error && (
-        <span role="alert" className="text-xs text-danger">
+        <span
+          role="alert"
+          className="chip border-danger/40 bg-danger/10 text-danger animate-fade-up"
+        >
           {error}
         </span>
       )}

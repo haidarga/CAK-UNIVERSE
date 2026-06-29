@@ -19,9 +19,9 @@ interface DevIssueCardProps {
 }
 
 const SEVERITY_TONE: Record<DevSeverity, string> = {
-  critical: "border-danger/40 bg-danger/10 text-danger",
-  high: "border-warning/40 bg-warning/10 text-warning",
-  medium: "border-primary/40 bg-primary/10 text-primary",
+  critical: "border-danger/50 bg-danger/15 text-danger shadow-[0_0_16px_-2px] shadow-danger/40",
+  high: "border-warning/50 bg-warning/15 text-warning shadow-[0_0_16px_-2px] shadow-warning/40",
+  medium: "border-primary/50 bg-primary/15 text-primary shadow-[0_0_16px_-2px] shadow-primary/40",
   low: "border-border bg-surface-2/60 text-muted",
 };
 
@@ -46,7 +46,7 @@ const STATUS_LABEL: Record<DevIssueStatus, string> = {
 /** Single issue card: severity + area chips, reporter, assignee selector, status selector, github link. */
 export default function DevIssueCard({ issue, team, onStatusChange, onAssigneeChange }: DevIssueCardProps) {
   return (
-    <article className="glass glass-hover flex flex-col gap-3 p-4">
+    <article className="glass glass-hover flex flex-col gap-3 p-4 transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-0 active:cursor-grabbing">
       <div className="flex items-start justify-between gap-2">
         <h3 className="min-w-0 text-sm font-semibold leading-snug text-fg">{issue.title}</h3>
         {issue.github_url && (

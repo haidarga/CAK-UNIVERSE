@@ -59,23 +59,23 @@ export default function SyncButton({ provider, disabled = false }: SyncButtonPro
         disabled={state === "running" || disabled}
         title={disabled ? "Set the required env vars first" : undefined}
         className={cn(
-          "flex min-h-[36px] cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-medium outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-primary/60",
+          "btn text-xs",
           state === "error"
             ? "border-danger/40 bg-danger/10 text-danger"
             : state === "done"
               ? "border-success/40 bg-success/10 text-success"
-              : "border-primary/40 bg-primary/15 text-fg hover:bg-primary/25",
+              : "btn-primary",
           (state === "running" || disabled) && "cursor-not-allowed opacity-60",
         )}
       >
         {state === "running" ? (
           <Loader2 className="size-3.5 animate-spin" aria-hidden />
         ) : state === "done" ? (
-          <Check className="size-3.5" aria-hidden />
+          <Check className="size-3.5" strokeWidth={1.5} aria-hidden />
         ) : state === "error" ? (
-          <AlertTriangle className="size-3.5" aria-hidden />
+          <AlertTriangle className="size-3.5" strokeWidth={1.5} aria-hidden />
         ) : (
-          <RefreshCw className="size-3.5" aria-hidden />
+          <RefreshCw className="size-3.5" strokeWidth={1.5} aria-hidden />
         )}
         {state === "running" ? "Syncing…" : state === "done" ? "Synced" : "Sync now"}
       </button>

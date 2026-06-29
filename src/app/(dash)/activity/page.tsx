@@ -68,7 +68,11 @@ export default async function ActivityPage() {
   if (logs.length === 0) {
     return (
       <>
-        <PageHeader title="Activity" subtitle="Everything happening across the team" />
+        <PageHeader
+          eyebrow="Live Feed"
+          title="Activity"
+          subtitle="Everything happening across the team"
+        />
         <EmptyState
           icon={ActivityIcon}
           title="No activity yet"
@@ -84,13 +88,18 @@ export default async function ActivityPage() {
     <>
       <PageHeader title="Activity" subtitle="Everything happening across the team" />
 
-      <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-9">
         {groups.map((group) => (
-          <section key={group.key} aria-label={dayLabel(group.key)}>
-            <h2 className="mb-3 font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-muted/70">
-              {dayLabel(group.key)}
+          <section key={group.key} aria-label={dayLabel(group.key)} className="animate-fade-up">
+            <h2 className="mb-4">
+              <span className="eyebrow">{dayLabel(group.key)}</span>
             </h2>
-            <ol className="relative flex flex-col gap-1 border-l border-border/60 pl-1">
+            <ol className="relative flex flex-col gap-1 pl-1">
+              {/* Timeline rail */}
+              <span
+                aria-hidden
+                className="absolute left-[27px] top-4 bottom-4 w-px bg-gradient-to-b from-primary/40 via-border/50 to-transparent"
+              />
               {group.items.map((log) => (
                 <ActivityRow
                   key={log.id}
@@ -109,20 +118,27 @@ export default async function ActivityPage() {
 function ActivityRow({ log, brand }: { log: ActivityLog; brand?: string }) {
   const actorName = log.actor?.name ?? "System";
   return (
-    <li className="animate-fade-up flex items-start gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-surface-2/40">
-      <Avatar name={log.actor?.name ?? null} size={32} />
+    <li className="group relative flex items-start gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-white/[0.02]">
+      <span className="relative z-10 shrink-0">
+        <Avatar name={log.actor?.name ?? null} size={32} />
+        {/* glowing timeline node */}
+        <span
+          aria-hidden
+          className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full bg-primary ring-2 ring-bg shadow-[0_0_8px_0_rgb(var(--primary)/0.9)]"
+        />
+      </span>
       <div className="min-w-0 flex-1">
         <p className="text-sm text-fg">
-          <span className="font-medium">{actorName}</span>{" "}
+          <span className="font-semibold">{actorName}</span>{" "}
           <span className="text-muted">{verb(log.action)}</span>
           {brand && (
-            <span className="chip ml-2 border-border bg-surface-2/40 text-muted">{brand}</span>
+            <span className="chip ml-2 border-white/10 bg-white/[0.04] text-muted">{brand}</span>
           )}
         </p>
         {log.summary && (
           <p className="mt-0.5 line-clamp-2 text-sm text-muted">{log.summary}</p>
         )}
-        <p className="mt-1 font-mono text-[10px] uppercase tracking-widest text-muted/70">
+        <p className="mt-1 font-mono text-[10px] uppercase tracking-widest text-muted/60">
           {relativeTime(log.created_at)}
         </p>
       </div>

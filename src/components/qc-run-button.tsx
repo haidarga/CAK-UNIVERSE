@@ -49,12 +49,12 @@ export default function QcRunButton({ pipelineId, videoDescription }: QcRunButto
         onClick={run}
         disabled={state === "running"}
         className={cn(
-          "flex min-h-[40px] cursor-pointer items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-medium outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-primary/60",
+          "btn min-h-[40px]",
           state === "error"
-            ? "border-danger/40 bg-danger/10 text-danger"
+            ? "!bg-danger/10 text-danger ring-1 ring-danger/40"
             : state === "done"
-              ? "border-success/40 bg-success/10 text-success"
-              : "border-primary/40 bg-primary/15 text-fg hover:bg-primary/25",
+              ? "!bg-success/10 text-success ring-1 ring-success/40"
+              : "btn-primary",
           state === "running" && "cursor-not-allowed opacity-70",
         )}
       >

@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="font-mono text-[10px] uppercase tracking-widest text-muted">{label}</span>
+      <span className="eyebrow">{label}</span>
       {children}
     </label>
   );
@@ -31,7 +31,7 @@ export function Select({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       disabled={options.length === 0}
-      className="min-h-[44px] cursor-pointer rounded-xl border border-border bg-surface-2/60 px-3.5 text-sm text-fg outline-none transition-colors hover:border-white/20 focus-visible:ring-2 focus-visible:ring-primary/60 disabled:opacity-60"
+      className="min-h-[44px] cursor-pointer rounded-xl border border-border bg-surface-2/60 px-3.5 text-sm text-fg outline-none transition-colors hover:border-white/20 focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/60 disabled:cursor-not-allowed disabled:opacity-60"
     >
       {placeholder && <option value="">{placeholder}</option>}
       {options.map((o) => {

@@ -29,7 +29,7 @@ export default function BrandSelector({ brands, selected }: BrandSelectorProps) 
         value={selected ?? ""}
         onChange={(e) => onChange(e.target.value)}
         disabled={brands.length === 0 || pending}
-        className="min-h-[44px] cursor-pointer appearance-none rounded-xl border border-border bg-surface-2/60 py-2 pl-3.5 pr-9 text-sm font-medium text-fg outline-none transition-colors hover:border-white/20 focus-visible:ring-2 focus-visible:ring-primary/60 disabled:cursor-not-allowed disabled:opacity-60"
+        className="glass-2 min-h-[44px] cursor-pointer appearance-none py-2 pl-3.5 pr-9 text-sm font-semibold text-fg outline-none transition-colors hover:border-white/20 focus-visible:ring-2 focus-visible:ring-primary/60 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {brands.length === 0 && <option value="">No brands</option>}
         {brands.map((b) => (

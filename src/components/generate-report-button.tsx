@@ -46,10 +46,8 @@ export default function GenerateReportButton({ brandId }: { brandId: string }) {
           onClick={run}
           disabled={state === "running"}
           className={cn(
-            "flex min-h-[44px] cursor-pointer items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-medium outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-primary/60",
-            state === "error"
-              ? "border-danger/40 bg-danger/10 text-danger"
-              : "border-primary/40 bg-primary/15 text-fg hover:bg-primary/25",
+            "btn min-h-[44px]",
+            state === "error" ? "!bg-danger/10 text-danger ring-1 ring-danger/40" : "btn-primary",
             state === "running" && "cursor-not-allowed opacity-70",
           )}
         >
@@ -66,8 +64,10 @@ export default function GenerateReportButton({ brandId }: { brandId: string }) {
       </div>
 
       {markdown != null && (
-        <div className="glass p-5">
-          <Markdown source={markdown} />
+        <div className="bezel animate-fade-up">
+          <div className="glass p-6">
+            <Markdown source={markdown} />
+          </div>
         </div>
       )}
     </div>

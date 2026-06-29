@@ -41,6 +41,7 @@ export default async function QcStationPage({
   return (
     <>
       <PageHeader
+        eyebrow="Studio"
         title="QC Station"
         subtitle="Run AI quality control and get fix-it guidance on every issue"
       >
@@ -64,7 +65,7 @@ export default async function QcStationPage({
         />
       ) : (
         <>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 gap-4 animate-fade-up">
             <GlassCard noHover>
               <Stat label="Awaiting QC" value={awaiting} icon={ShieldCheck} />
             </GlassCard>
@@ -76,23 +77,28 @@ export default async function QcStationPage({
             </GlassCard>
           </div>
 
-          <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {items.map((item) => {
+          <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2">
+            {items.map((item, idx) => {
               const title = item.content_direction?.title ?? "Untitled item";
               const summary =
                 item.script?.text?.slice(0, 240) ??
                 item.content_direction?.research_notes ??
                 "No script summary available.";
               return (
-                <QcPanel
+                <div
                   key={item.id}
-                  pipelineId={item.id}
-                  title={title}
-                  stage={item.stage}
-                  summary={summary}
-                  videoDescription={deriveVideoDescription(item)}
-                  initialReport={item.qc_report}
-                />
+                  className="animate-fade-up"
+                  style={{ animationDelay: `${idx * 60}ms` }}
+                >
+                  <QcPanel
+                    pipelineId={item.id}
+                    title={title}
+                    stage={item.stage}
+                    summary={summary}
+                    videoDescription={deriveVideoDescription(item)}
+                    initialReport={item.qc_report}
+                  />
+                </div>
               );
             })}
           </div>

@@ -98,12 +98,15 @@ export default function TaskDrawer({ task, members, onClose, onUpdated }: TaskDr
       <aside className="glass relative flex h-full w-full max-w-md flex-col overflow-y-auto rounded-none border-y-0 border-r-0 p-6 animate-fade-up">
         <header className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <span className={cn("chip mb-2 border-transparent bg-surface-2/50", badge.text)}>
-              <span className={cn("size-1.5 rounded-full", badge.dot)} aria-hidden />
+            <span className={cn("chip mb-3 border-transparent bg-white/[0.05]", badge.text)}>
+              <span
+                className={cn("size-1.5 rounded-full shadow-[0_0_6px_-1px_currentColor]", badge.dot)}
+                aria-hidden
+              />
               {badge.label}
             </span>
-            <h2 className="text-lg font-semibold leading-snug text-fg">{task.title}</h2>
-            <p className={cn("mt-1 text-xs font-medium", priority.tone)}>
+            <h2 className="font-display text-xl font-bold leading-snug text-fg">{task.title}</h2>
+            <p className={cn("mt-1.5 text-xs font-medium", priority.tone)}>
               {priority.label} priority · {task.type}
             </p>
           </div>
@@ -111,9 +114,9 @@ export default function TaskDrawer({ task, members, onClose, onUpdated }: TaskDr
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="grid size-10 shrink-0 place-items-center rounded-xl text-muted outline-none transition-colors hover:bg-surface-2/60 hover:text-fg focus-visible:ring-2 focus-visible:ring-primary/60"
+            className="grid size-10 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-muted outline-none transition-all hover:bg-white/[0.1] hover:text-fg focus-visible:ring-2 focus-visible:ring-primary/60"
           >
-            <X className="size-5" aria-hidden />
+            <X className="size-5" strokeWidth={1.5} aria-hidden />
           </button>
         </header>
 
@@ -134,10 +137,10 @@ export default function TaskDrawer({ task, members, onClose, onUpdated }: TaskDr
                 onClick={() => patch({ status: s })}
                 aria-pressed={task.status === s}
                 className={cn(
-                  "chip min-h-[34px] cursor-pointer outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/60 disabled:opacity-50",
+                  "chip min-h-[34px] cursor-pointer outline-none transition-all focus-visible:ring-2 focus-visible:ring-primary/60 disabled:opacity-50",
                   task.status === s
-                    ? cn("border-transparent bg-surface-2", TASK_STATUS_BADGE[s].text)
-                    : "border-border text-muted hover:text-fg",
+                    ? cn("border-white/15 bg-white/[0.08] shadow-[0_4px_14px_-6px_rgba(0,0,0,0.7)]", TASK_STATUS_BADGE[s].text)
+                    : "border-white/[0.07] text-muted hover:border-white/15 hover:text-fg",
                 )}
               >
                 {TASK_STATUS_BADGE[s].label}
@@ -170,7 +173,7 @@ export default function TaskDrawer({ task, members, onClose, onUpdated }: TaskDr
             disabled={saving}
             onChange={(e) => patch({ assignee_id: e.target.value || null })}
             aria-label="Reassign task"
-            className="min-h-[40px] w-full rounded-xl border border-border bg-surface-2/50 px-3 text-sm text-fg outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+            className="min-h-[40px] w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-fg outline-none transition-colors hover:border-white/15 focus-visible:ring-2 focus-visible:ring-primary/60"
           >
             <option value="">Unassigned</option>
             {members.map((m) => (
@@ -190,7 +193,7 @@ export default function TaskDrawer({ task, members, onClose, onUpdated }: TaskDr
             {comments.map((c) => (
               <li key={c.id} className="flex gap-2.5">
                 <Avatar name={c.author?.name} size={28} />
-                <div className="min-w-0 flex-1 rounded-xl border border-border/60 bg-surface-2/40 px-3 py-2">
+                <div className="min-w-0 flex-1 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2">
                   <p className="flex items-center justify-between gap-2 text-[11px] text-muted">
                     <span className="truncate font-medium text-fg">
                       {c.author?.name ?? "Unknown"}
@@ -208,7 +211,7 @@ export default function TaskDrawer({ task, members, onClose, onUpdated }: TaskDr
               value={authorId}
               onChange={(e) => setAuthorId(e.target.value)}
               aria-label="Comment as"
-              className="min-h-[40px] w-full rounded-xl border border-border bg-surface-2/50 px-3 text-sm text-fg outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+              className="min-h-[40px] w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-fg outline-none transition-colors hover:border-white/15 focus-visible:ring-2 focus-visible:ring-primary/60"
             >
               <option value="">Comment as…</option>
               {members.map((m) => (
@@ -224,16 +227,20 @@ export default function TaskDrawer({ task, members, onClose, onUpdated }: TaskDr
                 onKeyDown={(e) => e.key === "Enter" && submitComment()}
                 placeholder="Add a comment…"
                 aria-label="Comment body"
-                className="min-h-[40px] flex-1 rounded-xl border border-border bg-surface-2/50 px-3 text-sm text-fg outline-none placeholder:text-muted/60 focus-visible:ring-2 focus-visible:ring-primary/60"
+                className="min-h-[40px] flex-1 rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-fg outline-none transition-colors placeholder:text-muted/50 hover:border-white/15 focus-visible:ring-2 focus-visible:ring-primary/60"
               />
               <button
                 type="button"
                 onClick={submitComment}
                 disabled={!draft.trim() || !authorId}
                 aria-label="Send comment"
-                className="grid size-10 shrink-0 place-items-center rounded-xl border border-primary/40 bg-primary/15 text-primary outline-none transition-colors hover:bg-primary/25 focus-visible:ring-2 focus-visible:ring-primary/60 disabled:opacity-40"
+                className="grid size-10 shrink-0 place-items-center rounded-full text-white outline-none transition-all focus-visible:ring-2 focus-visible:ring-primary/60 disabled:opacity-40"
+                style={{
+                  background:
+                    "linear-gradient(180deg, rgb(var(--primary)), rgb(var(--primary) / 0.82))",
+                }}
               >
-                <Send className="size-4" aria-hidden />
+                <Send className="size-4" strokeWidth={1.5} aria-hidden />
               </button>
             </div>
           </div>

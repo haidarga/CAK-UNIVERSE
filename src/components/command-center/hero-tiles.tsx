@@ -1,7 +1,6 @@
 import { CheckCircle2, CircleSlash, Clock, ListTodo } from "lucide-react";
 import type { Rollup } from "@/lib/progress";
 import { cn } from "@/lib/utils";
-import GlassCard from "@/components/glass-card";
 import ProgressBar from "@/components/progress-bar";
 
 interface HeroTilesProps {
@@ -12,47 +11,62 @@ interface HeroTilesProps {
 export default function HeroTiles({ roll }: HeroTilesProps) {
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-      {/* Completion — wide emphasis tile */}
-      <GlassCard className="col-span-2" noHover>
-        <p className="font-mono text-[11px] uppercase tracking-widest text-muted">
-          Overall Completion
-        </p>
-        <div className="mt-2 flex items-baseline gap-2">
-          <span className="tnum text-5xl font-semibold leading-none text-fg">{roll.percent}%</span>
-          <span className="tnum text-sm text-muted">
-            {roll.done}/{roll.total} done
-          </span>
+      {/* Completion — flagship double-bezel tile with glowing accent ring */}
+      <div className="bezel animate-fade-up col-span-2">
+        <div className="glass glow-primary relative overflow-hidden p-6">
+          {/* soft radial accent behind the number */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -right-10 -top-16 size-56 rounded-full opacity-60 blur-3xl"
+            style={{
+              background: "radial-gradient(circle, rgb(var(--primary) / 0.3), transparent 70%)",
+            }}
+          />
+          <p className="eyebrow relative">Overall Completion</p>
+          <div className="relative mt-4 flex items-end gap-3">
+            <span className="tnum text-gradient font-display text-6xl font-bold leading-[0.9]">
+              {roll.percent}%
+            </span>
+            <span className="tnum mb-1 text-sm font-medium text-muted">
+              {roll.done}/{roll.total} done
+            </span>
+          </div>
+          <ProgressBar
+            value={roll.percent}
+            height={12}
+            className="relative mt-5"
+            label="Overall completion"
+          />
         </div>
-        <ProgressBar value={roll.percent} height={10} className="mt-4" label="Overall completion" />
-      </GlassCard>
+      </div>
 
       <MetricTile
         icon={ListTodo}
         label="Active"
         value={roll.active}
         tone="text-primary"
-        ring="border-primary/30"
+        glow={roll.active > 0}
       />
       <MetricTile
         icon={CircleSlash}
         label="Blocked"
         value={roll.blocked}
         tone={roll.blocked > 0 ? "text-phase-flagged" : "text-muted"}
-        ring={roll.blocked > 0 ? "border-phase-flagged/40" : "border-border"}
+        glow={roll.blocked > 0}
       />
       <MetricTile
         icon={Clock}
         label="Overdue"
         value={roll.overdue}
         tone={roll.overdue > 0 ? "text-danger" : "text-muted"}
-        ring={roll.overdue > 0 ? "border-danger/40" : "border-border"}
+        glow={roll.overdue > 0}
       />
       <MetricTile
         icon={CheckCircle2}
         label="Done"
         value={roll.done}
         tone="text-phase-warm"
-        ring="border-phase-warm/30"
+        glow={false}
       />
     </div>
   );
@@ -63,23 +77,44 @@ function MetricTile({
   label,
   value,
   tone,
-  ring,
+  glow,
 }: {
-  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  icon: React.ComponentType<{
+    className?: string;
+    "aria-hidden"?: boolean;
+    strokeWidth?: number;
+  }>;
   label: string;
   value: number;
   tone: string;
-  ring: string;
+  glow: boolean;
 }) {
   return (
-    <GlassCard noHover className={cn("border", ring)}>
-      <div className="flex items-center justify-between">
+    <div className="glass glass-hover animate-fade-up relative overflow-hidden p-5">
+      {glow && (
+        <div
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute -right-6 -top-8 size-28 rounded-full opacity-50 blur-2xl",
+            tone,
+          )}
+          style={{ background: "currentColor" }}
+        />
+      )}
+      <div className="relative flex items-center justify-between">
         <span className="font-mono text-[11px] uppercase tracking-widest text-muted">{label}</span>
-        <Icon className={cn("size-4", tone)} aria-hidden />
+        <span
+          className={cn(
+            "grid size-7 place-items-center rounded-full border border-white/10 bg-white/[0.04]",
+            tone,
+          )}
+        >
+          <Icon className="size-3.5" strokeWidth={1.5} aria-hidden />
+        </span>
       </div>
-      <span className={cn("tnum mt-2 block text-4xl font-semibold leading-none", tone)}>
+      <span className={cn("tnum font-display relative mt-3 block text-4xl font-bold leading-none", tone)}>
         {value}
       </span>
-    </GlassCard>
+    </div>
   );
 }

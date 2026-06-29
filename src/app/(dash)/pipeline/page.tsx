@@ -38,7 +38,11 @@ export default async function PipelinePage({
 
   return (
     <>
-      <PageHeader title="Pipeline" subtitle="Content production stages across the brand">
+      <PageHeader
+        eyebrow="Operations · Production"
+        title="Pipeline"
+        subtitle="Content production stages across the brand"
+      >
         <BrandSelector
           brands={brands.map((b) => ({ id: b.id, slug: b.slug, name: b.name }))}
           selected={selected?.slug}
@@ -52,22 +56,26 @@ export default async function PipelinePage({
           hint="Add a brand to view its content pipeline. The database may be empty or environment variables are not set."
         />
       ) : (
-        <div className="flex gap-4 overflow-x-auto pb-4">
-          {COLUMNS.map(({ stage, label }) => {
+        <div className="animate-fade-up flex gap-4 overflow-x-auto pb-4">
+          {COLUMNS.map(({ stage, label }, i) => {
             const cards = byStage.get(stage) ?? [];
             return (
-              <div key={stage} className="flex w-72 shrink-0 flex-col">
-                <div className="glass mb-3 flex items-center justify-between rounded-xl px-3.5 py-2.5">
-                  <span className="font-mono text-[11px] font-medium uppercase tracking-widest text-muted">
+              <div
+                key={stage}
+                className="glass-2 animate-fade-up flex w-72 shrink-0 flex-col gap-3 p-3"
+                style={{ animationDelay: `${i * 50}ms` }}
+              >
+                <div className="flex items-center justify-between px-1">
+                  <span className="font-mono text-[11px] font-semibold uppercase tracking-widest text-muted">
                     {label}
                   </span>
-                  <span className="tnum chip border-border bg-surface-2/60 text-muted">
+                  <span className="tnum chip border-white/10 bg-white/[0.04] text-fg">
                     {cards.length}
                   </span>
                 </div>
                 <div className="flex flex-col gap-3">
                   {cards.length === 0 ? (
-                    <p className="rounded-xl border border-dashed border-border/60 px-3 py-6 text-center text-xs text-muted">
+                    <p className="rounded-xl border border-dashed border-border/40 px-3 py-8 text-center text-xs text-muted/70">
                       Empty
                     </p>
                   ) : (

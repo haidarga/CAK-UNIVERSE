@@ -55,10 +55,10 @@ export function EmbedResource({ resource }: { resource: EmbeddedResource }) {
   const title = resource.title?.trim() || resource.external_url;
 
   return (
-    <div className="glass glass-hover flex flex-col gap-3 p-3">
+    <div className="glass glass-hover flex flex-col gap-3 p-3.5 transition-transform duration-200 hover:-translate-y-0.5">
       <div className="flex items-start gap-2.5">
-        <span className="grid size-9 shrink-0 place-items-center rounded-xl border border-border/60 bg-surface-2/50">
-          <ProviderIcon className="size-[18px] text-muted" aria-hidden />
+        <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-border/60 bg-surface-2/60 text-primary">
+          <ProviderIcon className="size-[18px]" aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-fg" title={title}>
@@ -76,11 +76,11 @@ export function EmbedResource({ resource }: { resource: EmbeddedResource }) {
           src={resource.thumbnail_url}
           alt=""
           loading="lazy"
-          className="h-28 w-full rounded-xl border border-border/50 object-cover"
+          className="h-28 w-full rounded-xl border border-border/50 object-cover ring-1 ring-inset ring-white/5"
         />
       )}
 
-      <div className="mt-auto flex items-center justify-between">
+      <div className="mt-auto flex items-center justify-between border-t border-border/50 pt-2.5">
         <span className="font-mono text-[10px] uppercase tracking-widest text-muted/70">
           {prettyProvider(resource.provider)}
         </span>
@@ -89,7 +89,7 @@ export function EmbedResource({ resource }: { resource: EmbeddedResource }) {
           target="_blank"
           rel="noopener noreferrer"
           aria-label={`Open ${title} in a new tab`}
-          className="inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs font-medium text-primary outline-none transition-colors hover:underline focus-visible:ring-2 focus-visible:ring-primary/60"
+          className="inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs font-medium text-primary outline-none transition-colors hover:gap-1.5 hover:underline focus-visible:ring-2 focus-visible:ring-primary/60"
         >
           Open
           <ExternalLink className="size-3.5" aria-hidden />

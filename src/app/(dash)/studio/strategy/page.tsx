@@ -60,6 +60,7 @@ export default async function StrategyStudioPage({
   return (
     <>
       <PageHeader
+        eyebrow="Strategy"
         title="Strategist Studio"
         subtitle="Read trends, build the calendar, and push directions into the pipeline"
       >
@@ -70,13 +71,17 @@ export default async function StrategyStudioPage({
       </PageHeader>
 
       {!selected ? (
-        <EmptyState
-          icon={Compass}
-          title="No brands configured"
-          hint="Add a brand to plan strategy. The database may be empty or environment variables are not set."
-        />
+        <div className="animate-fade-up">
+          <EmptyState
+            icon={Compass}
+            title="No brands configured"
+            hint="Add a brand to plan strategy. The database may be empty or environment variables are not set."
+          />
+        </div>
       ) : (
-        <StrategyBoard brand={selected} trends={trends} embeds={embeds} recent={recent} />
+        <div className="animate-fade-up">
+          <StrategyBoard brand={selected} trends={trends} embeds={embeds} recent={recent} />
+        </div>
       )}
     </>
   );

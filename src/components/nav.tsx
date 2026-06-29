@@ -111,8 +111,8 @@ export default function Nav({
   return (
     <nav aria-label="Main navigation" className="flex flex-col gap-5">
       {groups.map((group) => (
-        <div key={group.label} className="flex flex-col gap-1">
-          <p className="px-3 pb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted/70">
+        <div key={group.label} className="flex flex-col gap-0.5">
+          <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.22em] text-muted/60">
             {group.label}
           </p>
           {group.items.map((item) => (
@@ -126,21 +126,32 @@ export default function Nav({
 
 function NavLink({ item, active, rail }: { item: NavItem; active: boolean; rail?: boolean }) {
   const { href, label, icon: Icon } = item;
+  if (rail) {
+    return (
+      <Link
+        href={href}
+        aria-current={active ? "page" : undefined}
+        aria-label={label}
+        data-active={active}
+        className="nav-item size-11 shrink-0 justify-center px-0 outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+      >
+        <Icon className="size-[18px] shrink-0" aria-hidden strokeWidth={1.5} />
+      </Link>
+    );
+  }
   return (
     <Link
       href={href}
       aria-current={active ? "page" : undefined}
-      aria-label={rail ? label : undefined}
-      className={cn(
-        "group flex items-center rounded-xl text-sm font-medium outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-primary/60",
-        rail ? "size-11 shrink-0 justify-center" : "min-h-[44px] gap-3 px-3",
-        active
-          ? "border border-primary/40 bg-primary/15 text-fg"
-          : "border border-transparent text-muted hover:bg-surface-2/60 hover:text-fg",
-      )}
+      data-active={active}
+      className="nav-item min-h-[42px] outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
     >
-      <Icon className="size-[18px] shrink-0" aria-hidden />
-      {!rail && <span className="truncate">{label}</span>}
+      <Icon
+        className={cn("size-[18px] shrink-0 transition-colors", active && "text-primary")}
+        aria-hidden
+        strokeWidth={1.5}
+      />
+      <span className="truncate">{label}</span>
     </Link>
   );
 }

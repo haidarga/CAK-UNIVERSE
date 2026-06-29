@@ -31,7 +31,7 @@ async function envelope<T>(res: Response): Promise<T> {
 }
 
 const selectCls =
-  "min-h-[40px] rounded-xl border border-border bg-surface-2/50 px-3 text-sm text-fg outline-none focus-visible:ring-2 focus-visible:ring-primary/60";
+  "min-h-[40px] rounded-full border border-white/[0.08] bg-white/[0.04] px-4 text-sm text-fg outline-none transition-colors hover:border-white/15 focus-visible:ring-2 focus-visible:ring-primary/60";
 
 export default function TasksBoard({ initialTasks, members, brands }: TasksBoardProps) {
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
@@ -141,19 +141,27 @@ export default function TasksBoard({ initialTasks, members, brands }: TasksBoard
             type="button"
             onClick={aiBreakdown}
             disabled={busy}
-            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border border-accent/40 bg-accent/15 px-3.5 text-sm font-medium text-accent outline-none transition-colors hover:bg-accent/25 focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-50"
+            className="btn min-h-[40px] outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-50"
           >
-            <Sparkles className="size-4" aria-hidden />
             AI Breakdown
+            <span className="btn-icon text-accent">
+              <Sparkles className="size-3.5" strokeWidth={1.5} aria-hidden />
+            </span>
           </button>
           <button
             type="button"
             onClick={() => setShowForm((v) => !v)}
-            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border border-primary/40 bg-primary/15 px-3.5 text-sm font-medium text-primary outline-none transition-colors hover:bg-primary/25 focus-visible:ring-2 focus-visible:ring-primary/60"
+            className="btn btn-primary min-h-[40px] outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
             aria-expanded={showForm}
           >
-            {showForm ? <X className="size-4" aria-hidden /> : <Plus className="size-4" aria-hidden />}
             New Task
+            <span className="btn-icon">
+              {showForm ? (
+                <X className="size-3.5" strokeWidth={1.5} aria-hidden />
+              ) : (
+                <Plus className="size-3.5" strokeWidth={1.5} aria-hidden />
+              )}
+            </span>
           </button>
         </div>
       </div>
@@ -171,7 +179,7 @@ export default function TasksBoard({ initialTasks, members, brands }: TasksBoard
       )}
 
       {/* Board */}
-      <div className="flex gap-4 overflow-x-auto pb-4">
+      <div className="flex gap-4 overflow-x-auto pb-4 animate-fade-up">
         {COLUMNS.map((status) => {
           const cards = byStatus.get(status) ?? [];
           return (
@@ -242,14 +250,15 @@ function NewTaskForm({
   }
 
   return (
-    <form onSubmit={submit} className="glass mb-5 flex flex-col gap-3 p-4 animate-fade-up">
+    <form onSubmit={submit} className="bezel mb-5 animate-fade-up">
+      <div className="glass flex flex-col gap-3 p-5">
       <input
         autoFocus
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder="Task title…"
         aria-label="Task title"
-        className="min-h-[44px] w-full rounded-xl border border-border bg-surface-2/50 px-3.5 text-sm text-fg outline-none placeholder:text-muted/60 focus-visible:ring-2 focus-visible:ring-primary/60"
+        className="min-h-[48px] w-full rounded-xl border border-white/[0.08] bg-black/20 px-4 text-base font-medium text-fg outline-none placeholder:text-muted/50 focus-visible:ring-2 focus-visible:ring-primary/60"
       />
       <div className="flex flex-wrap gap-2">
         <select aria-label="Type" value={type} onChange={(e) => setType(e.target.value as TaskType)} className={selectCls}>
@@ -287,7 +296,7 @@ function NewTaskForm({
         <button
           type="button"
           onClick={onCancel}
-          className="min-h-[40px] rounded-xl border border-border px-4 text-sm text-muted outline-none transition-colors hover:text-fg focus-visible:ring-2 focus-visible:ring-primary/60"
+          className="btn min-h-[40px] outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
         >
           Cancel
         </button>
@@ -295,12 +304,16 @@ function NewTaskForm({
           type="submit"
           disabled={saving || !title.trim()}
           className={cn(
-            "min-h-[40px] rounded-xl border border-primary/40 bg-primary/15 px-4 text-sm font-medium text-primary outline-none transition-colors hover:bg-primary/25 focus-visible:ring-2 focus-visible:ring-primary/60",
+            "btn btn-primary min-h-[40px] outline-none focus-visible:ring-2 focus-visible:ring-primary/60",
             "disabled:opacity-50",
           )}
         >
           {saving ? "Creating…" : "Create Task"}
+          <span className="btn-icon">
+            <Plus className="size-3.5" strokeWidth={1.5} aria-hidden />
+          </span>
         </button>
+      </div>
       </div>
     </form>
   );

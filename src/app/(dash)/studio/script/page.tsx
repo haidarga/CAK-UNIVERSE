@@ -74,6 +74,7 @@ export default async function ScriptStudioPage({
   return (
     <>
       <PageHeader
+        eyebrow="Studio"
         title="Script Writer Studio"
         subtitle="Draft scripts with inline AI and live guardrail checks"
       >
@@ -84,19 +85,23 @@ export default async function ScriptStudioPage({
       </PageHeader>
 
       {!selected ? (
-        <EmptyState
-          icon={PenLine}
-          title="No brands configured"
-          hint="Add a brand to start writing scripts. The database may be empty or environment variables are not set."
-        />
+        <div className="animate-fade-up">
+          <EmptyState
+            icon={PenLine}
+            title="No brands configured"
+            hint="Add a brand to start writing scripts. The database may be empty or environment variables are not set."
+          />
+        </div>
       ) : (
-        <ScriptEditor
-          brand={selected}
-          personas={personas}
-          hooks={hooks}
-          embeds={embeds}
-          items={items}
-        />
+        <div className="animate-fade-up">
+          <ScriptEditor
+            brand={selected}
+            personas={personas}
+            hooks={hooks}
+            embeds={embeds}
+            items={items}
+          />
+        </div>
       )}
     </>
   );

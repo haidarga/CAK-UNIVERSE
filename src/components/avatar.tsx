@@ -43,6 +43,7 @@ export default function Avatar({ name, size = 32, className }: AvatarProps) {
       style={{ width: size, height: size, fontSize }}
       className={cn(
         "inline-grid shrink-0 place-items-center rounded-full font-semibold leading-none ring-1 ring-white/10",
+        "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_2px_8px_-2px_rgba(0,0,0,0.6)]",
         tone,
         className,
       )}

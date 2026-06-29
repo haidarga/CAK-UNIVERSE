@@ -69,7 +69,11 @@ export default async function CommandCenterPage() {
   if (tasks.length === 0 && team.length === 0) {
     return (
       <>
-        <PageHeader title="Command Center" subtitle="Mission control for the whole team" />
+        <PageHeader
+          eyebrow="Mission Control"
+          title="Command Center"
+          subtitle="Mission control for the whole team"
+        />
         <EmptyState
           icon={Gauge}
           title="Nothing to command yet"
@@ -116,6 +120,7 @@ export default async function CommandCenterPage() {
   return (
     <>
       <PageHeader
+        eyebrow="Mission Control"
         title="Command Center"
         subtitle="Everything the team is doing — at a glance"
       />
@@ -232,8 +237,8 @@ function DevHealth({
   return (
     <div className="flex items-center gap-4">
       <div className="flex flex-col">
-        <span className="tnum text-3xl font-semibold leading-none text-fg">{open}</span>
-        <span className="mt-1 font-mono text-[11px] uppercase tracking-widest text-muted">
+        <span className="tnum font-display text-4xl font-bold leading-none text-fg">{open}</span>
+        <span className="mt-1.5 font-mono text-[11px] uppercase tracking-widest text-muted">
           Open issues
         </span>
       </div>

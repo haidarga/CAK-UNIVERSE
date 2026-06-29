@@ -48,6 +48,7 @@ export default async function DevPage() {
   return (
     <>
       <PageHeader
+        eyebrow="Engineering"
         title="Dev Board"
         subtitle="See something broken? Tell the team here — anyone can report a problem."
       >
@@ -63,7 +64,7 @@ export default async function DevPage() {
       ) : (
         <>
           {/* Stat tiles */}
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="animate-fade-up grid grid-cols-2 gap-4 lg:grid-cols-4">
             <GlassCard noHover>
               <Stat label="Open issues" value={open.length} icon={ListChecks} />
             </GlassCard>
@@ -83,7 +84,7 @@ export default async function DevPage() {
             </GlassCard>
           </div>
 
-          <div className="mt-4">
+          <div className="animate-fade-up mt-6" style={{ animationDelay: "80ms" }}>
             <DevBoard initialIssues={issues} team={team} />
           </div>
         </>

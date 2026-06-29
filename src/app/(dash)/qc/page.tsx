@@ -42,7 +42,11 @@ export default async function QcPage({
 
   return (
     <>
-      <PageHeader title="QC Queue" subtitle="Produced content awaiting AI quality review">
+      <PageHeader
+        eyebrow="Quality Control"
+        title="QC Queue"
+        subtitle="Produced content awaiting AI quality review"
+      >
         <BrandSelector
           brands={brands.map((b) => ({ id: b.id, slug: b.slug, name: b.name }))}
           selected={selected?.slug}
@@ -62,8 +66,8 @@ export default async function QcPage({
           hint="Items appear here once produced content reaches the QC review stage."
         />
       ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {items.map((item) => {
+        <div className="animate-fade-up grid grid-cols-1 gap-5 lg:grid-cols-2">
+          {items.map((item, idx) => {
             const title = item.content_direction?.title ?? "Untitled item";
             const report = item.qc_report;
             const summary =
@@ -74,10 +78,14 @@ export default async function QcPage({
               item.content_direction?.title ?? item.script?.text?.slice(0, 200) ?? title;
 
             return (
-              <article key={item.id} className="glass glass-hover flex flex-col gap-4 p-5">
+              <article
+                key={item.id}
+                className="glass glass-hover animate-fade-up flex flex-col gap-4 p-5 transition-transform duration-200 hover:-translate-y-0.5"
+                style={{ animationDelay: `${Math.min(idx, 8) * 50}ms` }}
+              >
                 <header className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h2 className="truncate text-base font-semibold text-fg">{title}</h2>
+                    <h2 className="font-display truncate text-base font-semibold text-fg">{title}</h2>
                     <p className="mt-1 line-clamp-3 text-sm text-muted">{summary}</p>
                   </div>
                   {report && <ScoreRing score={report.score} />}
@@ -102,7 +110,7 @@ export default async function QcPage({
                     {report.issues.slice(0, 4).map((issue) => (
                       <span
                         key={issue}
-                        className="chip border-warning/30 bg-warning/10 text-warning"
+                        className="chip border-warning/40 bg-warning/15 text-warning shadow-[0_0_14px_-3px] shadow-warning/40"
                       >
                         {issue}
                       </span>

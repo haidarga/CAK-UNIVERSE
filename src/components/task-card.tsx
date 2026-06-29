@@ -42,27 +42,38 @@ export default function TaskCard({ task, onClick, dense = false }: TaskCardProps
       )}
     >
       {/* Top row: priority dot + title + AI badge */}
-      <div className="flex items-start gap-2">
+      <div className="flex items-start gap-2.5">
         <span
-          className={cn("mt-1 size-2 shrink-0 rounded-full", priorityDot(task.priority))}
+          className={cn(
+            "mt-1 size-2 shrink-0 rounded-full shadow-[0_0_8px_-1px_currentColor]",
+            priorityDot(task.priority),
+          )}
           aria-label={`${priority.label} priority`}
           title={`${priority.label} priority`}
         />
-        <p className="min-w-0 flex-1 text-sm font-medium leading-snug text-fg line-clamp-2">
+        <p className="min-w-0 flex-1 text-sm font-medium leading-snug text-fg line-clamp-2 group-hover:text-white">
           {task.title}
         </p>
         {task.ai_generated && (
-          <Sparkles className="mt-0.5 size-3.5 shrink-0 text-accent" aria-label="AI generated" />
+          <span
+            className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-accent/15 text-accent ring-1 ring-accent/30"
+            aria-label="AI generated"
+          >
+            <Sparkles className="size-3" strokeWidth={1.5} aria-hidden />
+          </span>
         )}
       </div>
 
       {/* Chips: type + status */}
-      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-        <span className="chip border-border bg-surface-2/50 font-mono text-[10px] uppercase tracking-wide text-muted">
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        <span className="chip border-white/[0.06] bg-white/[0.03] font-mono text-[10px] uppercase tracking-wide text-muted">
           {task.type}
         </span>
-        <span className={cn("chip border-transparent bg-surface-2/50", badge.text)}>
-          <span className={cn("size-1.5 rounded-full", badge.dot)} aria-hidden />
+        <span className={cn("chip border-transparent bg-white/[0.05]", badge.text)}>
+          <span
+            className={cn("size-1.5 rounded-full shadow-[0_0_6px_-1px_currentColor]", badge.dot)}
+            aria-hidden
+          />
           {badge.label}
         </span>
       </div>
@@ -78,7 +89,7 @@ export default function TaskCard({ task, onClick, dense = false }: TaskCardProps
       )}
 
       {/* Footer: assignee + due */}
-      <div className="mt-3 flex items-center justify-between gap-2">
+      <div className="mt-3.5 flex items-center justify-between gap-2 border-t border-white/[0.05] pt-3">
         <span className="flex min-w-0 items-center gap-1.5">
           <Avatar name={task.assignee?.name} size={22} />
           <span className="truncate text-xs text-muted">
@@ -88,11 +99,11 @@ export default function TaskCard({ task, onClick, dense = false }: TaskCardProps
         {task.due_date && (
           <span
             className={cn(
-              "tnum flex shrink-0 items-center gap-1 text-[11px]",
-              overdue ? "text-danger" : "text-muted",
+              "tnum flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px]",
+              overdue ? "bg-danger/10 text-danger" : "text-muted",
             )}
           >
-            <CalendarClock className="size-3" aria-hidden />
+            <CalendarClock className="size-3" strokeWidth={1.5} aria-hidden />
             {relativeTime(task.due_date)}
           </span>
         )}

@@ -28,14 +28,14 @@ export default function ScoreRing({ score, size = 64 }: ScoreRingProps) {
       role="img"
       aria-label={`QC score ${clamped} out of 100`}
     >
-      <svg width={size} height={size} className="-rotate-90">
+      <svg width={size} height={size} className="-rotate-90 overflow-visible">
         <circle
           cx={size / 2}
           cy={size / 2}
           r={r}
           fill="none"
           strokeWidth={stroke}
-          className="stroke-surface-2"
+          className="stroke-white/[0.06]"
         />
         <circle
           cx={size / 2}
@@ -46,13 +46,17 @@ export default function ScoreRing({ score, size = 64 }: ScoreRingProps) {
           strokeLinecap="round"
           strokeDasharray={c}
           strokeDashoffset={offset}
-          className={cn("transition-[stroke-dashoffset] duration-500", tone)}
+          className={cn(
+            "transition-[stroke-dashoffset] duration-700 [filter:drop-shadow(0_0_4px_currentColor)]",
+            tone,
+          )}
           stroke="currentColor"
+          style={{ transitionTimingFunction: "var(--ease-spring)" }}
         />
       </svg>
       <span
         className={cn(
-          "tnum absolute inset-0 grid place-items-center text-sm font-semibold",
+          "tnum absolute inset-0 grid place-items-center font-display text-sm font-bold",
           tone,
         )}
       >

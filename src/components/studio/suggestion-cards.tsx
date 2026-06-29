@@ -27,20 +27,21 @@ export default function SuggestionCards({ suggestions, onDrop }: SuggestionCards
   }
 
   return (
-    <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+    <ul className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
       {suggestions.map((s, i) => (
         <li key={`${s.title}-${i}`}>
           <button
             type="button"
             onClick={() => onDrop(s)}
-            className="group flex h-full w-full flex-col gap-1.5 rounded-xl border border-accent/25 bg-accent/5 p-3 text-left transition-colors hover:border-accent/60 hover:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+            className="group flex h-full w-full flex-col gap-2 rounded-xl border border-accent/25 bg-accent/[0.06] p-3.5 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all hover:-translate-y-0.5 hover:border-accent/60 hover:bg-accent/10 hover:shadow-[0_8px_20px_-10px_var(--color-accent)] active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
             aria-label={`Add suggestion to calendar: ${s.title}`}
           >
             <div className="flex items-start justify-between gap-2">
-              <span className="text-sm font-semibold text-fg">{s.title}</span>
+              <span className="text-sm font-semibold leading-snug text-fg">{s.title}</span>
               <ArrowDownToLine
-                className="size-4 shrink-0 text-accent opacity-60 transition-opacity group-hover:opacity-100"
+                className="size-4 shrink-0 text-accent opacity-50 transition-all group-hover:translate-y-0.5 group-hover:opacity-100"
                 aria-hidden
+                strokeWidth={1.5}
               />
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -53,10 +54,10 @@ export default function SuggestionCards({ suggestions, onDrop }: SuggestionCards
                 <span className="chip border-border bg-surface-2/60 text-muted">{s.format}</span>
               )}
             </div>
-            {s.hook && <p className="line-clamp-2 text-xs text-muted">{s.hook}</p>}
+            {s.hook && <p className="line-clamp-2 text-xs leading-relaxed text-muted">{s.hook}</p>}
             {s.narrative_theme && (
-              <p className="flex items-center gap-1 text-[11px] text-muted/80">
-                <Sparkles className="size-3" aria-hidden />
+              <p className="mt-auto flex items-center gap-1.5 pt-0.5 text-[11px] text-muted/80">
+                <Sparkles className="size-3 text-accent/70" aria-hidden strokeWidth={1.5} />
                 {s.narrative_theme}
               </p>
             )}

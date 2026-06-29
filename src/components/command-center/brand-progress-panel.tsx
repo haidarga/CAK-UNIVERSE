@@ -10,16 +10,17 @@ export interface BrandProgressRow {
 /** Per-brand completion bars, busiest brand first. */
 export default function BrandProgressPanel({ rows }: { rows: BrandProgressRow[] }) {
   return (
-    <ul className="flex flex-col gap-4">
+    <ul className="flex flex-col gap-5">
       {rows.map((r) => (
-        <li key={r.brand} className="flex flex-col gap-1.5">
+        <li key={r.brand} className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-2">
-            <span className="truncate text-sm font-medium text-fg">{r.brand}</span>
+            <span className="truncate text-sm font-semibold text-fg">{r.brand}</span>
             <span className="tnum shrink-0 text-xs text-muted">
-              <span className="font-semibold text-fg">{r.percent}%</span> · {r.done}/{r.total}
+              <span className="font-display text-base font-bold text-fg">{r.percent}%</span>{" "}
+              <span className="text-muted/70">· {r.done}/{r.total}</span>
             </span>
           </div>
-          <ProgressBar value={r.percent} height={7} label={`${r.brand} ${r.percent}% complete`} />
+          <ProgressBar value={r.percent} height={8} label={`${r.brand} ${r.percent}% complete`} />
         </li>
       ))}
     </ul>

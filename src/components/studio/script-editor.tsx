@@ -163,20 +163,30 @@ export default function ScriptEditor({ brand, personas, hooks, embeds, items }: 
             <GuardrailBanner violations={guardrail.violations} hasRules={brand.guardrails.length > 0} />
           </div>
 
-          <label className="flex flex-col gap-1.5">
+          <label className="group/editor flex flex-col gap-1.5">
             <span className="sr-only">Script body</span>
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="Write the script. The guardrail check above updates as you type."
-              spellCheck
-              rows={18}
+            <div
               className={cn(
-                "min-h-[420px] w-full resize-y rounded-xl border bg-surface-2/40 p-4 text-sm leading-relaxed text-fg outline-none transition-colors hover:border-white/20 focus-visible:ring-2 focus-visible:ring-primary/60",
-                guardrail.violations.length > 0 ? "border-danger/40" : "border-border",
-                mono ? "font-mono" : "font-sans",
+                "bezel transition-shadow duration-300 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] focus-within:shadow-[0_0_0_1px_rgba(99,102,241,0.35),0_18px_48px_-18px_rgba(99,102,241,0.45)]",
+                guardrail.violations.length > 0 &&
+                  "focus-within:shadow-[0_0_0_1px_rgba(239,68,68,0.4),0_18px_48px_-18px_rgba(239,68,68,0.5)]",
               )}
-            />
+            >
+              <div className="glass p-0">
+                <textarea
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  placeholder="Write the script. The guardrail check above updates as you type."
+                  spellCheck
+                  rows={18}
+                  className={cn(
+                    "min-h-[440px] w-full resize-y rounded-[1.25rem] border bg-transparent p-5 text-sm leading-7 text-fg outline-none transition-colors placeholder:text-muted/70 focus-visible:ring-0",
+                    guardrail.violations.length > 0 ? "border-danger/30" : "border-transparent",
+                    mono ? "font-mono tracking-tight" : "font-sans",
+                  )}
+                />
+              </div>
+            </div>
           </label>
 
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">

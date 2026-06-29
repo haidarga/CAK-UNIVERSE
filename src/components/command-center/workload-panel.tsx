@@ -24,16 +24,19 @@ const OVERLOAD_FLOOR = 4;
 /** Per-member workload rows with a normalized load bar and risk flags. */
 export default function WorkloadPanel({ rows, maxActive }: WorkloadPanelProps) {
   return (
-    <ul className="flex flex-col divide-y divide-border/50">
+    <ul className="flex flex-col gap-0.5">
       {rows.map((r) => {
         const loadPct = Math.round((r.active / maxActive) * 100);
         const overloaded = r.active >= OVERLOAD_FLOOR && loadPct >= 70;
         return (
-          <li key={r.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-            <Avatar name={r.name} size={36} />
+          <li
+            key={r.id}
+            className="group flex items-center gap-3.5 rounded-xl px-2 py-3 transition-colors first:pt-0 last:pb-0 hover:bg-white/[0.02]"
+          >
+            <Avatar name={r.name} size={38} />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="truncate text-sm font-medium text-fg">{r.name}</span>
+                <span className="truncate text-sm font-semibold text-fg">{r.name}</span>
                 {overloaded && (
                   <span className="chip border-phase-warming/40 bg-phase-warming/10 text-[10px] text-phase-warming">
                     Overloaded
@@ -48,9 +51,9 @@ export default function WorkloadPanel({ rows, maxActive }: WorkloadPanelProps) {
               <span className="text-xs text-muted">{r.role}</span>
               <ProgressBar
                 value={loadPct}
-                height={5}
+                height={6}
                 tone={overloaded ? "warning" : "primary"}
-                className="mt-1.5"
+                className="mt-2"
                 label={`${r.active} active tasks`}
               />
             </div>

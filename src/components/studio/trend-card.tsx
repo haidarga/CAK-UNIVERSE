@@ -16,10 +16,10 @@ export default function TrendCard({ trend, onUse }: TrendCardProps) {
   const relevancePct = Math.round(relevance * 100);
 
   return (
-    <article className="glass glass-hover flex flex-col gap-3 p-4">
+    <article className="group glass glass-hover flex flex-col gap-3.5 p-5">
       <div className="flex items-start justify-between gap-2">
-        <span className="chip border-border bg-surface-2/60 text-muted">
-          <Flame className="size-3 text-accent" aria-hidden />
+        <span className="chip border-accent/25 bg-accent/10 text-accent">
+          <Flame className="size-3" aria-hidden strokeWidth={1.5} />
           {trend.platform}
         </span>
         {trend.content_url && (
@@ -27,19 +27,21 @@ export default function TrendCard({ trend, onUse }: TrendCardProps) {
             href={trend.content_url}
             target="_blank"
             rel="noreferrer"
-            className="rounded-lg p-1 text-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+            className="btn-icon text-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
             aria-label="Open trend source"
           >
-            <ExternalLink className="size-4" aria-hidden />
+            <ExternalLink className="size-4" aria-hidden strokeWidth={1.5} />
           </a>
         )}
       </div>
 
       {trend.emotional_angle && (
-        <p className="text-sm font-medium text-fg">{trend.emotional_angle}</p>
+        <p className="font-display text-[0.95rem] font-semibold leading-snug text-fg">
+          {trend.emotional_angle}
+        </p>
       )}
       {trend.hook_pattern && (
-        <p className="rounded-lg border border-border/60 bg-surface-2/40 px-2.5 py-1.5 text-xs text-muted">
+        <p className="rounded-xl border border-border/50 bg-surface-2/40 px-3 py-2 text-xs leading-relaxed text-muted">
           {trend.hook_pattern}
         </p>
       )}
@@ -51,14 +53,14 @@ export default function TrendCard({ trend, onUse }: TrendCardProps) {
       </dl>
 
       <div>
-        <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-widest text-muted">
-          <span className="flex items-center gap-1">
-            <TrendingUp className="size-3" aria-hidden /> Relevance
+        <div className="eyebrow mb-1.5 flex items-center justify-between text-muted">
+          <span className="flex items-center gap-1.5">
+            <TrendingUp className="size-3" aria-hidden strokeWidth={1.5} /> Relevance
           </span>
-          <span className="tnum">{relevancePct}%</span>
+          <span className="tnum text-fg/80">{relevancePct}%</span>
         </div>
         <div
-          className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2/80"
+          className="h-2 w-full overflow-hidden rounded-full bg-surface-2/80 ring-1 ring-inset ring-border/40"
           role="progressbar"
           aria-valuenow={relevancePct}
           aria-valuemin={0}
@@ -66,7 +68,7 @@ export default function TrendCard({ trend, onUse }: TrendCardProps) {
           aria-label="Relevance score"
         >
           <div
-            className="h-full rounded-full bg-gradient-to-r from-primary to-accent transition-[width] duration-300"
+            className="h-full rounded-full bg-gradient-to-r from-primary to-accent shadow-[0_0_8px_-1px_var(--color-primary)] transition-[width] duration-500 ease-out"
             style={{ width: `${relevancePct}%` }}
           />
         </div>
@@ -75,9 +77,9 @@ export default function TrendCard({ trend, onUse }: TrendCardProps) {
       <button
         type="button"
         onClick={() => onUse(trend)}
-        className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-3 text-sm font-medium text-primary transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+        className="mt-0.5 inline-flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-3 text-sm font-medium text-primary transition-all hover:border-primary/50 hover:bg-primary/20 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
       >
-        <Plus className="size-4" aria-hidden />
+        <Plus className="size-4 transition-transform group-hover:rotate-90" aria-hidden strokeWidth={1.5} />
         Use as direction
       </button>
     </article>
@@ -86,9 +88,9 @@ export default function TrendCard({ trend, onUse }: TrendCardProps) {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-border/60 bg-surface-2/40 px-1.5 py-2">
-      <dd className="tnum text-sm font-semibold text-fg">{value}</dd>
-      <dt className="text-[10px] uppercase tracking-widest text-muted">{label}</dt>
+    <div className="rounded-xl border border-border/50 bg-surface-2/40 px-1.5 py-2.5 transition-colors group-hover:border-border/70">
+      <dd className="tnum font-display text-base font-semibold text-fg">{value}</dd>
+      <dt className="eyebrow mt-0.5 text-muted">{label}</dt>
     </div>
   );
 }

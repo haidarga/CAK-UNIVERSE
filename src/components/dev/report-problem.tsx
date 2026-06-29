@@ -19,12 +19,7 @@ interface TriageData {
   first_steps?: string;
 }
 
-const SEVERITY_LABEL: Record<DevSeverity, string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  critical: "Critical",
-};
+const SEVERITY_LABEL: Record<DevSeverity, string> = { low: "Low", medium: "Medium", high: "High", critical: "Critical" };
 
 const AREA_LABEL: Record<DevArea, string> = {
   frontend: "Frontend",
@@ -132,46 +127,35 @@ export default function ReportProblem({ team }: ReportProblemProps) {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => {
-          reset();
-          setOpen(true);
-        }}
-        className="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-xl border border-accent/40 bg-accent/15 px-4 py-2 text-sm font-semibold text-fg outline-none transition-colors hover:bg-accent/25 focus-visible:ring-2 focus-visible:ring-accent/60"
-      >
-        <AlertTriangle className="size-4 text-accent" aria-hidden />
+      <button type="button" onClick={() => { reset(); setOpen(true); }} className="btn btn-primary">
+        <AlertTriangle className="size-4" aria-hidden />
         Report a Problem
       </button>
 
       {open && (
         <div
-          className="fixed inset-0 z-50 grid place-items-center bg-bg/70 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-50 grid place-items-center bg-bg/75 p-4 backdrop-blur-md"
           role="presentation"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) setOpen(false);
           }}
         >
-          <div
-            ref={dialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={`${titleId}-h`}
-            className="glass animate-fade-up flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden p-0 text-left"
-          >
+          <div className="bezel animate-fade-up w-full max-w-lg">
+            <div
+              ref={dialogRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={`${titleId}-h`}
+              className="glass flex max-h-[88dvh] w-full flex-col overflow-hidden p-0 text-left"
+            >
             <header className="flex items-center justify-between gap-3 border-b border-border/60 p-5">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="size-5 text-accent" aria-hidden />
-                <h2 id={`${titleId}-h`} className="text-base font-semibold text-fg">
-                  Report a Problem
-                </h2>
+              <div className="flex items-center gap-2.5">
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl border border-accent/40 bg-accent/15">
+                  <AlertTriangle className="size-[18px] text-accent" aria-hidden />
+                </span>
+                <h2 id={`${titleId}-h`} className="font-display text-base font-semibold text-fg">Report a Problem</h2>
               </div>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                aria-label="Close"
-                className="grid size-9 place-items-center rounded-lg text-muted outline-none transition-colors hover:bg-surface-2/70 hover:text-fg focus-visible:ring-2 focus-visible:ring-primary/60"
-              >
+              <button type="button" onClick={() => setOpen(false)} aria-label="Close" className="btn-icon">
                 <X className="size-4" aria-hidden />
               </button>
             </header>
@@ -280,22 +264,16 @@ export default function ReportProblem({ team }: ReportProblemProps) {
                 </p>
               )}
 
-              <div className="flex items-center justify-end gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  className="min-h-[44px] rounded-xl border border-border px-4 py-2 text-sm font-medium text-muted outline-none transition-colors hover:bg-surface-2/60 hover:text-fg focus-visible:ring-2 focus-visible:ring-primary/60"
-                >
+              <div className="flex items-center justify-end gap-2 border-t border-border/50 pt-4">
+                <button type="button" onClick={() => setOpen(false)} className="btn">
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting || done}
                   className={cn(
-                    "flex min-h-[44px] cursor-pointer items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/60",
-                    done
-                      ? "border-success/40 bg-success/15 text-success"
-                      : "border-primary/40 bg-primary/15 text-fg hover:bg-primary/25",
+                    "btn btn-primary",
+                    done && "border-success/40 bg-success/15 text-success",
                     submitting && "cursor-not-allowed opacity-70",
                   )}
                 >
@@ -310,6 +288,7 @@ export default function ReportProblem({ team }: ReportProblemProps) {
                 </button>
               </div>
             </form>
+            </div>
           </div>
         </div>
       )}

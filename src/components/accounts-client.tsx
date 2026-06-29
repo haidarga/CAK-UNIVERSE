@@ -122,7 +122,7 @@ export default function AccountsClient({
               value={brandId ?? ""}
               onChange={(e) => setBrandId(e.target.value || null)}
               disabled={brands.length === 0}
-              className="min-h-[44px] cursor-pointer appearance-none rounded-xl border border-border bg-surface-2/60 py-2 pl-3.5 pr-9 text-sm font-medium text-fg outline-none transition-colors hover:border-white/20 focus-visible:ring-2 focus-visible:ring-primary/60 disabled:cursor-not-allowed disabled:opacity-60"
+              className="glass-2 min-h-[44px] cursor-pointer appearance-none py-2 pl-3.5 pr-9 text-sm font-semibold text-fg outline-none transition-colors hover:border-white/20 focus-visible:ring-2 focus-visible:ring-primary/60 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {brands.length === 0 && <option value="">No brands</option>}
               {brands.map((b) => (
@@ -143,12 +143,12 @@ export default function AccountsClient({
             onClick={runScan}
             disabled={scanDisabled}
             className={cn(
-              "flex min-h-[44px] cursor-pointer items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-medium outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-primary/60",
+              "btn min-h-[44px]",
               scan === "error"
-                ? "border-danger/40 bg-danger/10 text-danger"
+                ? "!bg-danger/10 text-danger ring-1 ring-danger/40"
                 : scan === "done"
-                  ? "border-success/40 bg-success/10 text-success"
-                  : "border-primary/40 bg-primary/15 text-fg hover:bg-primary/25",
+                  ? "!bg-success/10 text-success ring-1 ring-success/40"
+                  : "btn-primary",
               scanDisabled && "cursor-not-allowed opacity-70",
             )}
           >
@@ -170,7 +170,7 @@ export default function AccountsClient({
         <div
           role="tablist"
           aria-label="Filter by phase"
-          className="glass flex items-center gap-1 rounded-full p-1"
+          className="glass-2 flex items-center gap-1 rounded-full p-1"
         >
           {PHASE_TABS.map((t) => {
             const active = phase === t.key;
@@ -181,8 +181,10 @@ export default function AccountsClient({
                 aria-selected={active}
                 onClick={() => setPhase(t.key)}
                 className={cn(
-                  "cursor-pointer rounded-full px-3 py-1.5 text-xs font-medium outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-primary/60",
-                  active ? "bg-primary/20 text-fg" : "text-muted hover:text-fg",
+                  "cursor-pointer rounded-full px-3.5 py-1.5 text-xs font-semibold outline-none transition-all duration-300 focus-visible:ring-2 focus-visible:ring-primary/60",
+                  active
+                    ? "bg-gradient-to-b from-primary to-primary/80 text-white shadow-[0_6px_20px_-8px_rgba(99,132,255,0.8)]"
+                    : "text-muted hover:bg-white/[0.05] hover:text-fg",
                 )}
               >
                 {t.label}

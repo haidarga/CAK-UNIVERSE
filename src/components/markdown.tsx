@@ -59,19 +59,28 @@ export default function Markdown({ source }: { source: string }) {
       const content = renderInline(h[2]);
       if (level === 1)
         blocks.push(
-          <h2 key={key++} className="text-lg font-bold tracking-tight text-fg">
+          <h2
+            key={key++}
+            className="font-display text-xl font-bold tracking-tight text-gradient"
+          >
             {content}
           </h2>,
         );
       else if (level === 2)
         blocks.push(
-          <h3 key={key++} className="mt-2 text-base font-semibold text-fg">
+          <h3
+            key={key++}
+            className="mt-3 flex items-center gap-2 font-display text-base font-semibold text-fg before:h-3.5 before:w-0.5 before:rounded-full before:bg-primary before:shadow-[0_0_8px_0_rgb(99_132_255)] before:content-['']"
+          >
             {content}
           </h3>,
         );
       else
         blocks.push(
-          <h4 key={key++} className="mt-1 text-sm font-semibold text-muted">
+          <h4
+            key={key++}
+            className="mt-1 font-mono text-[11px] font-semibold uppercase tracking-widest text-muted"
+          >
             {content}
           </h4>,
         );

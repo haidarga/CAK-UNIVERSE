@@ -45,11 +45,17 @@ export default function ProgressBar({
       aria-valuemax={100}
       aria-label={label}
       style={{ height }}
-      className={cn("w-full overflow-hidden rounded-full bg-surface-2/70", className)}
+      className={cn(
+        "w-full overflow-hidden rounded-full border border-white/[0.04] bg-black/30 shadow-[inset_0_1px_2px_rgba(0,0,0,0.5)]",
+        className,
+      )}
     >
       <div
-        style={{ width: `${pct}%` }}
-        className={cn("h-full rounded-full transition-[width] duration-500 ease-out", fill)}
+        style={{ width: `${pct}%`, transitionTimingFunction: "var(--ease-spring)" }}
+        className={cn(
+          "h-full rounded-full shadow-[0_0_10px_-1px_rgba(255,255,255,0.25)] transition-[width] duration-700",
+          fill,
+        )}
       />
     </div>
   );

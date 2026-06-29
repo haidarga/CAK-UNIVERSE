@@ -139,7 +139,7 @@ export default function StrategyBoard({ brand, trends, embeds, recent }: Strateg
   const ctx = buildStrategyContext(brand, trends);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       {/* Calendar builder */}
       <GlassCard
         title="Content calendar"
@@ -156,9 +156,9 @@ export default function StrategyBoard({ brand, trends, embeds, recent }: Strateg
         }
       >
         {suggestions.length > 0 && (
-          <div className="mb-4 rounded-xl border border-accent/20 bg-accent/[0.03] p-3">
-            <p className="mb-2 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-accent">
-              <Wand2 className="size-3" aria-hidden />
+          <div className="glass-2 animate-fade-up mb-5 rounded-2xl border border-accent/20 bg-accent/[0.04] p-4 shadow-[0_0_0_1px_rgba(0,0,0,0.02),0_8px_24px_-12px_rgba(0,0,0,0.25)]">
+            <p className="eyebrow mb-3 flex items-center gap-1.5 text-accent">
+              <Wand2 className="size-3.5" aria-hidden strokeWidth={1.5} />
               AI directions — click to drop into the calendar
             </p>
             <SuggestionCards suggestions={suggestions} onDrop={dropSuggestion} />
@@ -167,7 +167,7 @@ export default function StrategyBoard({ brand, trends, embeds, recent }: Strateg
         <CalendarGrid slots={slots} onAdd={addSlot} onRemove={removeSlot} onPush={pushSlot} />
       </GlassCard>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         {/* Trend board */}
         <div className="xl:col-span-2">
           <GlassCard title="Trend board" icon={TrendingUp} noHover>
@@ -178,7 +178,7 @@ export default function StrategyBoard({ brand, trends, embeds, recent }: Strateg
                 hint="Trends appear here once the trend scraper runs for this brand."
               />
             ) : (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {trends.map((t) => (
                   <TrendCard key={t.id} trend={t} onUse={useTrend} />
                 ))}
@@ -188,20 +188,26 @@ export default function StrategyBoard({ brand, trends, embeds, recent }: Strateg
         </div>
 
         {/* Execution sheets + recent */}
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-5">
           <GlassCard title="Execution plans" icon={FileSpreadsheet} noHover>
             <EmbedList resources={embeds} />
           </GlassCard>
 
           {recent.length > 0 && (
             <GlassCard title="Recent in pipeline" noHover>
-              <ul className="flex flex-col gap-1.5">
+              <ul className="flex flex-col gap-1">
                 {recent.slice(0, 8).map((it) => (
                   <li
                     key={it.id}
-                    className="truncate rounded-lg px-2.5 py-2 text-sm text-fg/80"
+                    className="group flex items-center gap-2.5 truncate rounded-xl border border-transparent px-3 py-2.5 text-sm text-fg/80 transition-colors hover:border-border/60 hover:bg-surface-2/50 hover:text-fg"
                   >
-                    {it.content_direction?.title ?? "Untitled direction"}
+                    <span
+                      className="size-1.5 shrink-0 rounded-full bg-primary/40 transition-colors group-hover:bg-primary"
+                      aria-hidden
+                    />
+                    <span className="truncate">
+                      {it.content_direction?.title ?? "Untitled direction"}
+                    </span>
                   </li>
                 ))}
               </ul>

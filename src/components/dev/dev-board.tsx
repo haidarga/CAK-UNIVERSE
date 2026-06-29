@@ -64,20 +64,22 @@ export default function DevBoard({ initialIssues, team }: DevBoardProps) {
   }
 
   return (
-    <div className="flex gap-4 overflow-x-auto pb-4">
+    <div className="flex gap-5 overflow-x-auto pb-4">
       {DEV_ISSUE_STATUSES.map((status) => {
         const cards = byStatus.get(status) ?? [];
         return (
-          <section key={status} className="flex w-80 shrink-0 flex-col" aria-label={COLUMN_LABEL[status]}>
-            <div className="glass mb-3 flex items-center justify-between rounded-xl px-3.5 py-2.5">
-              <span className="font-mono text-[11px] font-medium uppercase tracking-widest text-muted">
-                {COLUMN_LABEL[status]}
-              </span>
-              <span className="tnum chip border-border bg-surface-2/60 text-muted">{cards.length}</span>
+          <section
+            key={status}
+            className="glass-2 flex w-80 shrink-0 flex-col gap-4 rounded-2xl p-4"
+            aria-label={COLUMN_LABEL[status]}
+          >
+            <div className="flex items-center justify-between gap-2 border-b border-border/50 pb-3">
+              <span className="eyebrow text-muted">{COLUMN_LABEL[status]}</span>
+              <span className="tnum chip border-border bg-surface/70 font-mono text-muted">{cards.length}</span>
             </div>
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3.5">
               {cards.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-border/60 px-3 py-6 text-center text-xs text-muted">
+                <p className="rounded-xl border border-dashed border-border/50 px-3 py-8 text-center text-xs text-muted/80">
                   Empty
                 </p>
               ) : (

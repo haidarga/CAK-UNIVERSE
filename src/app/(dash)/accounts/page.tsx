@@ -25,7 +25,11 @@ export default async function AccountsPage() {
 
   return (
     <>
-      <PageHeader title="Accounts" subtitle="Warmup phases, health, and anomaly monitoring" />
+      <PageHeader
+        eyebrow="Operations · Warmup Monitor"
+        title="Accounts"
+        subtitle="Warmup phases, health, and anomaly monitoring"
+      />
 
       {!selected ? (
         <EmptyState
@@ -35,33 +39,57 @@ export default async function AccountsPage() {
         />
       ) : (
         <div className="flex flex-col gap-6">
-          {/* Bento summary grid — varying tile sizes */}
+          {/* Asymmetric bento summary — flagship total tile leads (double-bezel), supporting tiles follow */}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <GlassCard noHover>
-              <Stat label="Total Accounts" value={accounts.length} icon={Users} sub={selected.name} />
+            <div className="bezel animate-fade-up col-span-2">
+              <div className="glass glass-hover flex h-full items-center justify-between gap-4 p-5">
+                <Stat
+                  label="Total Accounts"
+                  value={accounts.length}
+                  icon={Users}
+                  sub={selected.name}
+                />
+                <span
+                  aria-hidden
+                  className="hidden size-12 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-primary glow-primary sm:grid"
+                >
+                  <Users className="size-5" strokeWidth={1.5} />
+                </span>
+              </div>
+            </div>
+            <GlassCard className="animate-fade-up [animation-delay:60ms]">
+              <Stat label="Active" value={active} icon={CircleCheck} tone="text-phase-active" />
             </GlassCard>
-            <GlassCard noHover>
-              <Stat label="Active" value={active} icon={CircleCheck} />
+            <GlassCard className="animate-fade-up [animation-delay:120ms]">
+              <Stat
+                label="Anomalies"
+                value={anomalies}
+                icon={ShieldAlert}
+                tone={anomalies > 0 ? "text-danger" : undefined}
+              />
             </GlassCard>
-            <GlassCard noHover>
-              <Stat label="Anomalies" value={anomalies} icon={ShieldAlert} />
-            </GlassCard>
-            <GlassCard noHover>
+            <GlassCard className="animate-fade-up [animation-delay:160ms] col-span-2 lg:col-span-2">
               <Stat label="Avg Engagement" value={fmtPct(avgEng)} icon={Activity} />
             </GlassCard>
           </div>
 
           {/* Warmup distribution — wide bento tile */}
-          <GlassCard title="Warmup Distribution" noHover>
+          <GlassCard
+            title="Warmup Distribution"
+            className="animate-fade-up [animation-delay:160ms]"
+            noHover
+          >
             <WarmupBar accounts={accounts} />
           </GlassCard>
 
           {/* Interactive island: selector + tabs + scan + grid */}
-          <AccountsClient
-            brands={brands.map((b) => ({ id: b.id, name: b.name }))}
-            initialBrandId={selected.id}
-            initialAccounts={accounts}
-          />
+          <div className="animate-fade-up [animation-delay:200ms]">
+            <AccountsClient
+              brands={brands.map((b) => ({ id: b.id, name: b.name }))}
+              initialBrandId={selected.id}
+              initialAccounts={accounts}
+            />
+          </div>
         </div>
       )}
     </>

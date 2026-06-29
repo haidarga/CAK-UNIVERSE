@@ -85,92 +85,103 @@ export default function QcPanel({
         : "border-danger/40 bg-danger/10 text-danger";
 
   return (
-    <article className="glass flex flex-col gap-4 p-5">
-      <header className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h2 className="truncate text-base font-semibold text-fg">{title}</h2>
-            <span className={cn("chip shrink-0 capitalize", passTone)}>
-              {report == null ? stage.replace(/_/g, " ") : report.passed ? "Passed" : "Failed"}
-            </span>
+    <article className="bezel h-full">
+      <div className="glass flex h-full flex-col gap-4 p-5">
+        <header className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h2 className="font-display truncate text-lg font-semibold text-fg">{title}</h2>
+              <span className={cn("chip shrink-0 capitalize", passTone)}>
+                {report == null ? stage.replace(/_/g, " ") : report.passed ? "Passed" : "Failed"}
+              </span>
+            </div>
+            <p className="mt-1.5 line-clamp-3 text-sm leading-relaxed text-muted">{summary}</p>
           </div>
-          <p className="mt-1 line-clamp-3 text-sm text-muted">{summary}</p>
-        </div>
-        {report && <ScoreRing score={report.score} />}
-      </header>
+          {report && (
+            <div className="shrink-0">
+              <ScoreRing score={report.score} />
+            </div>
+          )}
+        </header>
 
-      <ul className="flex flex-col gap-2 border-t border-border/60 pt-3">
-        {checklistRows(report).map((row) => (
-          <li key={row.label} className="flex items-center justify-between gap-3 text-sm">
-            <span className="flex items-center gap-2 text-fg/90">
-              <CheckIcon value={row.value} />
-              {row.label}
-            </span>
-            <span className="tnum text-xs text-muted">
-              {row.value == null ? "—" : `${Math.round(row.value)}/100`}
-            </span>
-          </li>
-        ))}
-      </ul>
-
-      {report?.issues && report.issues.length > 0 && (
-        <div className="flex flex-col gap-2 border-t border-border/60 pt-3">
-          <span className="font-mono text-[10px] uppercase tracking-widest text-muted">
-            Issues &amp; how to fix
-          </span>
-          <ul className="flex flex-col gap-2.5">
-            {report.issues.map((issue, idx) => (
-              <li key={`${idx}-${issue.slice(0, 24)}`} className="flex flex-col gap-1.5">
-                <span className="flex items-start gap-2 text-sm text-fg/90">
-                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden />
-                  {issue}
-                </span>
-                <AiAssistInline
-                  tool="qc_explain"
-                  getInput={() => issue}
-                  context={`Video: ${title}`}
-                  label="Explain the fix"
-                  className="pl-5"
-                />
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {report?.recommendations && report.recommendations.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {report.recommendations.slice(0, 4).map((rec, idx) => (
-            <span key={`${idx}-rec`} className="chip border-primary/30 bg-primary/10 text-primary">
-              {rec}
-            </span>
+        <ul className="flex flex-col gap-2 border-t border-border/60 pt-3.5">
+          {checklistRows(report).map((row) => (
+            <li key={row.label} className="flex items-center justify-between gap-3 text-sm">
+              <span className="flex items-center gap-2 text-fg/90">
+                <CheckIcon value={row.value} />
+                {row.label}
+              </span>
+              <span className="tnum text-xs text-muted">
+                {row.value == null ? "—" : `${Math.round(row.value)}/100`}
+              </span>
+            </li>
           ))}
-        </div>
-      )}
+        </ul>
 
-      <div className="mt-auto flex items-center gap-3 pt-1">
-        <button
-          type="button"
-          onClick={runQc}
-          disabled={state === "running"}
-          className={cn(
-            "flex min-h-[40px] cursor-pointer items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/60",
-            state === "error"
-              ? "border-danger/40 bg-danger/10 text-danger"
-              : "border-primary/40 bg-primary/15 text-fg hover:bg-primary/25",
-            state === "running" && "cursor-not-allowed opacity-70",
-          )}
-        >
-          {state === "running" ? (
-            <Loader2 className="size-4 animate-spin" aria-hidden />
-          ) : state === "error" ? (
-            <AlertTriangle className="size-4" aria-hidden />
-          ) : (
-            <ShieldCheck className="size-4" aria-hidden />
-          )}
-          {state === "running" ? "Running QC…" : report ? "Re-run AI QC" : "Run AI QC"}
-        </button>
-        {error && <span className="text-xs text-danger">{error}</span>}
+        {report?.issues && report.issues.length > 0 && (
+          <div className="flex flex-col gap-2.5 border-t border-border/60 pt-3.5">
+            <span className="eyebrow">Issues &amp; how to fix</span>
+            <ul className="flex flex-col gap-2.5">
+              {report.issues.map((issue, idx) => (
+                <li
+                  key={`${idx}-${issue.slice(0, 24)}`}
+                  className="flex flex-col gap-1.5 rounded-xl border border-warning/20 bg-warning/[0.06] px-3 py-2.5"
+                >
+                  <span className="flex items-start gap-2 text-sm text-fg/90">
+                    <AlertTriangle
+                      className="mt-0.5 size-3.5 shrink-0 text-warning"
+                      strokeWidth={1.5}
+                      aria-hidden
+                    />
+                    {issue}
+                  </span>
+                  <AiAssistInline
+                    tool="qc_explain"
+                    getInput={() => issue}
+                    context={`Video: ${title}`}
+                    label="Explain the fix"
+                    className="pl-5"
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {report?.recommendations && report.recommendations.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {report.recommendations.slice(0, 4).map((rec, idx) => (
+              <span key={`${idx}-rec`} className="chip border-primary/30 bg-primary/10 text-primary">
+                {rec}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-auto flex items-center gap-3 pt-1">
+          <button
+            type="button"
+            onClick={runQc}
+            disabled={state === "running"}
+            className={cn(
+              "btn",
+              state === "error"
+                ? "border-danger/40 bg-danger/10 text-danger"
+                : "btn-primary",
+              state === "running" && "cursor-not-allowed opacity-70",
+            )}
+          >
+            {state === "running" ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            ) : state === "error" ? (
+              <AlertTriangle className="size-4" strokeWidth={1.5} aria-hidden />
+            ) : (
+              <ShieldCheck className="size-4" strokeWidth={1.5} aria-hidden />
+            )}
+            {state === "running" ? "Running QC…" : report ? "Re-run AI QC" : "Run AI QC"}
+          </button>
+          {error && <span className="text-xs text-danger">{error}</span>}
+        </div>
       </div>
     </article>
   );
