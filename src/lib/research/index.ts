@@ -25,6 +25,11 @@ import { scrapeTikTokHashtag } from "../integrations/scrapers/tiktok";
 import { scrapeInstagramHashtag } from "../integrations/scrapers/instagram";
 import { searchYouTube } from "./youtube-search";
 import { searchSGE } from "../integrations/scrapers/sge";
+import {
+  scraperServiceEnabled,
+  svcTikTokSearch,
+  svcInstagramHashtag,
+} from "./scraper-service";
 
 export type Platform = "tiktok" | "instagram" | "youtube" | "sge";
 
@@ -109,7 +114,13 @@ function finalize(item: ResearchItem, keywords: string[]): ResearchItem {
 
 // --- per-platform adapters (each maps to ResearchItem; never throws) ---
 
-async function fromTikTok(tag: string): Promise<ResearchItem[]> {
+async function fromTikTok(tag: string, topic: string): Promise<ResearchItem[]> {
+  // Prefer the Python sidecar (TikTok-Api, signed JSON API) when available;
+  // otherwise fall back to the Chrome/CDP DOM scraper.
+  if (scraperServiceEnabled()) {
+    const svc = await svcTikTokSearch(topic || tag);
+    if (svc.length > 0) return svc;
+  }
   const raw = await scrapeTikTokHashtag(tag, PER_PLATFORM_LIMIT);
   return raw.map((it) => ({
     platform: "tiktok" as const,
@@ -121,6 +132,11 @@ async function fromTikTok(tag: string): Promise<ResearchItem[]> {
 }
 
 async function fromInstagram(tag: string): Promise<ResearchItem[]> {
+  // Prefer the Python sidecar (instagrapi private API) when available.
+  if (scraperServiceEnabled()) {
+    const svc = await svcInstagramHashtag(tag);
+    if (svc.length > 0) return svc;
+  }
   const raw = await scrapeInstagramHashtag(tag, PER_PLATFORM_LIMIT);
   return raw.map((it) => ({
     platform: "instagram" as const,
@@ -182,7 +198,7 @@ export async function researchTopic(
   const tasks = platforms.map((platform): Promise<ResearchItem[]> => {
     switch (platform) {
       case "tiktok":
-        return fromTikTok(primaryTag);
+        return fromTikTok(primaryTag, topic);
       case "instagram":
         return fromInstagram(primaryTag);
       case "youtube":
