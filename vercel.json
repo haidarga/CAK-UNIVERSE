@@ -1,0 +1,20 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/account-scan",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/kpi-sync",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/trend-refresh",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/github-sync",
+      "schedule": "0 */4 * * *"
+    }
+  ]
+}

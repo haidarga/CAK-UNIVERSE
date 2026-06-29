@@ -1,0 +1,114 @@
+@import url("https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   CAK AI Ecosystem — Bento Glass design tokens
+   Dark-first glassmorphism over a deep navy field.
+   ============================================================ */
+:root {
+  --font-sans: "Fira Sans", system-ui, sans-serif;
+  --font-mono: "Fira Code", ui-monospace, monospace;
+
+  /* Surfaces (R G B triplets, consumed via rgb(var(--x) / a)) */
+  --bg: 8 11 20; /* #080B14 deep navy-black */
+  --surface: 18 23 38; /* glass card base */
+  --surface-2: 26 33 52; /* raised glass */
+  --fg: 226 232 245; /* near-white text */
+  --muted: 138 150 176; /* secondary text */
+  --border: 52 64 92; /* hairline */
+
+  --primary: 59 130 246; /* #3B82F6 */
+  --accent: 217 119 6; /* #D97706 amber */
+
+  /* Warmup phase + status palette */
+  --phase-cold: 148 163 184; /* slate/gray */
+  --phase-warming: 245 158 11; /* amber */
+  --phase-warm: 34 197 94; /* green */
+  --phase-active: 20 184 166; /* teal */
+  --phase-paused: 234 179 8; /* yellow */
+  --phase-flagged: 239 68 68; /* red */
+
+  --success: 34 197 94;
+  --warning: 245 158 11;
+  --danger: 239 68 68;
+}
+
+/* Light mode (used on report/print surfaces) */
+.light {
+  --bg: 248 250 252;
+  --surface: 255 255 255;
+  --surface-2: 241 245 251;
+  --fg: 30 41 59;
+  --muted: 100 116 139;
+  --border: 219 234 254;
+}
+
+* {
+  border-color: rgb(var(--border));
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgba(59, 130, 246, 0.10), transparent 60%),
+    radial-gradient(900px 500px at 110% 10%, rgba(217, 119, 6, 0.08), transparent 55%),
+    rgb(var(--bg));
+  color: rgb(var(--fg));
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+}
+
+/* Tabular figures for all data readouts */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* ---- Bento glass surface ---- */
+@layer components {
+  .glass {
+    @apply rounded-bento border border-white/[0.06] bg-surface/60 shadow-glass backdrop-blur-bento;
+    background-image: linear-gradient(
+      160deg,
+      rgba(255, 255, 255, 0.05),
+      rgba(255, 255, 255, 0) 45%
+    );
+  }
+  .glass-hover {
+    @apply transition-all duration-200 hover:-translate-y-0.5 hover:border-white/[0.12] hover:shadow-glass-hover;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium;
+  }
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Scrollbar polish */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--border));
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
