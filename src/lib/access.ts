@@ -17,8 +17,8 @@ const COMMON_PREFIXES: readonly string[] = ["/tasks", "/team", "/activity"];
 const ROLE_ROUTES: Record<TeamRole, readonly string[]> = {
   lead: ["/"], // full access (also short-circuited below)
   admin: ["/"], // full access (also short-circuited below)
-  strategist: ["/brands", "/studio/strategy", "/accounts", "/pipeline", "/scripts", "/reports"],
-  script_writer: ["/studio/script", "/scripts"],
+  strategist: ["/brands", "/docs", "/studio/strategy", "/accounts", "/pipeline", "/scripts", "/reports"],
+  script_writer: ["/studio/script", "/scripts", "/docs"],
   creator: ["/studio/creator"],
   head_of_creator: ["/studio/qc", "/qc", "/accounts", "/pipeline", "/scripts", "/reports"],
   account_monitor: ["/accounts", "/pipeline", "/reports"],
