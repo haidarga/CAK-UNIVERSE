@@ -16,6 +16,7 @@ import {
   BarChart3,
   Plug,
   Bug,
+  Building2,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -34,6 +35,10 @@ interface NavGroup {
 }
 
 const NAV_GROUPS: NavGroup[] = [
+  {
+    label: "Setup",
+    items: [{ href: "/brands", label: "Brands", icon: Building2 }],
+  },
   {
     label: "Command",
     items: [

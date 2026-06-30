@@ -10,6 +10,7 @@ export type AssistTool =
   | "script_hook" // generate punchy hook options
   | "strategy_suggest" // suggest content directions from context
   | "viral_check" // judge a content idea's viral potential vs SGE insights
+  | "brand_extract" // parse a brand brief into a structured brand profile
   | "task_breakdown" // break a goal into structured subtasks
   | "qc_explain" // explain a QC issue + how to fix
   | "issue_triage" // triage a reported dev problem
@@ -26,6 +27,7 @@ const SYSTEM: Record<AssistTool, string> = {
   script_hook: `You generate scroll-stopping TikTok hooks (each <10 words, Indonesian unless context says otherwise). Return a JSON array of 6 hook strings only.`,
   strategy_suggest: `You are a content strategist. From the brand + trend context, propose concrete content directions. Return a JSON array of objects {title, emotional_pillar, format, hook, narrative_theme} (5 items).`,
   viral_check: `You are a viral content strategist for an Indonesian UGC agency. The CONTEXT holds real "why things go viral" insights from Social Growth Engineers (titles + excerpts). The INPUT is a content idea/plan. Judge its viral potential and explain HOW to make it go viral, grounded in those SGE insights — do not invent mechanics that contradict them. Be specific and honest (a weak idea gets a low score). Return ONLY JSON: {"score": number 0-10, "verdict": one punchy Indonesian sentence, "strengths": string[] (2-4), "risks": string[] (1-3), "how_to_viral": string[] (3-5 concrete actionable steps in Indonesian — hook angle, format, structure, timing), "citations": string[] (exact titles of the SGE insights you leaned on)}.`,
+  brand_extract: `You extract a structured brand profile from a brief. The INPUT is a brand brief document or freeform notes (may be Indonesian). Return ONLY JSON with EXACTLY these keys (use [] or null when unknown — NEVER invent facts not supported by the text): {"name": string, "platform": "tiktok"|"instagram"|"both", "campaign_tagline": string|null, "emotional_pillars": string[], "content_formats": string[], "guidelines": string|null, "guardrails": string[], "approved_claims": string[], "script_format": string|null, "cta_rules": string|null, "hashtag_sets": string[], "products": string[], "hero_products": string[]}. emotional_pillars = the core feelings/values the brand leans on. guardrails = things to avoid/never say. approved_claims = claims legally/factually OK to make. Infer platform from context; default "both" if unclear.`,
   task_breakdown: `You break a goal into a clear, ordered set of actionable subtasks. Return a JSON array of objects {title, type, priority} where type is one of content|strategy|script|production|qc|account|dev|general and priority is 1(urgent)..4(low). 3-8 items.`,
   qc_explain: `You are a Head of Creator. Given a QC issue, explain in 1-2 sentences why it matters and exactly how the creator should fix it. Plain, direct, actionable. Return only the explanation.`,
   issue_triage: `You triage software problem reports. Given a description, return JSON {severity: "low"|"medium"|"high"|"critical", area: "frontend"|"backend"|"agent"|"infra"|"data"|"general", suggested_title: string, first_steps: string}.`,
@@ -36,7 +38,7 @@ const SYSTEM: Record<AssistTool, string> = {
 };
 
 // Tools whose output is structured JSON (parsed before returning).
-const JSON_TOOLS: AssistTool[] = ["script_hook", "strategy_suggest", "viral_check", "task_breakdown", "issue_triage"];
+const JSON_TOOLS: AssistTool[] = ["script_hook", "strategy_suggest", "viral_check", "brand_extract", "task_breakdown", "issue_triage"];
 
 export interface AssistRequest {
   tool: AssistTool;
@@ -73,9 +75,9 @@ export async function aiAssist(req: AssistRequest): Promise<AssistResult> {
     provider: req.provider,
     model: req.model,
     temperature: tool === "task_breakdown" || tool === "issue_triage" ? 0.3 : 0.7,
-    // viral_check returns a multi-section JSON verdict; give it more headroom
-    // so the JSON never truncates mid-array.
-    maxTokens: tool === "viral_check" ? 3500 : 2048,
+    // viral_check / brand_extract return large multi-field JSON; give them more
+    // headroom so the JSON never truncates mid-array.
+    maxTokens: tool === "viral_check" || tool === "brand_extract" ? 3500 : 2048,
   });
 
   return {
