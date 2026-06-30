@@ -7,7 +7,7 @@ import { checkGuardrails } from "@/lib/guardrails";
 import { cn } from "@/lib/utils";
 import GlassCard from "@/components/glass-card";
 import AiAssistInline from "@/components/ai-assist-inline";
-import { EmbedList } from "@/components/embed-resource";
+import DocsPanel from "@/components/docs/docs-panel";
 import SyncLinkControl from "@/components/sync/sync-link-control";
 import GuardrailBanner from "./guardrail-banner";
 import HookChips from "./hook-chips";
@@ -63,7 +63,6 @@ export default function ScriptEditor({
   brand,
   personas,
   hooks,
-  embeds,
   items,
   loadItem,
   onSaved,
@@ -340,8 +339,8 @@ export default function ScriptEditor({
           <HookChips suggestions={hookSuggestions} bank={pillarHooks} onInsert={insertHook} />
         </GlassCard>
 
-        <GlassCard title="Attached docs" noHover>
-          <EmbedList resources={embeds} />
+        <GlassCard title="Docs & sheets" noHover>
+          <DocsPanel brandId={brand.id} pipelineId={selectedId ?? undefined} />
         </GlassCard>
 
         {selectedId && (

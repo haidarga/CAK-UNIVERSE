@@ -37,10 +37,7 @@ interface NavGroup {
 const NAV_GROUPS: NavGroup[] = [
   {
     label: "Setup",
-    items: [
-      { href: "/brands", label: "Brands", icon: Building2 },
-      { href: "/docs", label: "Documents", icon: FileText },
-    ],
+    items: [{ href: "/brands", label: "Brands", icon: Building2 }],
   },
   {
     label: "Command",

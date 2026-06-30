@@ -5,7 +5,7 @@ import { TrendingUp, CalendarDays, Wand2, FileSpreadsheet } from "lucide-react";
 import type { Brand, Trend, EmbeddedResource, ContentPipeline } from "@/lib/types";
 import GlassCard from "@/components/glass-card";
 import AiAssistInline from "@/components/ai-assist-inline";
-import { EmbedList } from "@/components/embed-resource";
+import DocsPanel from "@/components/docs/docs-panel";
 import EmptyState from "@/components/empty-state";
 import TrendCard from "./trend-card";
 import CalendarGrid, { type CalendarSlot } from "./calendar-grid";
@@ -55,7 +55,7 @@ function coerceSuggestions(data: unknown): StrategySuggestion[] {
     .slice(0, 8);
 }
 
-export default function StrategyBoard({ brand, trends, embeds, recent }: StrategyBoardProps) {
+export default function StrategyBoard({ brand, trends, recent }: StrategyBoardProps) {
   const pillars = brand.emotional_pillars.length ? brand.emotional_pillars : ["general"];
   const defaultFormat = brand.content_formats[0] ?? "talking_head";
 
@@ -189,8 +189,8 @@ export default function StrategyBoard({ brand, trends, embeds, recent }: Strateg
 
         {/* Execution sheets + recent */}
         <div className="flex flex-col gap-5">
-          <GlassCard title="Execution plans" icon={FileSpreadsheet} noHover>
-            <EmbedList resources={embeds} />
+          <GlassCard title="Docs & sheets" icon={FileSpreadsheet} noHover>
+            <DocsPanel brandId={brand.id} />
           </GlassCard>
 
           {recent.length > 0 && (

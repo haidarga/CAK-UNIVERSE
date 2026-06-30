@@ -74,8 +74,8 @@ interface RemotePayload {
   serialized: string;
 }
 
-export default function DocSyncWorkspace() {
-  const [url, setUrl] = useState("");
+export default function DocSyncWorkspace({ initialUrl }: { initialUrl?: string } = {}) {
+  const [url, setUrl] = useState(initialUrl ?? "");
   const [loadedUrl, setLoadedUrl] = useState("");
   const [kind, setKind] = useState<Kind | null>(null);
   const [range, setRange] = useState("");
@@ -262,6 +262,12 @@ export default function DocSyncWorkspace() {
     [loadedUrl, fetchRemote, applyRemote],
   );
 
+  // Auto-open when embedded with a fixed URL (inline attach → edit).
+  useEffect(() => {
+    if (initialUrl) void open(initialUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialUrl]);
+
   // Auto-pull poll.
   useEffect(() => {
     if (!loadedUrl) return;
@@ -324,7 +330,8 @@ export default function DocSyncWorkspace() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* URL bar */}
+      {/* URL bar — hidden when embedded inline with a fixed URL */}
+      {!initialUrl && (
       <GlassCard noHover>
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -381,6 +388,15 @@ export default function DocSyncWorkspace() {
           )}
         </div>
       </GlassCard>
+      )}
+
+      {/* inline error when embedded (URL bar hidden) */}
+      {initialUrl && error && (
+        <p className="flex items-center gap-1.5 text-sm text-danger" role="alert">
+          <AlertTriangle className="size-4" aria-hidden strokeWidth={1.5} />
+          {error}
+        </p>
+      )}
 
       {/* Document surface */}
       {loadedUrl && kind && (

@@ -95,3 +95,15 @@ export async function POST(req: Request) {
     return err(e instanceof Error ? e.message : "Failed to create embed", 500);
   }
 }
+
+export async function DELETE(req: Request) {
+  try {
+    const id = new URL(req.url).searchParams.get("id");
+    if (!id) return err("id is required", 400);
+    const { error } = await admin().from("embedded_resources").delete().eq("id", id);
+    if (error) return err(error.message, 500);
+    return ok({ id });
+  } catch (e) {
+    return err(e instanceof Error ? e.message : "Failed to delete embed", 500);
+  }
+}

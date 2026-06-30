@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   Rocket,
   BookOpen,
+  ChevronDown,
 } from "lucide-react";
 import GlassCard from "@/components/glass-card";
 
@@ -65,6 +66,7 @@ function scoreTone(score?: number): { ring: string; text: string; label: string 
 }
 
 export default function SGEViralLab() {
+  const [open, setOpen] = useState(false); // collapsed by default — hide/reveal
   const [title, setTitle] = useState("");
   const [hook, setHook] = useState("");
   const [format, setFormat] = useState("");
@@ -130,6 +132,7 @@ export default function SGEViralLab() {
     function onRequest(e: Event) {
       const d = (e as CustomEvent<ViralCheckRequest>).detail;
       if (!d?.title) return;
+      setOpen(true); // reveal when triggered from a content-plan card
       setTitle(d.title);
       setHook(d.hook ?? "");
       setFormat(d.format ?? "");
@@ -151,12 +154,28 @@ export default function SGEViralLab() {
   return (
     <div ref={rootRef}>
       <GlassCard title="SGE Viral Lab" icon={FlaskConical} noHover>
-        <p className="mb-4 text-xs text-muted">
-          Cek potensi viral ide kontenmu pakai insight asli{" "}
-          <span className="text-fg/80">Social Growth Engineers</span> — plus highlight artikel
-          terbaru buat nyolong angle.
-        </p>
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="flex w-full items-center gap-2 text-left"
+        >
+          <span className="flex-1 text-xs text-muted">
+            Cek potensi viral ide kontenmu pakai insight asli{" "}
+            <span className="text-fg/80">Social Growth Engineers</span> + highlight artikel terbaru.
+          </span>
+          <span className="chip border-border bg-surface-2/40 text-[11px] text-muted">
+            {open ? "Sembunyikan" : "Buka"}
+            <ChevronDown
+              className={`size-3 transition-transform ${open ? "rotate-180" : ""}`}
+              aria-hidden
+              strokeWidth={1.5}
+            />
+          </span>
+        </button>
 
+        {open && (
+        <div className="mt-4">
         {/* --- Viral Check --- */}
         <form onSubmit={onSubmit} className="flex flex-col gap-3">
           <input
@@ -346,6 +365,8 @@ export default function SGEViralLab() {
             </div>
           )}
         </div>
+        </div>
+        )}
       </GlassCard>
     </div>
   );
