@@ -25,8 +25,8 @@ $cdpUp = Get-NetTCPConnection -LocalPort 9222 -State Listen -ErrorAction Silentl
 if ($cdpUp) {
   Write-Host "[1/3] Chrome CDP  : sudah jalan (:9222) - skip" -ForegroundColor Yellow
 } else {
-  Write-Host "[1/3] Chrome CDP  : nyalain (:9222, profile di F:)" -ForegroundColor Green
-  Start-Process $Chrome -ArgumentList "--remote-debugging-port=9222","--user-data-dir=$ChromeProfile","--no-first-run","--no-default-browser-check"
+  Write-Host "[1/3] Chrome CDP  : nyalain HEADLESS (:9222, no window, profile di F:)" -ForegroundColor Green
+  Start-Process $Chrome -WindowStyle Hidden -ArgumentList "--headless=new","--disable-gpu","--remote-debugging-port=9222","--user-data-dir=$ChromeProfile","--no-first-run","--no-default-browser-check"
 }
 
 # --- 2) Scraper sidecar (TikTok/IG) :8900 ---

@@ -64,20 +64,29 @@ interface ProPost {
   categories?: { name?: string }[];
 }
 
-/** Pro tier: fetch /api/mysge/articles from the (logged-in) page context. */
+/**
+ * Pro tier: fetch /api/mysge/articles from the (logged-in) page context.
+ * On a cold browser the SPA needs a moment to rehydrate the Supabase session
+ * from localStorage (`sge-auth-token`) before the API authorizes — so we wait,
+ * then retry once if the first call comes back empty.
+ */
 async function fetchProPosts(page: import("puppeteer-core").Page): Promise<ProPost[]> {
   await page.goto(`${BASE}/mysge`, { waitUntil: "domcontentloaded", timeout: 45000 });
-  await new Promise((r) => setTimeout(r, 1500));
-  return page.evaluate(async (base) => {
-    try {
-      const r = await fetch(`${base}/api/mysge/articles`, { credentials: "include" });
-      if (!r.ok) return [];
-      const j = (await r.json()) as { posts?: ProPost[] };
-      return Array.isArray(j.posts) ? j.posts : [];
-    } catch {
-      return [];
-    }
-  }, BASE);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await new Promise((r) => setTimeout(r, attempt === 0 ? 2500 : 2000));
+    const posts = await page.evaluate(async (base) => {
+      try {
+        const r = await fetch(`${base}/api/mysge/articles`, { credentials: "include" });
+        if (!r.ok) return [];
+        const j = (await r.json()) as { posts?: ProPost[] };
+        return Array.isArray(j.posts) ? j.posts : [];
+      } catch {
+        return [];
+      }
+    }, BASE);
+    if (posts.length > 0) return posts;
+  }
+  return [];
 }
 
 /** A richer SGE article (title + excerpt + category) for highlights & viral-check. */
