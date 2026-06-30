@@ -74,7 +74,9 @@ async function fetchProPosts(page: import("puppeteer-core").Page): Promise<ProPo
   await page.goto(`${BASE}/mysge`, { waitUntil: "domcontentloaded", timeout: 45000 });
   for (let attempt = 0; attempt < 2; attempt++) {
     await new Promise((r) => setTimeout(r, attempt === 0 ? 2500 : 2000));
-    const posts = await page.evaluate(async (base) => {
+    // page.evaluate crosses the CDP/JSON boundary — annotate the result so a
+    // change to ProPost is type-checked here rather than silently inferred as any.
+    const posts = (await page.evaluate(async (base) => {
       try {
         const r = await fetch(`${base}/api/mysge/articles`, { credentials: "include" });
         if (!r.ok) return [];
@@ -83,7 +85,7 @@ async function fetchProPosts(page: import("puppeteer-core").Page): Promise<ProPo
       } catch {
         return [];
       }
-    }, BASE);
+    }, BASE)) as ProPost[];
     if (posts.length > 0) return posts;
   }
   return [];

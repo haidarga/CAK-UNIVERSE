@@ -2,6 +2,10 @@
 // /api/brands/[id]
 //   PATCH  — update brand fields (partial; only provided keys change).
 //   DELETE — remove a brand.
+//
+// AUTHZ: single-org internal tool — every authenticated member may edit/delete
+// any brand. There is intentionally no per-resource ownership check. Revisit
+// if this ever becomes multi-tenant.
 // ============================================================
 import { admin, nowIso } from "@/lib/supabase";
 import { ok, err } from "@/lib/api";
@@ -36,7 +40,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (error) {
       if ((error as { code?: string }).code === "PGRST116") return err("brand not found", 404);
       const dup = (error as { code?: string }).code === "23505";
-      return err(dup ? "Slug sudah dipakai brand lain" : error.message, dup ? 409 : 500);
+      if (!dup) console.error("[brands.PATCH]", error.message);
+      return err(dup ? "Slug sudah dipakai brand lain" : "Gagal menyimpan brand", dup ? 409 : 500);
     }
 
     await logActivity({
@@ -55,8 +60,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const { error } = await admin().from("brands").delete().eq("id", id);
-    if (error) return err(error.message, 500);
+    // .select() so we can tell a real delete from a no-op (Supabase delete
+    // succeeds with zero rows when the id doesn't exist).
+    const { data, error } = await admin().from("brands").delete().eq("id", id).select("id");
+    if (error) {
+      console.error("[brands.DELETE]", error.message);
+      return err("Gagal menghapus brand", 500);
+    }
+    if (!data || data.length === 0) return err("brand not found", 404);
     await logActivity({ entityType: "brand", entityId: id, action: "deleted" });
     return ok({ id });
   } catch (e) {

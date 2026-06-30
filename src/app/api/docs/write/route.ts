@@ -14,6 +14,8 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const DEFAULT_RANGE = "A1";
+/** A1 notation: optional `SheetName!` prefix + a cell or cell range. */
+const A1_RANGE = /^(?:[\w \-']{1,40}!)?[A-Z]{1,3}\d{1,7}(?::[A-Z]{1,3}\d{1,7})?$/i;
 
 interface Body {
   url?: string;
@@ -40,16 +42,18 @@ export async function POST(req: Request) {
       } else {
         const values = Array.isArray(body.values) ? body.values : [];
         const range = (body.range ?? "").trim() || DEFAULT_RANGE;
+        if (!A1_RANGE.test(range)) return err("Format range gak valid", 400);
         await writeRange(parsed.id, range, values);
       }
       return ok({ ok: true });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "write failed";
       const notConnected = /not connected|access token/i.test(msg);
+      if (!notConnected) console.error("[docs.write]", msg);
       return err(
         notConnected
           ? "Google belum connect — sambungin dulu di Integrations"
-          : `Gagal nyimpan ke dokumen: ${msg}`,
+          : "Gagal nyimpan ke dokumen — cek akses dokumen & format link",
         notConnected ? 401 : 502,
       );
     }

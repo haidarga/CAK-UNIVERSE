@@ -125,7 +125,8 @@ export default function BrandForm({ draft, onChange }: BrandFormProps) {
   const list = (key: keyof BrandDraft) => ({
     value: (draft[key] as string[]).join("\n"),
     onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) =>
-      onChange({ [key]: e.target.value.split("\n").map((s) => s) } as Partial<BrandDraft>),
+      // keep raw lines while typing; empties/whitespace are cleaned server-side
+      onChange({ [key]: e.target.value.split("\n") } as Partial<BrandDraft>),
   });
 
   return (

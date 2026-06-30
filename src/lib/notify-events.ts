@@ -34,12 +34,16 @@ export async function notifyPipelineEvent(e: PipelineEvent): Promise<void> {
     .filter(Boolean)
     .join("\n");
 
-  await sendTelegramAlert(message);
-  await logActivity({
-    entityType: "pipeline",
-    entityId: e.pipelineId ?? null,
-    action: e.event,
-    summary: e.title ?? undefined,
-    brandId: e.brandId ?? null,
-  });
+  // Independent fire-and-forget side effects — run in parallel (both swallow
+  // their own errors), so a slow Telegram call doesn't delay the activity write.
+  await Promise.all([
+    sendTelegramAlert(message),
+    logActivity({
+      entityType: "pipeline",
+      entityId: e.pipelineId ?? null,
+      action: e.event,
+      summary: e.title ?? undefined,
+      brandId: e.brandId ?? null,
+    }),
+  ]);
 }

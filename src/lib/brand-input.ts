@@ -25,6 +25,13 @@ const NULLABLE_STR_FIELDS = [
   "cta_rules",
 ] as const;
 
+// Length caps — these fields get serialized into LLM system prompts, so an
+// unbounded value would flood the context window and burn tokens.
+const NAME_MAX = 120;
+const TEXT_MAX = 2000;
+const ITEM_MAX = 200;
+const LIST_MAX = 50;
+
 /** "Glow Lokal!" -> "glow-lokal". Always returns a usable slug. */
 export function slugify(s: string): string {
   return (
@@ -42,11 +49,13 @@ function cleanList(v: unknown): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const x of v) {
-    const s = String(x).trim();
+    if (typeof x !== "string") continue; // skip objects/arrays → no "[object Object]"
+    const s = x.trim().slice(0, ITEM_MAX);
     if (s && !seen.has(s)) {
       seen.add(s);
       out.push(s);
     }
+    if (out.length >= LIST_MAX) break;
   }
   return out;
 }
@@ -62,7 +71,7 @@ export function sanitizeBrandInput(
   const out: Record<string, unknown> = {};
   const has = (k: string) => body[k] !== undefined;
 
-  if (has("name")) out.name = String(body.name).trim();
+  if (has("name")) out.name = String(body.name).trim().slice(0, NAME_MAX);
   if (has("platform"))
     out.platform = (PLATFORMS as readonly string[]).includes(body.platform as string)
       ? body.platform
@@ -70,7 +79,7 @@ export function sanitizeBrandInput(
 
   for (const k of NULLABLE_STR_FIELDS) {
     if (has(k)) {
-      const s = body[k] == null ? "" : String(body[k]).trim();
+      const s = body[k] == null ? "" : String(body[k]).trim().slice(0, TEXT_MAX);
       out[k] = s || null;
     }
   }
@@ -78,9 +87,32 @@ export function sanitizeBrandInput(
     if (has(k)) out[k] = cleanList(body[k]);
   }
 
-  if (has("posting_sweet_spot")) out.posting_sweet_spot = body.posting_sweet_spot ?? null;
-  if (has("kpi_targets")) out.kpi_targets = body.kpi_targets ?? null;
-  if (has("status")) out.status = String(body.status).trim() || "active";
+  // JSONB columns: validate STRUCTURE — never store arbitrary user-supplied
+  // objects (they get re-serialized into LLM prompts downstream).
+  if (has("posting_sweet_spot")) {
+    const ps = body.posting_sweet_spot;
+    if (ps && typeof ps === "object" && !Array.isArray(ps)) {
+      const o = ps as Record<string, unknown>;
+      const day = typeof o.day === "string" ? o.day.trim().slice(0, 20) : undefined;
+      const hour = typeof o.hour === "string" ? o.hour.trim().slice(0, 10) : undefined;
+      out.posting_sweet_spot = day || hour ? { day, hour } : null;
+    } else {
+      out.posting_sweet_spot = null;
+    }
+  }
+  if (has("kpi_targets")) {
+    const kt = body.kpi_targets;
+    if (kt && typeof kt === "object" && !Array.isArray(kt)) {
+      out.kpi_targets = Object.fromEntries(
+        Object.entries(kt as Record<string, unknown>)
+          .filter(([, v]) => typeof v === "number" && Number.isFinite(v))
+          .slice(0, 30),
+      );
+    } else {
+      out.kpi_targets = null;
+    }
+  }
+  if (has("status")) out.status = String(body.status).trim().slice(0, 40) || "active";
 
   // On create, fill sensible defaults for anything not provided.
   if (!opts.partial) {

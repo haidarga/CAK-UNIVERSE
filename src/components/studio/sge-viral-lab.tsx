@@ -162,7 +162,10 @@ export default function SGEViralLab() {
           <input
             type="text"
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => {
+              extra.current = {}; // manual edit clears any ghost theme/notes from a plan-card trigger
+              setTitle(e.target.value);
+            }}
             placeholder="Ide / judul konten — mis. 'Review skincare lokal pakai hook before-after'"
             maxLength={200}
             className="bezel w-full rounded-xl bg-surface-2/60 px-3 py-2.5 text-sm text-fg placeholder:text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
@@ -171,7 +174,10 @@ export default function SGEViralLab() {
             <input
               type="text"
               value={hook}
-              onChange={(e) => setHook(e.target.value)}
+              onChange={(e) => {
+                extra.current = {};
+                setHook(e.target.value);
+              }}
               placeholder="Hook (opsional)"
               maxLength={160}
               className="bezel flex-1 rounded-xl bg-surface-2/60 px-3 py-2 text-sm text-fg placeholder:text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
@@ -179,7 +185,10 @@ export default function SGEViralLab() {
             <input
               type="text"
               value={format}
-              onChange={(e) => setFormat(e.target.value)}
+              onChange={(e) => {
+                extra.current = {};
+                setFormat(e.target.value);
+              }}
               placeholder="Format (opsional)"
               maxLength={80}
               className="bezel rounded-xl bg-surface-2/60 px-3 py-2 text-sm text-fg placeholder:text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 sm:w-48"

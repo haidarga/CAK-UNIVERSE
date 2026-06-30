@@ -64,6 +64,16 @@ function trimGrid(grid: string[][]): string[][] {
   return grid.slice(0, lastRow + 1).map((row) => row.slice(0, lastCol + 1));
 }
 
+/** A remote read result, decoupled from React state so it can be hash-compared
+ *  and applied from the SAME fetch (no double-fetch drift). */
+interface RemotePayload {
+  kind: Kind;
+  range?: string;
+  docBody?: string;
+  grid?: string[][];
+  serialized: string;
+}
+
 export default function DocSyncWorkspace() {
   const [url, setUrl] = useState("");
   const [loadedUrl, setLoadedUrl] = useState("");
@@ -86,11 +96,15 @@ export default function DocSyncWorkspace() {
   const docRef = useRef("");
   const gridRef = useRef<string[][]>([]);
   const autoRef = useRef(true);
+  const statusRef = useRef<Status>("idle");
   const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     autoRef.current = auto;
   }, [auto]);
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
   useEffect(() => {
     docRef.current = docBody;
   }, [docBody]);
@@ -118,49 +132,47 @@ export default function DocSyncWorkspace() {
     });
   }
 
-  /** Read the remote document. Returns the serialized form + applies to state. */
-  const fetchRemote = useCallback(
-    async (
-      targetUrl: string,
-      apply: boolean,
-    ): Promise<{ serialized: string } | null> => {
-      const res = await fetch("/api/docs/read", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: targetUrl, range: rangeRef.current || undefined }),
-      });
-      const json: {
-        success?: boolean;
-        error?: string;
-        data?: { kind?: Kind; range?: string; body?: string; values?: string[][] };
-      } = await res.json();
-      if (!res.ok || json.success === false || !json.data) {
-        throw new Error(json.error ?? "Gagal baca dokumen");
-      }
-      const d = json.data;
-      const k = (d.kind ?? "doc") as Kind;
-      const serialized =
-        k === "doc" ? d.body ?? "" : JSON.stringify(padGrid(d.values ?? []));
-      if (apply) {
-        setKind(k);
-        kindRef.current = k;
-        if (d.range) {
-          setRange(d.range);
-          rangeRef.current = d.range;
-        }
-        if (k === "doc") {
-          setDocBody(d.body ?? "");
-          docRef.current = d.body ?? "";
-        } else {
-          const padded = padGrid(d.values ?? []);
-          setGrid(padded);
-          gridRef.current = padded;
-        }
-      }
-      return { serialized };
-    },
-    [],
-  );
+  /** Read the remote doc/sheet WITHOUT touching state (pure fetch). */
+  const fetchRemote = useCallback(async (targetUrl: string): Promise<RemotePayload> => {
+    const res = await fetch("/api/docs/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: targetUrl, range: rangeRef.current || undefined }),
+    });
+    const json: {
+      success?: boolean;
+      error?: string;
+      data?: { kind?: Kind; range?: string; body?: string; values?: string[][] };
+    } = await res.json();
+    if (!res.ok || json.success === false || !json.data) {
+      throw new Error(json.error ?? "Gagal baca dokumen");
+    }
+    const d = json.data;
+    const k = (d.kind ?? "doc") as Kind;
+    if (k === "doc") {
+      const docBody = d.body ?? "";
+      return { kind: "doc", docBody, serialized: docBody };
+    }
+    const padded = padGrid(d.values ?? []);
+    return { kind: "sheet", range: d.range, grid: padded, serialized: JSON.stringify(padded) };
+  }, []);
+
+  /** Apply a fetched payload to component + ref state. */
+  const applyRemote = useCallback((p: RemotePayload) => {
+    setKind(p.kind);
+    kindRef.current = p.kind;
+    if (p.range) {
+      setRange(p.range);
+      rangeRef.current = p.range;
+    }
+    if (p.kind === "doc") {
+      setDocBody(p.docBody ?? "");
+      docRef.current = p.docBody ?? "";
+    } else {
+      setGrid(p.grid ?? []);
+      gridRef.current = p.grid ?? [];
+    }
+  }, []);
 
   const open = useCallback(
     async (targetUrl: string) => {
@@ -170,9 +182,9 @@ export default function DocSyncWorkspace() {
       setError(null);
       setLoadedUrl(u);
       try {
-        const r = await fetchRemote(u, true);
-        const serialized = r?.serialized ?? "";
-        syncedHashRef.current = hash(serialized);
+        const p = await fetchRemote(u);
+        applyRemote(p);
+        syncedHashRef.current = hash(p.serialized);
         dirtyRef.current = false;
         setLastSyncedAt(new Date().toISOString());
         setStatus("synced");
@@ -182,7 +194,7 @@ export default function DocSyncWorkspace() {
         setError(e instanceof Error ? e.message : "Gagal buka dokumen");
       }
     },
-    [fetchRemote],
+    [fetchRemote, applyRemote],
   );
 
   /** Push current local content to the remote. */
@@ -223,14 +235,14 @@ export default function DocSyncWorkspace() {
       busyRef.current = true;
       if (manual) setStatus("pulling");
       try {
-        const r = await fetchRemote(loadedUrl, false);
-        const remoteHash = hash(r?.serialized ?? "");
+        const p = await fetchRemote(loadedUrl); // single fetch — no drift
+        const remoteHash = hash(p.serialized);
         if (remoteHash === syncedHashRef.current) {
           // remote unchanged since last sync
           if (manual && !dirtyRef.current) setStatus("synced");
         } else if (!dirtyRef.current) {
-          // remote moved, we're clean -> adopt remote
-          await fetchRemote(loadedUrl, true);
+          // remote moved, we're clean -> adopt EXACTLY what we just fetched
+          applyRemote(p);
           syncedHashRef.current = remoteHash;
           setLastSyncedAt(new Date().toISOString());
           setStatus("synced");
@@ -247,7 +259,7 @@ export default function DocSyncWorkspace() {
         busyRef.current = false;
       }
     },
-    [loadedUrl, fetchRemote],
+    [loadedUrl, fetchRemote, applyRemote],
   );
 
   // Auto-pull poll.
@@ -259,14 +271,16 @@ export default function DocSyncWorkspace() {
     return () => clearInterval(t);
   }, [loadedUrl, pull]);
 
-  /** Mark dirty + schedule a debounced auto-push. */
+  /** Mark dirty + schedule a debounced auto-push. Never pushes during a conflict. */
   function onLocalEdit() {
     dirtyRef.current = true;
-    setStatus((s) => (s === "conflict" ? "conflict" : "editing"));
+    if (statusRef.current === "conflict") return; // keep conflict; user must resolve
+    setStatus("editing");
     if (!autoRef.current) return;
     if (pushTimer.current) clearTimeout(pushTimer.current);
     pushTimer.current = setTimeout(() => {
-      if (dirtyRef.current && status !== "conflict") void push();
+      // statusRef is live at fire time (unlike the captured `status` state).
+      if (dirtyRef.current && statusRef.current !== "conflict") void push();
     }, PUSH_DEBOUNCE_MS);
   }
 
@@ -276,11 +290,12 @@ export default function DocSyncWorkspace() {
     onLocalEdit();
   }
 
+  // gridRef is kept in sync via the [grid] effect — do NOT mutate it inside the
+  // setGrid updater (updaters can run more than once under Concurrent React).
   function editCell(r: number, c: number, v: string) {
     setGrid((prev) => {
       const next = prev.map((row) => row.slice());
       next[r][c] = v;
-      gridRef.current = next;
       return next;
     });
     onLocalEdit();
@@ -289,25 +304,20 @@ export default function DocSyncWorkspace() {
   function addRow() {
     setGrid((prev) => {
       const cols = prev[0]?.length ?? 5;
-      const next = [...prev.map((r) => r.slice()), Array(cols).fill("")];
-      gridRef.current = next;
-      return next;
+      return [...prev.map((r) => r.slice()), Array(cols).fill("")];
     });
   }
   function addCol() {
-    setGrid((prev) => {
-      const next = prev.map((r) => [...r, ""]);
-      gridRef.current = next;
-      return next;
-    });
+    setGrid((prev) => prev.map((r) => [...r, ""]));
   }
 
   // Conflict resolution.
   async function keepMine() {
-    setStatus("pushing");
+    if (busyRef.current) return; // a sync is in flight — let it settle, then retry
     await push();
   }
   async function takeTheirs() {
+    if (busyRef.current) return;
     dirtyRef.current = false;
     await open(loadedUrl);
   }

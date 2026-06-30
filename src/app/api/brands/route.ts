@@ -44,8 +44,9 @@ export async function POST(req: Request) {
       .single();
     if (error) {
       const dup = (error as { code?: string }).code === "23505"; // unique_violation
+      if (!dup) console.error("[brands.POST]", error.message);
       return err(
-        dup ? `Slug "${slug}" sudah dipakai — ganti nama brand` : error.message,
+        dup ? `Slug "${slug}" sudah dipakai — ganti nama brand` : "Gagal menyimpan brand",
         dup ? 409 : 500,
       );
     }

@@ -48,4 +48,45 @@ describe("sanitizeBrandInput", () => {
   test("partial still coerces a provided platform", () => {
     expect(sanitizeBrandInput({ platform: "x" }, { partial: true }).platform).toBe("both");
   });
+
+  // --- security hardening ---
+  test("posting_sweet_spot: keeps only string day/hour, strips extras", () => {
+    const out = sanitizeBrandInput({
+      posting_sweet_spot: { day: " Sabtu ", hour: "19:00", evil: { a: 1 } },
+    });
+    expect(out.posting_sweet_spot).toEqual({ day: "Sabtu", hour: "19:00" });
+  });
+
+  test("posting_sweet_spot: arrays / non-objects become null", () => {
+    expect(sanitizeBrandInput({ posting_sweet_spot: [1, 2, 3] }).posting_sweet_spot).toBeNull();
+    expect(sanitizeBrandInput({ posting_sweet_spot: "x" }).posting_sweet_spot).toBeNull();
+  });
+
+  test("kpi_targets: keeps only finite numbers, drops the rest", () => {
+    const out = sanitizeBrandInput({
+      kpi_targets: { views: 1000, label: "nope", nan: NaN, rate: 4.2 },
+    });
+    expect(out.kpi_targets).toEqual({ views: 1000, rate: 4.2 });
+  });
+
+  test("kpi_targets: array becomes null", () => {
+    expect(sanitizeBrandInput({ kpi_targets: [1, 2] }).kpi_targets).toBeNull();
+  });
+
+  test("caps name length to 120 and list items to 200", () => {
+    const out = sanitizeBrandInput({
+      name: "x".repeat(500),
+      products: ["y".repeat(500)],
+    });
+    expect((out.name as string).length).toBe(120);
+    expect((out.products as string[])[0].length).toBe(200);
+  });
+
+  test("cleanList caps list length at 50 and skips non-strings", () => {
+    const out = sanitizeBrandInput({
+      products: [...Array.from({ length: 80 }, (_, i) => `p${i}`), { obj: 1 }],
+    });
+    expect((out.products as string[]).length).toBe(50);
+    expect((out.products as string[]).every((x) => typeof x === "string")).toBe(true);
+  });
 });

@@ -49,6 +49,7 @@ export default function ScriptWorkspace({
 
   /** One-click: ScriptWriterAgent writes the full script, then load it to edit. */
   async function handleJebret(item: ContentPipeline) {
+    if (jebretId) return; // one generation at a time — avoid racing refresh/editor state
     setJebretId(item.id);
     setNote(null);
     try {
