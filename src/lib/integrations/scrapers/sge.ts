@@ -60,6 +60,8 @@ function orderByTopic(items: ResearchItem[], keywords: string[], limit: number):
 interface ProPost {
   title?: string;
   slug?: string;
+  excerpt?: string;
+  categories?: { name?: string }[];
 }
 
 /** Pro tier: fetch /api/mysge/articles from the (logged-in) page context. */
@@ -70,12 +72,64 @@ async function fetchProPosts(page: import("puppeteer-core").Page): Promise<ProPo
     try {
       const r = await fetch(`${base}/api/mysge/articles`, { credentials: "include" });
       if (!r.ok) return [];
-      const j = (await r.json()) as { posts?: { title?: string; slug?: string }[] };
+      const j = (await r.json()) as { posts?: ProPost[] };
       return Array.isArray(j.posts) ? j.posts : [];
     } catch {
       return [];
     }
   }, BASE);
+}
+
+/** A richer SGE article (title + excerpt + category) for highlights & viral-check. */
+export interface SGEArticle {
+  title: string;
+  url: string;
+  excerpt?: string;
+  category?: string;
+  source: "pro" | "public";
+}
+
+function stripHtml(s?: string): string {
+  return (s ?? "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Fetch SGE articles (Pro curated + public feed) with excerpts where available.
+ * Powers the SGE Viral Lab (highlights feed + viral-check knowledge base).
+ * Pro first (has real titles + excerpts), then public (slug-derived). Never throws.
+ */
+export async function fetchSGEArticles(limit = 18): Promise<SGEArticle[]> {
+  try {
+    return await withLightpanda(async (page) => {
+      const byUrl = new Map<string, SGEArticle>();
+
+      const pro = await fetchProPosts(page);
+      for (const p of pro) {
+        if (!p.slug) continue;
+        const url = `${BASE}/${p.slug}`;
+        if (byUrl.has(url)) continue;
+        byUrl.set(url, {
+          title: p.title?.trim() || slugToTitle(p.slug),
+          url,
+          excerpt: stripHtml(p.excerpt) || undefined,
+          category: p.categories?.[0]?.name,
+          source: "pro",
+        });
+      }
+
+      const slugs = await fetchPublicSlugs(page);
+      for (const s of slugs) {
+        if (NON_ARTICLE.has(s)) continue;
+        const url = `${BASE}/${s}`;
+        if (byUrl.has(url)) continue;
+        byUrl.set(url, { title: slugToTitle(s), url, source: "public" });
+      }
+
+      return Array.from(byUrl.values()).slice(0, limit);
+    });
+  } catch {
+    return [];
+  }
 }
 
 /** Public tier: sweep article-slug anchors off the landing page. */

@@ -7,6 +7,7 @@ import BrandSelector from "@/components/brand-selector";
 import EmptyState from "@/components/empty-state";
 import StrategyBoard from "@/components/studio/strategy-board";
 import TrendResearch from "@/components/studio/trend-research";
+import SGEViralLab from "@/components/studio/sge-viral-lab";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +83,7 @@ export default async function StrategyStudioPage({
       ) : (
         <div className="animate-fade-up flex flex-col gap-5">
           <TrendResearch />
+          <SGEViralLab />
           <StrategyBoard brand={selected} trends={trends} embeds={embeds} recent={recent} />
         </div>
       )}

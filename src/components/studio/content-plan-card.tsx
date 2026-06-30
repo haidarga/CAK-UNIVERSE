@@ -1,7 +1,8 @@
 "use client";
 
-import { PenLine, Sparkles } from "lucide-react";
+import { PenLine, Sparkles, Rocket } from "lucide-react";
 import type { ContentPipeline } from "@/lib/types";
+import { requestViralCheck } from "./sge-viral-lab";
 
 interface ContentPlanCardProps {
   item: ContentPipeline;
@@ -47,7 +48,24 @@ export default function ContentPlanCard({ item, active, onWrite }: ContentPlanCa
       {theme && <p className="line-clamp-2 text-xs text-muted">{theme}</p>}
       {notes && <p className="line-clamp-3 text-xs text-muted/80">{notes}</p>}
 
-      <div className="mt-1 flex justify-end">
+      <div className="mt-1 flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={() =>
+            requestViralCheck({
+              title,
+              hook: hook ?? undefined,
+              format: format ?? undefined,
+              theme: theme ?? undefined,
+              notes: notes ?? undefined,
+            })
+          }
+          className="inline-flex min-h-[40px] items-center gap-2 rounded-xl border border-accent/40 bg-accent/10 px-3.5 text-sm font-semibold text-accent transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+          title="Cek potensi viral pakai insight SGE"
+        >
+          <Rocket className="size-4" aria-hidden />
+          Cek viral
+        </button>
         <button
           type="button"
           onClick={() => onWrite(item)}
