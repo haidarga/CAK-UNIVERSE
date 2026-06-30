@@ -9,6 +9,7 @@
 import { BaseAgent } from "@/lib/agents/base";
 import { admin, nowIso } from "@/lib/supabase";
 import { checkGuardrails } from "@/lib/guardrails";
+import { notifyPipelineEvent } from "@/lib/notify-events";
 import type { Brand, ContentPipeline, Hook, Persona } from "@/lib/types";
 
 /** Build a brand-specific system prompt with guardrails + approved claims. */
@@ -111,6 +112,16 @@ export class ScriptWriterAgent extends BaseAgent {
         })
         .eq("id", pipelineId);
 
+      await notifyPipelineEvent({
+        event: "Naskah kena guardrail",
+        level: "warn",
+        brandName: brand.name,
+        brandId: brand.id,
+        title: row.content_direction?.title ?? null,
+        detail: `Klaim terlarang: ${guard.violations.join(", ")}`,
+        pipelineId,
+      });
+
       return {
         success: true,
         guardrailFlag: true,
@@ -130,6 +141,15 @@ export class ScriptWriterAgent extends BaseAgent {
         updated_at: nowIso(),
       })
       .eq("id", pipelineId);
+
+    await notifyPipelineEvent({
+      event: "Naskah siap (Jebret)",
+      level: "success",
+      brandName: brand.name,
+      brandId: brand.id,
+      title: row.content_direction?.title ?? null,
+      pipelineId,
+    });
 
     return {
       success: true,

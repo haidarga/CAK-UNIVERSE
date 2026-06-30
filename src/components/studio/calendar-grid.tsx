@@ -1,7 +1,8 @@
 "use client";
 
-import { Plus, Trash2, UploadCloud, Loader2 } from "lucide-react";
+import { Plus, Trash2, UploadCloud, Loader2, Rocket } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { requestViralCheck } from "./sge-viral-lab";
 
 export interface CalendarSlot {
   /** Local id, not persisted until pushed. */
@@ -141,7 +142,24 @@ function SlotCard({
         >
           <Trash2 className="size-4" aria-hidden strokeWidth={1.5} />
         </button>
-        <button
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() =>
+              requestViralCheck({
+                title: slot.title || "Untitled",
+                hook: slot.hook,
+                format: slot.format,
+                theme: slot.narrative_theme,
+              })
+            }
+            className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border border-accent/30 bg-accent/10 px-2.5 text-xs font-medium text-accent transition-all hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+            title="Cek potensi viral pakai SGE Viral Lab"
+          >
+            <Rocket className="size-3.5" aria-hidden strokeWidth={1.5} />
+            Cek viral
+          </button>
+          <button
           type="button"
           onClick={() => onPush(slot.id)}
           disabled={slot.state === "pushing" || pushed}
@@ -158,7 +176,8 @@ function SlotCard({
             <UploadCloud className="size-3.5" aria-hidden strokeWidth={1.5} />
           )}
           {pushed ? "In pipeline" : "Push to pipeline"}
-        </button>
+          </button>
+        </div>
       </div>
     </article>
   );

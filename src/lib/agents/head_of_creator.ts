@@ -8,6 +8,7 @@
 // ============================================================
 import { BaseAgent } from "@/lib/agents/base";
 import { admin, nowIso } from "@/lib/supabase";
+import { notifyPipelineEvent } from "@/lib/notify-events";
 import type { Brand, ContentPipeline, QCReport } from "@/lib/types";
 
 export const SCRIPT_REVIEW_SYSTEM = `You are the Head of Creator. You review draft scripts for EXECUTABILITY before they go into production.
@@ -107,6 +108,16 @@ Review for executability.`;
       })
       .eq("id", pipelineId);
 
+    await notifyPipelineEvent({
+      event: review.executable ? "Naskah lolos review" : "Naskah dipantulin (revisi)",
+      level: review.executable ? "success" : "warn",
+      brandName: row.brands?.name ?? null,
+      brandId: row.brand_id,
+      title: row.content_direction?.title ?? null,
+      detail: `Skor executability: ${review.score}/100`,
+      pipelineId,
+    });
+
     return { success: true, executable: review.executable, stage, review, tokensUsed: result.tokensUsed };
   }
 
@@ -162,6 +173,16 @@ Run final QC.`;
         updated_at: nowIso(),
       })
       .eq("id", pipelineId);
+
+    await notifyPipelineEvent({
+      event: report.passed ? "Video QC LOLOS" : "Video QC GAGAL",
+      level: report.passed ? "success" : "warn",
+      brandName: brand?.name ?? null,
+      brandId: row.brand_id,
+      title: row.content_direction?.title ?? null,
+      detail: `Skor ${report.score}/100 · hook ${report.hook_strength ?? "-"} · brand ${report.brand_voice_match ?? "-"} · visual ${report.visual_quality ?? "-"}`,
+      pipelineId,
+    });
 
     return { success: true, passed: report.passed, stage, report, tokensUsed: result.tokensUsed };
   }
