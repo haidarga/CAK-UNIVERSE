@@ -8,6 +8,7 @@ import Stat from "@/components/stat";
 import EmptyState from "@/components/empty-state";
 import ViewsChart from "@/components/views-chart";
 import GenerateReportButton from "@/components/generate-report-button";
+import DecisionsPanel from "@/components/lead/decisions-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -161,6 +162,11 @@ export default async function ReportsPage({
         >
           <GenerateReportButton brandId={selected.id} />
         </GlassCard>
+
+        {/* Lead as decision-maker */}
+        <div className="animate-fade-up [animation-delay:320ms]">
+          <DecisionsPanel brandId={selected.id} />
+        </div>
       </div>
     </>
   );
