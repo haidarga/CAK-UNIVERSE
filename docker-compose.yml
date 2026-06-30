@@ -1,43 +1,27 @@
 # ============================================================
-# CAK AI Ecosystem — cloud WORKER box (one cheap VPS / Railway / Fly).
-# Runs the two things Vercel can't: the Python scraper sidecar (TikTok + IG)
-# and a persistent headless Chrome (SGE Pro, via CDP). Sessions live here, so
-# you log in ONCE and the whole team uses it automatically — no re-login.
-#
-#   docker compose up -d
-#
-# Then point the Vercel app at this box:
-#   SCRAPER_SERVICE_URL = http://<box-ip>:8900
-#   LIGHTPANDA_CDP_URL  = http://<box-ip>:9222
-# (Lock both ports to Vercel's egress / a private network in production.)
+# CAK AI Ecosystem — ALWAYS-ON, all-in-one (Next + sidecar + Chrome).
+# Deploy on any free always-on VM (e.g. Oracle Cloud Always-Free):
+#   docker compose up -d --build
+# Then expose :3000 with a free Cloudflare Tunnel (see DEPLOY.md) for HTTPS.
+# Everything runs on localhost INSIDE the container → TikTok/IG/SGE just work.
 # ============================================================
 services:
-  scraper:
+  app:
     build:
-      context: ./scraper-service
+      context: .
       dockerfile: Dockerfile
-    env_file: ./scraper-service/.env # SERVICE_TOKEN, MS_TOKEN, IG_USERNAME/PASSWORD, PROXY…
-    # Loopback-only: reach it via the Cloudflare Tunnel running ON this box, or a
-    # token-auth reverse proxy. NEVER bind 0.0.0.0 — CDP/sidecar have weak auth.
+    # Two env files: the Next app (.env.local) + the scraper sidecar (SERVICE_TOKEN,
+    # MS_TOKEN, IG creds). SCRAPER_SERVICE_TOKEN (app) must equal SERVICE_TOKEN (sidecar).
+    env_file:
+      - ./.env.local
+      - ./scraper-service/.env
+    environment:
+      # In-container the three services talk over localhost.
+      - SCRAPER_SERVICE_URL=http://localhost:8900
+      - LIGHTPANDA_CDP_URL=http://localhost:9222
     ports:
-      - "127.0.0.1:8900:8900"
-    restart: unless-stopped
-
-  chrome:
-    # Headless Chrome exposing CDP for the SGE scraper. The SGE login cookie
-    # persists in ./chrome-profile — see DEPLOY.md for the one-time login.
-    image: chromedp/headless-shell:latest
-    # Loopback-only — CDP has NO auth. Expose only via the on-box tunnel/proxy.
-    ports:
-      - "127.0.0.1:9222:9222"
-    restart: unless-stopped
+      - "3000:3000"
     volumes:
+      # Persisted headless-Chrome profile — holds the one-time SGE login cookie.
       - ./chrome-profile:/profile
-    command:
-      - "--remote-debugging-address=0.0.0.0"
-      - "--remote-debugging-port=9222"
-      - "--user-data-dir=/profile"
-      - "--headless=new"
-      - "--disable-gpu"
-      - "--no-sandbox"
-      - "--no-first-run"
+    restart: unless-stopped

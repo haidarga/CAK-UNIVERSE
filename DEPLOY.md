@@ -2,7 +2,54 @@
 
 Goal: the team uses ONE URL, everything auto, nobody logs into SGE/TikTok/IG/YouTube again.
 
-## The shape
+---
+
+## ⭐ RECOMMENDED: always-on, 100% free, everything works (all-in-one)
+
+One container runs the Next app + scraper sidecar + headless Chrome together (all on localhost), on a free always-on VM. No Vercel, no tunnel-to-CDP headaches — TikTok, IG, and SGE all work.
+
+**1. Get a free always-on VM.** [Oracle Cloud Always-Free](https://www.oracle.com/cloud/free/) gives a forever-free VM (Ampere ARM, up to 4 vCPU / 24 GB). Pick Ubuntu 22.04. (Any always-on Docker host works.)
+
+**2. On the VM — install Docker + clone:**
+```bash
+curl -fsSL https://get.docker.com | sh
+git clone https://github.com/haidarga/CAK-UNIVERSE.git && cd CAK-UNIVERSE
+```
+
+**3. Create the two env files** (copy your local values):
+```bash
+nano .env.local                 # Supabase, GEMINI_API_KEY, LLM_PROVIDER=gemini, GOOGLE_*, YOUTUBE_API_KEY, TELEGRAM_*, CRON_SECRET, SCRAPER_SERVICE_TOKEN
+cp scraper-service/.env.example scraper-service/.env && nano scraper-service/.env   # SERVICE_TOKEN (== SCRAPER_SERVICE_TOKEN), MS_TOKEN, IG_USERNAME/PASSWORD
+```
+
+**4. One-time SGE login** (OTP can't run headless): on your laptop run `START.cmd`, complete the SGE login once, then copy the profile to the VM:
+```bash
+scp -r "F:/chrome-cdp-profile/." ubuntu@<vm-ip>:~/CAK-UNIVERSE/chrome-profile/
+```
+
+**5. Launch everything:**
+```bash
+docker compose up -d --build      # app on :3000, sidecar + Chrome inside the same container
+```
+
+**6. Expose it with a free Cloudflare Tunnel** (stable HTTPS URL, no open ports):
+```bash
+curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64 -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared
+cloudflared tunnel login
+cloudflared tunnel create cakai
+cloudflared tunnel route dns cakai cakai.<your-domain>        # or use the free trycloudflare quick URL: cloudflared tunnel --url http://localhost:3000
+cloudflared tunnel run --url http://localhost:3000 cakai
+```
+
+**7. Point Google OAuth at the public URL:** set `GOOGLE_REDIRECT_URI=https://<your-url>/api/integrations/google/callback` in `.env.local`, add the same URL in Google Cloud Console → OAuth → Authorized redirect URIs, then `docker compose up -d` again.
+
+Done — share the URL. Always on, free, everything works. PC can be off.
+
+> Total cost: $0 (Oracle Always-Free VM + Supabase free + Gemini free + Cloudflare Tunnel free).
+
+---
+
+## Reference: the component shape
 
 ```
             ┌── Vercel (Next app) ──────────────┐

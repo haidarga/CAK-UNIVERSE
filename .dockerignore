@@ -1,0 +1,18 @@
+# Keep secrets + bulky/regenerated dirs OUT of the image build context.
+# (env is injected at runtime via compose env_file, never baked in.)
+.git
+node_modules
+.next
+out
+.env
+.env.*
+**/.env
+**/.env.local
+scraper-service/.venv
+scraper-service/.env
+scraper-service/ig_session.json
+scraper-service/ms-playwright
+chrome-profile
+npm-tmp
+*.log
+.vercel
