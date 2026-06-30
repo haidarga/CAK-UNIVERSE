@@ -2,10 +2,21 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ClipboardList } from "lucide-react";
-import type { Brand, Persona, Hook, EmbeddedResource, ContentPipeline } from "@/lib/types";
+import { ClipboardList, Rocket, AlertTriangle, CheckCircle2 } from "lucide-react";
+import type { Brand, Persona, Hook, EmbeddedResource, ContentPipeline, Script } from "@/lib/types";
 import ContentPlanCard from "./content-plan-card";
 import ScriptEditor from "./script-editor";
+
+type JebretNote = { type: "ok" | "warn" | "error"; msg: string };
+
+interface GenerateResult {
+  success?: boolean;
+  error?: string;
+  guardrailFlag?: boolean;
+  violations?: string[];
+  stage?: string;
+  script?: Script;
+}
 
 interface ScriptWorkspaceProps {
   brand: Brand;
@@ -33,6 +44,49 @@ export default function ScriptWorkspace({
 }: ScriptWorkspaceProps) {
   const router = useRouter();
   const [activeItem, setActiveItem] = useState<ContentPipeline | null>(null);
+  const [jebretId, setJebretId] = useState<string | null>(null);
+  const [note, setNote] = useState<JebretNote | null>(null);
+
+  /** One-click: ScriptWriterAgent writes the full script, then load it to edit. */
+  async function handleJebret(item: ContentPipeline) {
+    setJebretId(item.id);
+    setNote(null);
+    try {
+      const res = await fetch("/api/agents/script-writer/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pipelineId: item.id }),
+      });
+      const json: { success?: boolean; error?: string; data?: GenerateResult } = await res.json();
+      if (!res.ok || json.success === false) throw new Error(json.error ?? "Gagal generate naskah");
+      const result = json.data ?? {};
+      if (result.success === false) throw new Error(result.error ?? "Gagal generate naskah");
+
+      // Load the generated script straight into the editor for review/edit.
+      const generated = result.script ?? item.script ?? null;
+      setActiveItem({
+        ...item,
+        script: generated,
+        stage: (result.stage ?? "scripted") as ContentPipeline["stage"],
+      });
+
+      setNote(
+        result.guardrailFlag
+          ? {
+              type: "warn",
+              msg: `Naskah jadi tapi kena guardrail: ${
+                (result.violations ?? []).join(", ") || "klaim terlarang"
+              }. Udah ke-load di editor — tinggal benerin & simpan.`,
+            }
+          : { type: "ok", msg: "Naskah AI kelar & ke-load di editor bawah ↓ — review, edit, simpan." },
+      );
+      router.refresh();
+    } catch (e) {
+      setNote({ type: "error", msg: e instanceof Error ? e.message : "Gagal generate naskah" });
+    } finally {
+      setJebretId(null);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -50,7 +104,31 @@ export default function ScriptWorkspace({
               {toWrite.length}
             </span>
           )}
+          <span className="ml-auto hidden text-[11px] text-muted sm:inline">
+            <Rocket className="mr-1 inline size-3 text-accent" aria-hidden /> Jebret = AI tulis full ·
+            Tulis manual = editor
+          </span>
         </div>
+
+        {note && (
+          <div
+            className={`flex items-start gap-2 rounded-xl border px-3.5 py-2.5 text-sm ${
+              note.type === "ok"
+                ? "border-success/30 bg-success/[0.06] text-success"
+                : note.type === "warn"
+                  ? "border-amber-400/30 bg-amber-400/[0.06] text-amber-300"
+                  : "border-danger/30 bg-danger/[0.06] text-danger"
+            }`}
+            role="status"
+          >
+            {note.type === "ok" ? (
+              <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden strokeWidth={1.5} />
+            ) : (
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden strokeWidth={1.5} />
+            )}
+            <span>{note.msg}</span>
+          </div>
+        )}
 
         {toWrite.length === 0 ? (
           <p className="text-sm text-muted">
@@ -64,6 +142,8 @@ export default function ScriptWorkspace({
                 item={item}
                 active={activeItem?.id === item.id}
                 onWrite={setActiveItem}
+                onJebret={handleJebret}
+                jebretLoading={jebretId === item.id}
               />
             ))}
           </div>

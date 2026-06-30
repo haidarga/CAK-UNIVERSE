@@ -1,18 +1,27 @@
 "use client";
 
-import { PenLine, Sparkles, Rocket } from "lucide-react";
+import { PenLine, Rocket, Sparkles, Loader2 } from "lucide-react";
 import type { ContentPipeline } from "@/lib/types";
-import { requestViralCheck } from "./sge-viral-lab";
 
 interface ContentPlanCardProps {
   item: ContentPipeline;
   /** True while this card's direction is loaded in the editor. */
   active?: boolean;
   onWrite: (item: ContentPipeline) => void;
+  /** One-click AI script generation ("jebret"). Button shown only when provided. */
+  onJebret?: (item: ContentPipeline) => void;
+  /** True while THIS card's script is being generated. */
+  jebretLoading?: boolean;
 }
 
 /** A strategist's planned direction waiting to be written into a script. */
-export default function ContentPlanCard({ item, active, onWrite }: ContentPlanCardProps) {
+export default function ContentPlanCard({
+  item,
+  active,
+  onWrite,
+  onJebret,
+  jebretLoading,
+}: ContentPlanCardProps) {
   const dir = item.content_direction;
   const title = dir?.title ?? "Untitled direction";
   const format = item.content_format ?? dir?.format ?? null;
@@ -48,31 +57,30 @@ export default function ContentPlanCard({ item, active, onWrite }: ContentPlanCa
       {theme && <p className="line-clamp-2 text-xs text-muted">{theme}</p>}
       {notes && <p className="line-clamp-3 text-xs text-muted/80">{notes}</p>}
 
-      <div className="mt-1 flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={() =>
-            requestViralCheck({
-              title,
-              hook: hook ?? undefined,
-              format: format ?? undefined,
-              theme: theme ?? undefined,
-              notes: notes ?? undefined,
-            })
-          }
-          className="inline-flex min-h-[40px] items-center gap-2 rounded-xl border border-accent/40 bg-accent/10 px-3.5 text-sm font-semibold text-accent transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-          title="Cek potensi viral pakai insight SGE"
-        >
-          <Rocket className="size-4" aria-hidden />
-          Cek viral
-        </button>
+      <div className="mt-1 flex flex-wrap justify-end gap-2">
+        {onJebret && (
+          <button
+            type="button"
+            onClick={() => onJebret(item)}
+            disabled={jebretLoading}
+            className="inline-flex min-h-[40px] items-center gap-2 rounded-xl border border-accent/40 bg-accent/15 px-3.5 text-sm font-semibold text-accent transition-colors hover:bg-accent/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-60"
+            title="AI tulis naskah lengkap dari arahan ini"
+          >
+            {jebretLoading ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            ) : (
+              <Rocket className="size-4" aria-hidden />
+            )}
+            {jebretLoading ? "Nulis…" : "Jebret AI"}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => onWrite(item)}
           className="inline-flex min-h-[40px] items-center gap-2 rounded-xl border border-primary/40 bg-primary/15 px-3.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
         >
           <PenLine className="size-4" aria-hidden />
-          Tulis naskah
+          Tulis manual
         </button>
       </div>
     </article>

@@ -116,6 +116,7 @@ export class ScriptWriterAgent extends BaseAgent {
         guardrailFlag: true,
         violations: guard.violations,
         stage: "guardrail_review" as const,
+        script: { text: scriptText, version: 1 },
         tokensUsed: result.tokensUsed,
       };
     }
