@@ -39,7 +39,16 @@ const SEV_CLS: Record<string, string> = {
 
 function coerce(data: unknown): DecisionReport | null {
   if (typeof data !== "object" || data === null) return null;
-  return data as DecisionReport;
+  const d = data as Record<string, unknown>;
+  // LLM output shape is untrusted — force arrays so .map() can never throw.
+  return {
+    situation: typeof d.situation === "string" ? d.situation : undefined,
+    problems: Array.isArray(d.problems) ? (d.problems as Problem[]) : [],
+    decisions: Array.isArray(d.decisions) ? (d.decisions as Decision[]) : [],
+    quick_wins: Array.isArray(d.quick_wins)
+      ? d.quick_wins.filter((x): x is string => typeof x === "string")
+      : [],
+  };
 }
 
 export default function DecisionsPanel({ brandId }: { brandId: string }) {

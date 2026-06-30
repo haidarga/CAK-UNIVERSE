@@ -36,7 +36,9 @@ app = FastAPI(title="CAK AI Scraper Service")
 
 
 def _auth(token: str | None) -> None:
-    if SERVICE_TOKEN and token != SERVICE_TOKEN:
+    # Fail CLOSED: an unset SERVICE_TOKEN must reject every request, not allow
+    # all of them (an empty .env on the worker box must not open the sidecar).
+    if not SERVICE_TOKEN or token != SERVICE_TOKEN:
         raise HTTPException(status_code=401, detail="unauthorized")
 
 

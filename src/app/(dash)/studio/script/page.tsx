@@ -1,7 +1,7 @@
 import { PenLine } from "lucide-react";
 import { admin } from "@/lib/supabase";
 import { loadBrands, loadPipeline } from "@/lib/dash-data";
-import type { Persona, Hook, EmbeddedResource } from "@/lib/types";
+import type { Persona, Hook } from "@/lib/types";
 import PageHeader from "@/components/page-header";
 import BrandSelector from "@/components/brand-selector";
 import EmptyState from "@/components/empty-state";
@@ -42,21 +42,6 @@ async function loadHooks(brandId: string): Promise<Hook[]> {
   }
 }
 
-async function loadEmbeds(brandId: string): Promise<EmbeddedResource[]> {
-  try {
-    const { data, error } = await admin()
-      .from("embedded_resources")
-      .select("*")
-      .eq("brand_id", brandId)
-      .eq("kind", "doc")
-      .order("created_at", { ascending: false });
-    if (error) throw error;
-    return (data ?? []) as EmbeddedResource[];
-  } catch {
-    return [];
-  }
-}
-
 export default async function ScriptStudioPage({
   searchParams,
 }: {
@@ -65,15 +50,14 @@ export default async function ScriptStudioPage({
   const { brand } = await searchParams;
   const { brands, selected } = await loadBrands(brand);
 
-  const [personas, hooks, embeds, items, toWrite] = selected
+  const [personas, hooks, items, toWrite] = selected
     ? await Promise.all([
         loadPersonas(selected.id),
         loadHooks(selected.id),
-        loadEmbeds(selected.id),
         loadPipeline(selected.id, SCRIPT_STAGES),
         loadPipeline(selected.id, TO_WRITE_STAGES),
       ])
-    : [[], [], [], [], []];
+    : [[], [], [], []];
 
   return (
     <>
@@ -102,7 +86,6 @@ export default async function ScriptStudioPage({
             brand={selected}
             personas={personas}
             hooks={hooks}
-            embeds={embeds}
             toWrite={toWrite}
             inProgress={items}
           />

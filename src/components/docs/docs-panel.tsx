@@ -22,9 +22,12 @@ interface Embed {
 }
 
 /** Detect a Google Doc/Sheet from a pasted URL → {kind, provider} or null. */
-function detectGoogle(url: string): { kind: "doc" | "sheet"; provider: string } | null {
-  if (/docs\.google\.com\/document\//.test(url)) return { kind: "doc", provider: "google_docs" };
-  if (/docs\.google\.com\/spreadsheets\//.test(url))
+export function detectGoogle(url: string): { kind: "doc" | "sheet"; provider: string } | null {
+  // Require a real document id (/d/<id>) — reject bare/forms/drawing URLs.
+  // Allow the optional /u/<n>/ account-switcher prefix.
+  if (/docs\.google\.com\/document\/(?:u\/\d+\/)?d\/[A-Za-z0-9_-]{10,}/.test(url))
+    return { kind: "doc", provider: "google_docs" };
+  if (/docs\.google\.com\/spreadsheets\/(?:u\/\d+\/)?d\/[A-Za-z0-9_-]{10,}/.test(url))
     return { kind: "sheet", provider: "google_sheets" };
   return null;
 }
@@ -102,9 +105,16 @@ export default function DocsPanel({
   }
 
   async function unlink(id: string) {
-    if (openId === id) setOpenId(null);
-    await fetch(`/api/embeds?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
-    await load();
+    setError(null);
+    try {
+      const res = await fetch(`/api/embeds?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      const json: { success?: boolean; error?: string } = await res.json();
+      if (!res.ok || json.success === false) throw new Error(json.error ?? "Gagal lepas link");
+      if (openId === id) setOpenId(null);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Gagal lepas link");
+    }
   }
 
   return (

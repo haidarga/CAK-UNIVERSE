@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Save, Loader2, Type, Check, AlertCircle } from "lucide-react";
-import type { Brand, Persona, Hook, EmbeddedResource, ContentPipeline } from "@/lib/types";
+import type { Brand, Persona, Hook, ContentPipeline } from "@/lib/types";
 import { checkGuardrails } from "@/lib/guardrails";
 import { cn } from "@/lib/utils";
 import GlassCard from "@/components/glass-card";
@@ -17,7 +17,6 @@ interface ScriptEditorProps {
   brand: Brand;
   personas: Persona[];
   hooks: Hook[];
-  embeds: EmbeddedResource[];
   /** Existing scripted pipeline items, to seed/edit. */
   items: ContentPipeline[];
   /**

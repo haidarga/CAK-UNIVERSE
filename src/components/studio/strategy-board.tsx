@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { TrendingUp, CalendarDays, Wand2, FileSpreadsheet } from "lucide-react";
-import type { Brand, Trend, EmbeddedResource, ContentPipeline } from "@/lib/types";
+import type { Brand, Trend, ContentPipeline } from "@/lib/types";
 import GlassCard from "@/components/glass-card";
 import AiAssistInline from "@/components/ai-assist-inline";
 import DocsPanel from "@/components/docs/docs-panel";
@@ -14,7 +14,6 @@ import SuggestionCards, { type StrategySuggestion } from "./suggestion-cards";
 interface StrategyBoardProps {
   brand: Brand;
   trends: Trend[];
-  embeds: EmbeddedResource[];
   recent: ContentPipeline[];
 }
 

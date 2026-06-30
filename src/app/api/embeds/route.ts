@@ -15,6 +15,15 @@ export const runtime = "nodejs";
 const KINDS = ["doc", "sheet", "drive_file", "video", "post", "profile", "board"] as const;
 type EmbedKind = (typeof KINDS)[number];
 
+/** Only http(s) — blocks javascript:/data: URLs that would be XSS in an <a href>. */
+function isHttpUrl(u: string): boolean {
+  try {
+    return ["http:", "https:"].includes(new URL(u).protocol);
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
@@ -64,8 +73,11 @@ export async function POST(req: Request) {
     if (!body.provider || !getProvider(body.provider as ProviderId)) {
       return err("valid provider is required", 400);
     }
-    if (!body.external_url || !body.external_url.trim()) {
-      return err("external_url is required", 400);
+    const externalUrl = (body.external_url ?? "").trim();
+    if (!externalUrl) return err("external_url is required", 400);
+    if (!isHttpUrl(externalUrl)) return err("external_url must be a valid http(s) URL", 400);
+    if (body.thumbnail_url && !isHttpUrl(body.thumbnail_url)) {
+      return err("thumbnail_url must be a valid http(s) URL", 400);
     }
     if (!body.kind || !(KINDS as readonly string[]).includes(body.kind)) {
       return err(`kind must be one of: ${KINDS.join(", ")}`, 400);
@@ -74,7 +86,7 @@ export async function POST(req: Request) {
     const row = {
       provider: body.provider,
       kind: body.kind as EmbedKind,
-      external_url: body.external_url.trim(),
+      external_url: externalUrl,
       title: body.title ?? null,
       external_id: body.external_id ?? null,
       thumbnail_url: body.thumbnail_url ?? null,
@@ -96,6 +108,8 @@ export async function POST(req: Request) {
   }
 }
 
+// AUTHZ: single-org internal tool — any authenticated member may unlink any
+// embed (same model as brands). Revisit (RLS / brand-scoping) if multi-tenant.
 export async function DELETE(req: Request) {
   try {
     const id = new URL(req.url).searchParams.get("id");

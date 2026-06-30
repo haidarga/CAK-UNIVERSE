@@ -17,16 +17,19 @@ services:
       context: ./scraper-service
       dockerfile: Dockerfile
     env_file: ./scraper-service/.env # SERVICE_TOKEN, MS_TOKEN, IG_USERNAME/PASSWORD, PROXY…
+    # Loopback-only: reach it via the Cloudflare Tunnel running ON this box, or a
+    # token-auth reverse proxy. NEVER bind 0.0.0.0 — CDP/sidecar have weak auth.
     ports:
-      - "8900:8900"
+      - "127.0.0.1:8900:8900"
     restart: unless-stopped
 
   chrome:
     # Headless Chrome exposing CDP for the SGE scraper. The SGE login cookie
     # persists in ./chrome-profile — see DEPLOY.md for the one-time login.
     image: chromedp/headless-shell:latest
+    # Loopback-only — CDP has NO auth. Expose only via the on-box tunnel/proxy.
     ports:
-      - "9222:9222"
+      - "127.0.0.1:9222:9222"
     restart: unless-stopped
     volumes:
       - ./chrome-profile:/profile

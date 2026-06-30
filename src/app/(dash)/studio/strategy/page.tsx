@@ -1,7 +1,7 @@
 import { Compass } from "lucide-react";
 import { admin } from "@/lib/supabase";
 import { loadBrands, loadPipeline } from "@/lib/dash-data";
-import type { Trend, EmbeddedResource } from "@/lib/types";
+import type { Trend } from "@/lib/types";
 import PageHeader from "@/components/page-header";
 import BrandSelector from "@/components/brand-selector";
 import EmptyState from "@/components/empty-state";
@@ -28,21 +28,6 @@ async function loadTrends(brandId: string): Promise<Trend[]> {
   }
 }
 
-async function loadSheetEmbeds(brandId: string): Promise<EmbeddedResource[]> {
-  try {
-    const { data, error } = await admin()
-      .from("embedded_resources")
-      .select("*")
-      .eq("brand_id", brandId)
-      .eq("kind", "sheet")
-      .order("created_at", { ascending: false });
-    if (error) throw error;
-    return (data ?? []) as EmbeddedResource[];
-  } catch {
-    return [];
-  }
-}
-
 export default async function StrategyStudioPage({
   searchParams,
 }: {
@@ -51,13 +36,12 @@ export default async function StrategyStudioPage({
   const { brand } = await searchParams;
   const { brands, selected } = await loadBrands(brand);
 
-  const [trends, embeds, recent] = selected
+  const [trends, recent] = selected
     ? await Promise.all([
         loadTrends(selected.id),
-        loadSheetEmbeds(selected.id),
         loadPipeline(selected.id, DIRECTION_STAGES),
       ])
-    : [[], [], []];
+    : [[], []];
 
   return (
     <>
@@ -84,7 +68,7 @@ export default async function StrategyStudioPage({
         <div className="animate-fade-up flex flex-col gap-5">
           <TrendResearch />
           <SGEViralLab />
-          <StrategyBoard brand={selected} trends={trends} embeds={embeds} recent={recent} />
+          <StrategyBoard brand={selected} trends={trends} recent={recent} />
         </div>
       )}
     </>

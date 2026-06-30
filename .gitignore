@@ -37,3 +37,6 @@ scraper-service/__pycache__/
 scraper-service/.env
 scraper-service/ig_session.json
 **/__pycache__/
+
+# worker box: persisted headless-Chrome profile holds the SGE session cookie
+chrome-profile/

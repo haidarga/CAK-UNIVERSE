@@ -9,6 +9,11 @@ import { admin } from "@/lib/supabase";
 import type { Brand, KpiMetric } from "@/lib/types";
 import { PIPELINE_STAGES, type PipelineStage } from "@/lib/constants";
 
+/** Neutralize DB-sourced strings before they enter an LLM prompt (anti prompt-injection). */
+export function sanitizeForPrompt(s: string): string {
+  return String(s ?? "").replace(/[\n\r"\\\]]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+}
+
 export const LEAD_SYSTEM = `You are the Lead. You write a concise, executive-level performance report in MARKDOWN for a brand owner.
 
 Structure:
@@ -159,7 +164,12 @@ Write the Markdown report.`;
   }
 
   /** Lead-as-decision-maker: diagnose problems + decide how to solve them. */
-  async generateDecisions(brandId: string) {
+  async generateDecisions(
+    brandId: string,
+  ): Promise<
+    | { success: true; data: DecisionReport; tokensUsed?: number }
+    | { success: false; error: string }
+  > {
     const brand = (await this.getBrand(brandId)) as Brand | null;
     if (!brand) return { success: false as const, error: `Brand ${brandId} not found` };
 
@@ -179,9 +189,9 @@ KPI (${kpi.days}d): followers +${kpi.totalFollowersGained}, views ${kpi.totalVie
 PIPELINE STAGE COUNTS:
 ${stageLines}
 
-FLAGGED/BANNED ACCOUNTS (${flagged.length}): ${flagged.slice(0, 8).map((a) => `@${a.username} [${a.flags}]`).join("; ") || "none"}
+FLAGGED/BANNED ACCOUNTS (${flagged.length}): ${flagged.slice(0, 8).map((a) => `@${sanitizeForPrompt(a.username)} [${sanitizeForPrompt(a.flags)}]`).join("; ") || "none"}
 
-OPEN DEV ISSUES (${issues.length}): ${issues.slice(0, 8).map((i) => `${i.severity}: ${i.title}`).join("; ") || "none"}
+OPEN DEV ISSUES (${issues.length}): ${issues.slice(0, 8).map((i) => `${sanitizeForPrompt(i.severity)}: ${sanitizeForPrompt(i.title)}`).join("; ") || "none"}
 
 Diagnose and decide now.`;
 

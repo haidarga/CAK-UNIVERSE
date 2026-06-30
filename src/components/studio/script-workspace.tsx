@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ClipboardList, Rocket, AlertTriangle, CheckCircle2 } from "lucide-react";
-import type { Brand, Persona, Hook, EmbeddedResource, ContentPipeline, Script } from "@/lib/types";
+import type { Brand, Persona, Hook, ContentPipeline, Script } from "@/lib/types";
 import ContentPlanCard from "./content-plan-card";
 import ScriptEditor from "./script-editor";
 
@@ -22,7 +22,6 @@ interface ScriptWorkspaceProps {
   brand: Brand;
   personas: Persona[];
   hooks: Hook[];
-  embeds: EmbeddedResource[];
   /** Planned directions waiting for a script (direction_set / briefed). */
   toWrite: ContentPipeline[];
   /** Scripts already in flight (scripted / script_reviewed / guardrail_review). */
@@ -38,7 +37,6 @@ export default function ScriptWorkspace({
   brand,
   personas,
   hooks,
-  embeds,
   toWrite,
   inProgress,
 }: ScriptWorkspaceProps) {
@@ -162,7 +160,6 @@ export default function ScriptWorkspace({
           brand={brand}
           personas={personas}
           hooks={hooks}
-          embeds={embeds}
           items={inProgress}
           loadItem={activeItem}
           onSaved={() => {

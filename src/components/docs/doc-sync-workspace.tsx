@@ -105,6 +105,12 @@ export default function DocSyncWorkspace({ initialUrl }: { initialUrl?: string }
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
+  // On unmount (e.g. an inline doc panel is collapsed), cancel any pending push.
+  useEffect(() => {
+    return () => {
+      if (pushTimer.current) clearTimeout(pushTimer.current);
+    };
+  }, []);
   useEffect(() => {
     docRef.current = docBody;
   }, [docBody]);
@@ -178,6 +184,12 @@ export default function DocSyncWorkspace({ initialUrl }: { initialUrl?: string }
     async (targetUrl: string) => {
       const u = targetUrl.trim();
       if (!u) return;
+      // Cancel any pending debounced push from a previous doc — otherwise it
+      // could fire after we switch URLs and push stale content to the new doc.
+      if (pushTimer.current) {
+        clearTimeout(pushTimer.current);
+        pushTimer.current = null;
+      }
       setStatus("loading");
       setError(null);
       setLoadedUrl(u);
