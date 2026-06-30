@@ -563,6 +563,12 @@ async function seedPersonas(
     const seeds = PERSONAS[slug] ?? [];
     if (seeds.length === 0) continue;
 
+    // Clear FK refs to personas before deleting them (accounts + pipeline are
+    // reseeded later anyway). Avoids accounts_persona_id_fkey / pipeline FK
+    // violations on a re-run against an already-seeded DB.
+    await db.from("accounts").update({ persona_id: null }).eq("brand_id", brandId);
+    await db.from("content_pipeline").update({ persona_id: null }).eq("brand_id", brandId);
+
     const { error: delErr } = await db
       .from("personas")
       .delete()
@@ -606,6 +612,9 @@ async function seedAccounts(
     const personaIdxPlan = ACCOUNT_PERSONA_INDEX[slug] ?? [0];
     const platform = BRANDS.find((b) => b.slug === slug)?.platform ?? "tiktok";
     const stem = ACCOUNT_STEM[slug] ?? slug;
+
+    // Clear FK refs to accounts before deleting (pipeline reseeded later).
+    await db.from("content_pipeline").update({ account_id: null }).eq("brand_id", brandId);
 
     const { error: delErr } = await db
       .from("accounts")
