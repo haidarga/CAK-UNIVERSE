@@ -19,7 +19,7 @@
   --surface: 19 22 34; /* glass inner core */
   --surface-2: 28 32 48; /* raised */
   --fg: 233 237 248;
-  --muted: 140 150 178;
+  --muted: 154 165 193; /* lifted for all-day readability of secondary text */
   --border: 60 70 100;
 
   --primary: 99 132 255; /* indigo-blue, brighter for glow */
@@ -65,20 +65,22 @@ body::before {
   inset: 0;
   z-index: -2;
   pointer-events: none;
+  /* Calmer ambient glow — present but no longer competing with content. */
   background:
-    radial-gradient(60rem 40rem at 12% -8%, rgba(99, 132, 255, 0.16), transparent 60%),
-    radial-gradient(50rem 36rem at 108% 6%, rgba(244, 162, 56, 0.12), transparent 58%),
-    radial-gradient(46rem 40rem at 78% 116%, rgba(52, 211, 153, 0.10), transparent 60%);
+    radial-gradient(60rem 40rem at 12% -8%, rgba(99, 132, 255, 0.10), transparent 60%),
+    radial-gradient(50rem 36rem at 108% 6%, rgba(244, 162, 56, 0.06), transparent 58%),
+    radial-gradient(46rem 40rem at 78% 116%, rgba(52, 211, 153, 0.05), transparent 60%);
 }
 
-/* Film-grain overlay — fixed, never on scroll containers */
+/* Film-grain overlay — fixed, behind content (z-index:-1) so text stays crisp.
+   Subtle texture for depth without straining the eyes during long reads. */
 body::after {
   content: "";
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: -1;
   pointer-events: none;
-  opacity: 0.035;
+  opacity: 0.02;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
@@ -88,6 +90,11 @@ h3,
 .font-display {
   font-family: var(--font-display);
   letter-spacing: -0.02em;
+  text-wrap: balance; /* avoid lone orphan words in headings */
+}
+
+p {
+  text-wrap: pretty;
 }
 
 .tnum {
@@ -118,15 +125,15 @@ h3,
     box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
   }
   .glass-hover {
-    @apply transition-[transform,box-shadow,border-color] duration-500;
+    @apply transition-[transform,box-shadow,border-color] duration-300;
     transition-timing-function: var(--ease-spring);
   }
   .glass-hover:hover {
-    transform: translateY(-3px);
-    border-color: rgba(255, 255, 255, 0.16);
+    transform: translateY(-1.5px);
+    border-color: rgba(255, 255, 255, 0.14);
     box-shadow:
-      0 36px 80px -32px rgba(0, 0, 0, 0.9),
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.14);
+      0 24px 56px -30px rgba(0, 0, 0, 0.85),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.12);
   }
 
   /* ---- Micro eyebrow tag ---- */
@@ -201,7 +208,7 @@ h3,
     box-shadow: 0 0 0 1px rgb(var(--primary) / 0.4), 0 0 40px -8px rgb(var(--primary) / 0.6);
   }
   .animate-fade-up {
-    animation: fade-up 700ms var(--ease-out-soft) both;
+    animation: fade-up 420ms var(--ease-out-soft) both;
   }
   .animate-pulse-dot {
     animation: pulse-dot 2s ease-in-out infinite;
@@ -211,13 +218,11 @@ h3,
 @keyframes fade-up {
   0% {
     opacity: 0;
-    transform: translateY(14px);
-    filter: blur(6px);
+    transform: translateY(8px);
   }
   100% {
     opacity: 1;
     transform: translateY(0);
-    filter: blur(0);
   }
 }
 @keyframes pulse-dot {
