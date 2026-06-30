@@ -18,8 +18,9 @@
 //  - instagram — explore/hashtag almost always needs a LOGGED-IN session.
 //                Empty results are EXPECTED until a connected IG session's
 //                cookies are present on the browser. Not a bug.
-//  - sge        — socialgrowthengineers.com behind a login; best-effort, the
-//                selectors need tuning against the live site (see sge.ts).
+//  - sge        — socialgrowthengineers.com articles are PUBLIC (no login).
+//                Scraped via the Chrome/CDP session. Empty almost always means
+//                Chrome CDP (:9222) is not running — start it via START.cmd.
 // ============================================================
 import { scrapeTikTokHashtag } from "../integrations/scrapers/tiktok";
 import { scrapeInstagramHashtag } from "../integrations/scrapers/instagram";
@@ -163,7 +164,7 @@ function emptyReason(platform: Platform): string {
     case "instagram":
       return "perlu login (no connected session)";
     case "sge":
-      return "perlu login / selectors belum di-tune";
+      return "Chrome CDP belum nyala (jalankan START.cmd) / belum ada hasil";
     case "tiktok":
       return "no public results (or browser session unavailable)";
     case "youtube":
