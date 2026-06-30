@@ -29,10 +29,18 @@ export async function middleware(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  // Degrade gracefully if auth is not configured (local dev only).
+  // Auth not configured. In production this MUST fail closed — passing
+  // requests through would expose every protected route (and all /api/*)
+  // unauthenticated. Only local dev is allowed to degrade gracefully.
   if (!url || !key) {
+    if (process.env.NODE_ENV === "production") {
+      console.error(
+        "[middleware] Supabase env missing in production — refusing all requests (fail closed).",
+      );
+      return new NextResponse("Service misconfigured", { status: 503 });
+    }
     console.warn(
-      "[middleware] Supabase env not set — auth disabled. " +
+      "[middleware] Supabase env not set — auth disabled (dev only). " +
         "Set NEXT_PUBLIC_SUPABASE_URL + NEXT_PUBLIC_SUPABASE_ANON_KEY in production.",
     );
     return NextResponse.next();
