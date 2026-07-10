@@ -83,11 +83,7 @@ export default async function ScriptStudioPage({
       ) : (
         <div className="animate-fade-up">
           <ScriptWorkspace
-            brand={selected}
-            personas={personas}
-            hooks={hooks}
             toWrite={toWrite}
-            inProgress={items}
           />
         </div>
       )}
