@@ -48,6 +48,7 @@ export interface Persona {
   content_style: Record<string, unknown> | null;
   pain_points: string[];
   emotional_clusters: string[];
+  gold_examples?: string[]; // Added for few-shot prompting
   created_at: string;
 }
 
@@ -93,8 +94,15 @@ export interface ContentDirection {
   research_notes?: string;
 }
 
+export interface ScriptBlock {
+  id: string;
+  type: "hook" | "body" | "cta";
+  content: string;
+}
+
 export interface Script {
-  text: string;
+  text: string; // Legacy fallback or concatenated version
+  blocks?: ScriptBlock[]; // New structured block format
   version: number;
 }
 
@@ -200,6 +208,19 @@ export interface Trend {
   relevance_score: number;
   status: string;
   fetched_at: string;
+}
+
+export interface ContentBenchmark {
+  id: string;
+  brand_id: string | null;
+  source_url: string;
+  platform: string | null;
+  extracted_topic: string | null;
+  extracted_angle: string | null;
+  extracted_hook: string | null;
+  extracted_cta: string | null;
+  shot_breakdown: Record<string, unknown>[] | null;
+  created_at: string;
 }
 
 export interface AnomalyAnalysis {
