@@ -39,9 +39,17 @@ export default function ScriptWorkspace({
         </div>
 
         {toWrite.length === 0 ? (
-          <p className="text-sm text-muted">
-            Belum ada arahan dari strategist. Direction yang di-push akan muncul di sini.
-          </p>
+          <div className="flex flex-col items-start gap-4">
+            <p className="text-sm text-muted">
+              Belum ada arahan dari strategist. Direction yang di-push akan muncul di sini.
+            </p>
+            <button
+              onClick={() => window.location.href = '/scripts/workspace/demo-123'}
+              className="inline-flex min-h-[40px] items-center gap-2 rounded-xl bg-indigo-600 px-6 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition-all hover:bg-indigo-500 hover:shadow-indigo-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600/60"
+            >
+              🚀 Buka Cockpit (Test Mode)
+            </button>
+          </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {toWrite.map((item) => (
