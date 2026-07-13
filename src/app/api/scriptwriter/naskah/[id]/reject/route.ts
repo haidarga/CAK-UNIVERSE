@@ -9,7 +9,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (unauthorized) return unauthorized
 
   const { data, error } = await supabase
-    .from('naskah').update({ status: 'rejected' }).eq('id', id).eq('created_by', user.id).select('id, status').maybeSingle()
+    .from('sw_naskah').update({ status: 'rejected' }).eq('id', id).eq('created_by', user.id).select('id, status').maybeSingle()
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   if (!data) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 })
   return NextResponse.json({ ok: true, naskah: data })

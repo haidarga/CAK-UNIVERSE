@@ -14,7 +14,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { user, unauthorized } = await requireUser(authClient)
   if (unauthorized) return unauthorized
 
-  const { data: batch } = await authClient.from('batches').select('id').eq('id', batchId).eq('created_by', user.id).maybeSingle()
+  const { data: batch } = await authClient.from('sw_batches').select('id').eq('id', batchId).eq('created_by', user.id).maybeSingle()
   if (!batch) return NextResponse.json({ ok: false, error: 'batch not found' }, { status: 404 })
 
   let body: Record<string, unknown>
@@ -38,7 +38,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   const docUrl = await getDocWebViewUrl(docId)
-  const { error } = await authClient.from('batches').update({
+  const { error } = await authClient.from('sw_batches').update({
     external_doc_ref: { doc_id: docId, doc_url: docUrl, linked_at: new Date().toISOString() },
   }).eq('id', batchId).eq('created_by', user.id)
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })

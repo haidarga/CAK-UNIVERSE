@@ -9,7 +9,7 @@ export async function GET() {
   if (unauthorized) return unauthorized
 
   const { data, error } = await supabase
-    .from('batches').select('*').eq('created_by', user.id).order('created_at', { ascending: false })
+    .from('sw_batches').select('*').eq('created_by', user.id).order('created_at', { ascending: false })
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true, batches: data })
 }
@@ -27,19 +27,19 @@ export async function POST(req: Request) {
   // active workspace client (silently ignored if that cookie is stale).
   let clientId: string | null = null
   if (body.client_id) {
-    const { data: client } = await supabase.from('clients').select('id').eq('id', String(body.client_id)).eq('created_by', user.id).eq('is_active', true).maybeSingle()
+    const { data: client } = await supabase.from('sw_clients').select('id').eq('id', String(body.client_id)).eq('created_by', user.id).eq('is_active', true).maybeSingle()
     if (!client) return NextResponse.json({ ok: false, error: 'client not found' }, { status: 400 })
     clientId = client.id
   } else {
     const activeClient = await getActiveClientId()
     if (activeClient) {
-      const { data: client } = await supabase.from('clients').select('id').eq('id', activeClient).eq('created_by', user.id).eq('is_active', true).maybeSingle()
+      const { data: client } = await supabase.from('sw_clients').select('id').eq('id', activeClient).eq('created_by', user.id).eq('is_active', true).maybeSingle()
       clientId = client?.id ?? null
     }
   }
 
   const { data, error } = await supabase
-    .from('batches').insert({ created_by: user.id, name, client_id: clientId }).select('*').single()
+    .from('sw_batches').insert({ created_by: user.id, name, client_id: clientId }).select('*').single()
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true, batch: data })
 }

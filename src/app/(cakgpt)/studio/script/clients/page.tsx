@@ -11,11 +11,11 @@ export default async function ClientsPage() {
   const user = await requirePageUser(supabase)
 
   const { data: clients } = await supabase
-    .from('clients').select('*').eq('created_by', user.id).eq('is_active', true).order('created_at', { ascending: false })
+    .from('sw_clients').select('*').eq('created_by', user.id).eq('is_active', true).order('created_at', { ascending: false })
 
   const clientIds = (clients || []).map((c) => c.id)
   const { data: briefRows } = clientIds.length
-    ? await supabase.from('strategist_briefs').select('client_id').eq('created_by', user.id).in('client_id', clientIds)
+    ? await supabase.from('sw_strategist_briefs').select('client_id').eq('created_by', user.id).in('client_id', clientIds)
     : { data: [] as Array<{ client_id: string | null }> }
 
   const briefCounts: Record<string, number> = {}

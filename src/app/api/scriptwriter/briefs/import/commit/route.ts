@@ -21,7 +21,7 @@ export async function POST(req: Request) {
   let clientId: string | null = null
   if (parsed.data.client_id) {
     const { data: client } = await supabase
-      .from('clients').select('id').eq('id', parsed.data.client_id).eq('created_by', user.id).eq('is_active', true).maybeSingle()
+      .from('sw_clients').select('id').eq('id', parsed.data.client_id).eq('created_by', user.id).eq('is_active', true).maybeSingle()
     if (!client) return NextResponse.json({ ok: false, error: 'client not found' }, { status: 400 })
     clientId = client.id
   }
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
     import_group: importGroup,
   }))
 
-  const { data, error } = await supabase.from('strategist_briefs').insert(rows).select('id')
+  const { data, error } = await supabase.from('sw_strategist_briefs').insert(rows).select('id')
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
 
   return NextResponse.json({ ok: true, brief_ids: (data || []).map((r) => r.id), count: data?.length || 0 })

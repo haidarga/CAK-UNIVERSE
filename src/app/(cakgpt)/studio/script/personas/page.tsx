@@ -13,7 +13,7 @@ export default async function PersonasPage() {
   const activeClient = await getActiveClientId()
 
   // Shared-or-scoped: in a workspace show that client's personas + shared (null).
-  let personaQuery = supabase.from('personas').select('*').eq('created_by', user.id).eq('is_active', true).order('created_at', { ascending: false })
+  let personaQuery = supabase.from('sw_personas').select('*').eq('created_by', user.id).eq('is_active', true).order('created_at', { ascending: false })
   if (activeClient) personaQuery = personaQuery.or(`client_id.eq.${activeClient},client_id.is.null`)
   const { data: personas } = await personaQuery
 

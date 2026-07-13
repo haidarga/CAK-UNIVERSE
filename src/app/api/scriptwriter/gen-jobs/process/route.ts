@@ -26,11 +26,11 @@ export async function POST(req: Request) {
   const batchId = String(body.batch_id || '')
   if (!batchId) return NextResponse.json({ ok: false, error: 'batch_id required' }, { status: 400 })
 
-  const { data: batch } = await authClient.from('batches').select('id').eq('id', batchId).eq('created_by', user.id).maybeSingle()
+  const { data: batch } = await authClient.from('sw_batches').select('id').eq('id', batchId).eq('created_by', user.id).maybeSingle()
   if (!batch) return NextResponse.json({ ok: false, error: 'batch not found' }, { status: 404 })
 
   const service = createServiceClient()
-  const { data: claimed, error: claimErr } = await service.rpc('claim_gen_jobs', {
+  const { data: claimed, error: claimErr } = await service.rpc('sw_claim_gen_jobs', {
     p_batch_id: batchId, p_created_by: user.id, p_limit: CHUNK,
   })
   if (claimErr) return NextResponse.json({ ok: false, error: claimErr.message }, { status: 500 })
@@ -50,17 +50,17 @@ export async function POST(req: Request) {
         skipCritic: true, // bulk fast-path: rule-QC now, full critic on demand via /qc/rerun
       })
       if (res.ok) {
-        await service.from('gen_jobs').update({ status: 'done', naskah_id: res.naskahId, error: null }).eq('id', job.id)
+        await service.from('sw_gen_jobs').update({ status: 'done', naskah_id: res.naskahId, error: null }).eq('id', job.id)
         done++
       } else {
         // Requeue for another attempt unless we've exhausted retries.
         const giveUp = job.attempts >= MAX_ATTEMPTS
-        await service.from('gen_jobs').update({ status: giveUp ? 'failed' : 'pending', error: res.error }).eq('id', job.id)
+        await service.from('sw_gen_jobs').update({ status: giveUp ? 'failed' : 'pending', error: res.error }).eq('id', job.id)
         if (giveUp) failed++
       }
     } catch (e) {
       const giveUp = job.attempts >= MAX_ATTEMPTS
-      await service.from('gen_jobs').update({ status: giveUp ? 'failed' : 'pending', error: e instanceof Error ? e.message : 'job threw' }).eq('id', job.id)
+      await service.from('sw_gen_jobs').update({ status: giveUp ? 'failed' : 'pending', error: e instanceof Error ? e.message : 'job threw' }).eq('id', job.id)
       if (giveUp) failed++
     }
   }))
@@ -68,7 +68,7 @@ export async function POST(req: Request) {
   // Anything still pending OR running (claimed by another in-flight pump) means
   // the client should keep going.
   const { count: remaining } = await service
-    .from('gen_jobs').select('id', { count: 'exact', head: true })
+    .from('sw_gen_jobs').select('id', { count: 'exact', head: true })
     .eq('batch_id', batchId).in('status', ['pending', 'running'])
 
   return NextResponse.json({ ok: true, claimed: jobs.length, done, failed, remaining: remaining ?? 0 })

@@ -17,7 +17,7 @@ export async function POST(req: Request) {
   const threshold = body.severity_threshold === 'blocker_only' ? 'blocker_only' : 'none'
 
   let draftQuery = supabase
-    .from('naskah').select('id, current_version_id').eq('created_by', user.id).eq('status', 'draft')
+    .from('sw_naskah').select('id, current_version_id').eq('created_by', user.id).eq('status', 'draft')
   if (batchId) draftQuery = draftQuery.eq('batch_id', batchId)
   const { data: drafts, error: draftErr } = await draftQuery
   if (draftErr) return NextResponse.json({ ok: false, error: draftErr.message }, { status: 500 })
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
 
   const versionIds = drafts.map((d) => d.current_version_id).filter(Boolean) as string[]
   const { data: openFlags } = versionIds.length
-    ? await supabase.from('qc_flags').select('naskah_version_id, severity').eq('status', 'open').in('naskah_version_id', versionIds)
+    ? await supabase.from('sw_qc_flags').select('naskah_version_id, severity').eq('status', 'open').in('naskah_version_id', versionIds)
     : { data: [] as Array<{ naskah_version_id: string; severity: string }> }
 
   const flagsByVersion = new Map<string, string[]>()
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
   if (eligibleIds.length === 0) return NextResponse.json({ ok: true, approved: 0, skipped: drafts.length })
 
   const { error: updateErr } = await supabase
-    .from('naskah').update({ status: 'approved' }).in('id', eligibleIds).eq('created_by', user.id)
+    .from('sw_naskah').update({ status: 'approved' }).in('id', eligibleIds).eq('created_by', user.id)
   if (updateErr) return NextResponse.json({ ok: false, error: updateErr.message }, { status: 500 })
 
   return NextResponse.json({ ok: true, approved: eligibleIds.length, skipped: drafts.length - eligibleIds.length })

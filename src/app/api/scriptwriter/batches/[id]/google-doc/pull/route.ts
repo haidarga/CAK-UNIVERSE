@@ -18,7 +18,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const { user, unauthorized } = await requireUser(authClient)
   if (unauthorized) return unauthorized
 
-  const { data: batch } = await authClient.from('batches').select('*').eq('id', batchId).eq('created_by', user.id).maybeSingle()
+  const { data: batch } = await authClient.from('sw_batches').select('*').eq('id', batchId).eq('created_by', user.id).maybeSingle()
   if (!batch) return NextResponse.json({ ok: false, error: 'batch not found' }, { status: 404 })
   const docId = (batch.external_doc_ref as { doc_id?: string } | null)?.doc_id
   if (!docId) return NextResponse.json({ ok: false, error: 'this batch has no Google Doc yet — push first' }, { status: 400 })
@@ -47,7 +47,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   }
 
   const { data: naskahRows } = await authClient
-    .from('naskah').select('id, persona_id, brief_id, current_version_id').eq('batch_id', batchId).eq('created_by', user.id)
+    .from('sw_naskah').select('id, persona_id, brief_id, current_version_id').eq('batch_id', batchId).eq('created_by', user.id)
   const naskahById = new Map((naskahRows || []).map((n) => [n.id, n]))
 
   const results: Array<{ naskah_id: string; changed: boolean; error?: string }> = []
@@ -58,14 +58,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
     const reconstructed = reconstructBlocksFromLines(section.lines)
     const { data: currentVersion } = await authClient
-      .from('naskah_versions').select('id, body, hook_rubric_id, hook_justification, format_meta, generation_meta')
+      .from('sw_naskah_versions').select('id, body, hook_rubric_id, hook_justification, format_meta, generation_meta')
       .eq('id', naskah.current_version_id).maybeSingle()
 
     const unchanged = currentVersion && JSON.stringify(currentVersion.body) === JSON.stringify(reconstructed)
     if (unchanged) { results.push({ naskah_id: naskah.id, changed: false }); continue }
 
     try {
-      const { data: version, error: versionErr } = await service.rpc('create_naskah_version', {
+      const { data: version, error: versionErr } = await service.rpc('sw_create_naskah_version', {
         p_naskah_id: naskah.id,
         p_body: reconstructed,
         p_hook_rubric_id: currentVersion?.hook_rubric_id ?? null,
@@ -79,10 +79,10 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       if (versionErr || !version) throw new Error(versionErr?.message || 'failed to create version')
 
       const { data: persona } = await authClient
-        .from('personas').select('name, tone, diction_quirks, banned_words, required_words, sample_lines, red_flags')
+        .from('sw_personas').select('name, tone, diction_quirks, banned_words, required_words, sample_lines, red_flags')
         .eq('id', naskah.persona_id).eq('created_by', user.id).maybeSingle()
       const { data: brief } = await authClient
-        .from('strategist_briefs').select('title, product, platform, fields')
+        .from('sw_strategist_briefs').select('title, product, platform, fields')
         .eq('id', naskah.brief_id).eq('created_by', user.id).maybeSingle()
 
       if (persona && brief) {
@@ -95,7 +95,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     }
   }
 
-  await authClient.from('batches').update({
+  await authClient.from('sw_batches').update({
     external_doc_ref: { ...(batch.external_doc_ref as object), last_pulled_at: new Date().toISOString() },
   }).eq('id', batchId).eq('created_by', user.id)
 

@@ -11,11 +11,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { user, unauthorized } = await requireUser(supabase)
   if (unauthorized) return unauthorized
 
-  const { data: naskah } = await supabase.from('naskah').select('id').eq('id', id).eq('created_by', user.id).maybeSingle()
+  const { data: naskah } = await supabase.from('sw_naskah').select('id').eq('id', id).eq('created_by', user.id).maybeSingle()
   if (!naskah) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 })
 
   const { data, error } = await supabase
-    .from('naskah_versions').select('*').eq('naskah_id', id).order('version_no', { ascending: false })
+    .from('sw_naskah_versions').select('*').eq('naskah_id', id).order('version_no', { ascending: false })
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true, versions: data })
 }
@@ -41,18 +41,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!parsed.success) return NextResponse.json({ ok: false, error: parsed.error.message }, { status: 400 })
 
   const { data: naskah } = await authClient
-    .from('naskah').select('id, persona_id, current_version_id').eq('id', id).eq('created_by', user.id).maybeSingle()
+    .from('sw_naskah').select('id, persona_id, current_version_id').eq('id', id).eq('created_by', user.id).maybeSingle()
   if (!naskah) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 })
 
   const { data: currentVersion } = await authClient
-    .from('naskah_versions').select('hook_rubric_id, hook_justification, format_meta, generation_meta')
+    .from('sw_naskah_versions').select('hook_rubric_id, hook_justification, format_meta, generation_meta')
     .eq('id', naskah.current_version_id).maybeSingle()
 
   const { data: persona } = await authClient
-    .from('personas').select('banned_words, required_words').eq('id', naskah.persona_id).eq('created_by', user.id).maybeSingle()
+    .from('sw_personas').select('banned_words, required_words').eq('id', naskah.persona_id).eq('created_by', user.id).maybeSingle()
 
   const service = createServiceClient()
-  const { data: version, error: versionErr } = await service.rpc('create_naskah_version', {
+  const { data: version, error: versionErr } = await service.rpc('sw_create_naskah_version', {
     p_naskah_id: id,
     p_body: parsed.data.body,
     p_hook_rubric_id: currentVersion?.hook_rubric_id ?? null,
@@ -69,7 +69,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const ruleFlags = runRuleBasedQc({ blocks: parsed.data.body, bannedWords: persona.banned_words || [], requiredWords: persona.required_words || [] })
     if (ruleFlags.length > 0) {
       const blockById = new Map(parsed.data.body.map((b) => [b.block_id, b]))
-      await service.from('qc_flags').insert(ruleFlags.map((f) => {
+      await service.from('sw_qc_flags').insert(ruleFlags.map((f) => {
         const block = blockById.get(f.block_id)!
         return {
           naskah_id: id,

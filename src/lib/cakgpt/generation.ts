@@ -31,7 +31,7 @@ export type GenerateNaskahResult =
 
 async function getActiveHookRubrics(supabase: SupabaseClient): Promise<HookRubricForPrompt[]> {
   const { data } = await supabase
-    .from('hook_rubrics')
+    .from('sw_hook_rubrics')
     .select('slug, name, description, example')
     .eq('is_active', true)
     .order('sort_order', { ascending: true })
@@ -66,7 +66,7 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
   // Ownership checks are manual here — the service client bypasses RLS, so
   // every row fetch must explicitly filter by created_by = createdBy.
   const { data: brief, error: briefErr } = await supabase
-    .from('strategist_briefs')
+    .from('sw_strategist_briefs')
     .select('id, title, product, platform, persona_id, fields, created_by')
     .eq('id', params.briefId)
     .eq('created_by', createdBy)
@@ -77,7 +77,7 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
   if (!personaId) return { ok: false, error: 'no persona specified (brief has no default persona)' }
 
   const { data: persona, error: personaErr } = await supabase
-    .from('personas')
+    .from('sw_personas')
     .select('id, name, tone, diction_quirks, banned_words, required_words, sample_lines, red_flags, is_active, created_by')
     .eq('id', personaId)
     .eq('created_by', createdBy)
@@ -85,7 +85,7 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
   if (personaErr || !persona || !persona.is_active) return { ok: false, error: 'persona not found or inactive' }
 
   const { data: batch, error: batchErr } = await supabase
-    .from('batches').select('id, created_by').eq('id', params.batchId).eq('created_by', createdBy).maybeSingle()
+    .from('sw_batches').select('id, created_by').eq('id', params.batchId).eq('created_by', createdBy).maybeSingle()
   if (batchErr || !batch) return { ok: false, error: 'batch not found' }
 
   const hookRubrics = await getActiveHookRubrics(supabase)
@@ -128,7 +128,7 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
     hookRubricId = params.hookRubricIdOverride
   } else {
     const { data: matched } = await supabase
-      .from('hook_rubrics').select('id').eq('slug', generation.hook_type).eq('is_active', true).maybeSingle()
+      .from('sw_hook_rubrics').select('id').eq('slug', generation.hook_type).eq('is_active', true).maybeSingle()
     hookRubricId = matched?.id || null
   }
 
@@ -136,7 +136,7 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
 
   // Create the naskah identity row first (create_naskah_version locks it, so it must exist).
   const { data: naskahRow, error: naskahErr } = await supabase
-    .from('naskah')
+    .from('sw_naskah')
     .insert({
       created_by: createdBy,
       batch_id: params.batchId,
@@ -154,7 +154,7 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
     .single()
   if (naskahErr || !naskahRow) return { ok: false, error: `failed to create naskah row: ${naskahErr?.message}` }
 
-  const { data: version, error: versionErr } = await supabase.rpc('create_naskah_version', {
+  const { data: version, error: versionErr } = await supabase.rpc('sw_create_naskah_version', {
     p_naskah_id: naskahRow.id,
     p_body: blocks,
     p_hook_rubric_id: hookRubricId,
@@ -248,7 +248,7 @@ export async function runAutoQc(opts: {
   }
 
   if (flagRows.length > 0) {
-    await supabase.from('qc_flags').insert(flagRows)
+    await supabase.from('sw_qc_flags').insert(flagRows)
   }
 
   const counts = { blocker: 0, warning: 0, nit: 0 }

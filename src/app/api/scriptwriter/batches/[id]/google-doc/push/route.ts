@@ -14,7 +14,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const { user, unauthorized } = await requireUser(authClient)
   if (unauthorized) return unauthorized
 
-  const { data: batch } = await authClient.from('batches').select('*').eq('id', batchId).eq('created_by', user.id).maybeSingle()
+  const { data: batch } = await authClient.from('sw_batches').select('*').eq('id', batchId).eq('created_by', user.id).maybeSingle()
   if (!batch) return NextResponse.json({ ok: false, error: 'batch not found' }, { status: 404 })
 
   const service = createServiceClient()
@@ -26,12 +26,12 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   }
 
   const { data: naskahRows, error: naskahErr } = await authClient
-    .from('naskah').select('id, title, current_version_id').eq('batch_id', batchId).eq('created_by', user.id).order('created_at', { ascending: true })
+    .from('sw_naskah').select('id, title, current_version_id').eq('batch_id', batchId).eq('created_by', user.id).order('created_at', { ascending: true })
   if (naskahErr) return NextResponse.json({ ok: false, error: naskahErr.message }, { status: 500 })
 
   const versionIds = (naskahRows || []).map((n) => n.current_version_id).filter(Boolean) as string[]
   const { data: versions } = versionIds.length
-    ? await authClient.from('naskah_versions').select('id, body').in('id', versionIds)
+    ? await authClient.from('sw_naskah_versions').select('id, body').in('id', versionIds)
     : { data: [] as Array<{ id: string; body: Block[] }> }
   const bodyByVersion = new Map((versions || []).map((v) => [v.id, v.body]))
 
@@ -49,7 +49,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     await pushNaskahToDoc(accessToken, docId, naskahForDoc)
 
     const docUrl = await getDocWebViewUrl(docId)
-    await authClient.from('batches').update({
+    await authClient.from('sw_batches').update({
       external_doc_ref: { doc_id: docId, doc_url: docUrl, last_pushed_at: new Date().toISOString() },
     }).eq('id', batchId).eq('created_by', user.id)
 

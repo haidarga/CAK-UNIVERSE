@@ -9,7 +9,7 @@ export async function GET() {
   if (unauthorized) return unauthorized
 
   const { data, error } = await supabase
-    .from('strategist_briefs').select('*').eq('created_by', user.id).order('created_at', { ascending: false })
+    .from('sw_strategist_briefs').select('*').eq('created_by', user.id).order('created_at', { ascending: false })
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true, briefs: data })
 }
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
   // otherwise a brief could silently reference another user's persona id.
   let personaId: string | null = null
   if (body.persona_id) {
-    const { data: persona } = await supabase.from('personas').select('id').eq('id', String(body.persona_id)).eq('created_by', user.id).maybeSingle()
+    const { data: persona } = await supabase.from('sw_personas').select('id').eq('id', String(body.persona_id)).eq('created_by', user.id).maybeSingle()
     if (!persona) return NextResponse.json({ ok: false, error: 'persona not found' }, { status: 400 })
     personaId = persona.id
   }
@@ -37,19 +37,19 @@ export async function POST(req: Request) {
   // (silently ignored if the cookie is stale). Ownership-guarded either way.
   let clientId: string | null = null
   if (body.client_id) {
-    const { data: client } = await supabase.from('clients').select('id').eq('id', String(body.client_id)).eq('created_by', user.id).eq('is_active', true).maybeSingle()
+    const { data: client } = await supabase.from('sw_clients').select('id').eq('id', String(body.client_id)).eq('created_by', user.id).eq('is_active', true).maybeSingle()
     if (!client) return NextResponse.json({ ok: false, error: 'client not found' }, { status: 400 })
     clientId = client.id
   } else {
     const activeClient = await getActiveClientId()
     if (activeClient) {
-      const { data: client } = await supabase.from('clients').select('id').eq('id', activeClient).eq('created_by', user.id).eq('is_active', true).maybeSingle()
+      const { data: client } = await supabase.from('sw_clients').select('id').eq('id', activeClient).eq('created_by', user.id).eq('is_active', true).maybeSingle()
       clientId = client?.id ?? null
     }
   }
 
   const { data, error } = await supabase
-    .from('strategist_briefs')
+    .from('sw_strategist_briefs')
     .insert({
       created_by: user.id,
       title,

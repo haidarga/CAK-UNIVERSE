@@ -14,15 +14,15 @@ export default async function BriefsPage() {
   const activeClient = await getActiveClientId()
 
   // Hide archived (soft-deleted) briefs.
-  let briefQuery = supabase.from('strategist_briefs').select('*').eq('created_by', user.id).neq('status', 'archived').order('created_at', { ascending: false })
+  let briefQuery = supabase.from('sw_strategist_briefs').select('*').eq('created_by', user.id).neq('status', 'archived').order('created_at', { ascending: false })
   if (activeClient) briefQuery = briefQuery.eq('client_id', activeClient)
 
   const [{ data: briefs }, { data: personas }, { data: clients }] = await Promise.all([
     briefQuery,
     (activeClient
-      ? supabase.from('personas').select('id, name').eq('created_by', user.id).eq('is_active', true).or(`client_id.eq.${activeClient},client_id.is.null`)
-      : supabase.from('personas').select('id, name').eq('created_by', user.id).eq('is_active', true)),
-    supabase.from('clients').select('id, name').eq('created_by', user.id).eq('is_active', true),
+      ? supabase.from('sw_personas').select('id, name').eq('created_by', user.id).eq('is_active', true).or(`client_id.eq.${activeClient},client_id.is.null`)
+      : supabase.from('sw_personas').select('id, name').eq('created_by', user.id).eq('is_active', true)),
+    supabase.from('sw_clients').select('id, name').eq('created_by', user.id).eq('is_active', true),
   ])
 
   const personaNames = Object.fromEntries((personas || []).map((p) => [p.id, p.name]))

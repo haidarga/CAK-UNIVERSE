@@ -12,7 +12,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (unauthorized) return unauthorized
 
   const { data, error } = await supabase
-    .from('gen_jobs').select('status').eq('batch_id', batchId).eq('created_by', user.id)
+    .from('sw_gen_jobs').select('status').eq('batch_id', batchId).eq('created_by', user.id)
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
 
   const counts = { pending: 0, running: 0, done: 0, failed: 0 }

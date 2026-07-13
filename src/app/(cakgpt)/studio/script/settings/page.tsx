@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 export default async function SettingsPage() {
   const supabase = await createServerClient()
   const user = await requirePageUser(supabase)
-  const { data } = await supabase.from('user_settings').select('gemini_api_key').eq('created_by', user.id).maybeSingle()
+  const { data } = await supabase.from('sw_user_settings').select('gemini_api_key').eq('created_by', user.id).maybeSingle()
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-8">

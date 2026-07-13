@@ -17,19 +17,19 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (unauthorized) return unauthorized
 
   const { data: naskah } = await authClient
-    .from('naskah').select('id, persona_id, brief_id, current_version_id').eq('id', id).eq('created_by', user.id).maybeSingle()
+    .from('sw_naskah').select('id, persona_id, brief_id, current_version_id').eq('id', id).eq('created_by', user.id).maybeSingle()
   if (!naskah || !naskah.current_version_id) return NextResponse.json({ ok: false, error: 'not found or no current version' }, { status: 404 })
 
   const { data: version } = await authClient
-    .from('naskah_versions').select('id, body').eq('id', naskah.current_version_id).maybeSingle()
+    .from('sw_naskah_versions').select('id, body').eq('id', naskah.current_version_id).maybeSingle()
   // Explicit created_by filter here too (not just relying on RLS) — defense
   // in depth so a future RLS policy change can't silently turn this into a
   // cross-user read.
   const { data: persona } = await authClient
-    .from('personas').select('name, tone, diction_quirks, banned_words, required_words, sample_lines, red_flags')
+    .from('sw_personas').select('name, tone, diction_quirks, banned_words, required_words, sample_lines, red_flags')
     .eq('id', naskah.persona_id).eq('created_by', user.id).maybeSingle()
   const { data: brief } = await authClient
-    .from('strategist_briefs').select('title, product, platform, fields')
+    .from('sw_strategist_briefs').select('title, product, platform, fields')
     .eq('id', naskah.brief_id).eq('created_by', user.id).maybeSingle()
   if (!version || !persona || !brief) return NextResponse.json({ ok: false, error: 'related data missing' }, { status: 500 })
 

@@ -10,7 +10,7 @@ export async function GET() {
   if (unauthorized) return unauthorized
 
   const { data, error } = await supabase
-    .from('hook_rubrics').select('*').eq('is_active', true).order('sort_order', { ascending: true })
+    .from('sw_hook_rubrics').select('*').eq('is_active', true).order('sort_order', { ascending: true })
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true, hookRubrics: data })
 }

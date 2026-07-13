@@ -36,7 +36,7 @@ export async function POST(req: Request) {
 
   // Ownership: persona (also the voice profile Auto-QC checks against).
   const { data: persona } = await authClient
-    .from('personas')
+    .from('sw_personas')
     .select('id, name, tone, diction_quirks, banned_words, required_words, sample_lines, red_flags, is_active')
     .eq('id', persona_id).eq('created_by', user.id).maybeSingle()
   if (!persona || !persona.is_active) return NextResponse.json({ ok: false, error: 'persona not found or inactive' }, { status: 400 })
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
   // Ownership: client (optional).
   let clientId: string | null = null
   if (parsed.data.client_id) {
-    const { data: client } = await authClient.from('clients').select('id').eq('id', parsed.data.client_id).eq('created_by', user.id).eq('is_active', true).maybeSingle()
+    const { data: client } = await authClient.from('sw_clients').select('id').eq('id', parsed.data.client_id).eq('created_by', user.id).eq('is_active', true).maybeSingle()
     if (!client) return NextResponse.json({ ok: false, error: 'client not found' }, { status: 400 })
     clientId = client.id
   }
@@ -59,11 +59,11 @@ export async function POST(req: Request) {
 
   const batchName = parsed.data.batch_name?.trim() || `Imported naskah ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`
   const { data: batch, error: batchErr } = await service
-    .from('batches').insert({ created_by: user.id, name: batchName, client_id: clientId }).select('id').single()
+    .from('sw_batches').insert({ created_by: user.id, name: batchName, client_id: clientId }).select('id').single()
   if (batchErr || !batch) return NextResponse.json({ ok: false, error: `failed to create batch: ${batchErr?.message}` }, { status: 500 })
 
   const { data: brief, error: briefErr } = await service
-    .from('strategist_briefs')
+    .from('sw_strategist_briefs')
     .insert({ created_by: user.id, title: `Imported: ${batchName}`, client_id: clientId, persona_id, fields: { imported: 'true' }, status: 'ready' })
     .select('id, title, product, platform, fields').single()
   if (briefErr || !brief) return NextResponse.json({ ok: false, error: `failed to create stub brief: ${briefErr?.message}` }, { status: 500 })
@@ -89,7 +89,7 @@ export async function POST(req: Request) {
         const blocks: Block[] = item.body.map((b) => ({ ...b, block_id: generateBlockId() }))
 
         const { data: naskahRow, error: nErr } = await service
-          .from('naskah')
+          .from('sw_naskah')
           .insert({
             created_by: userId, batch_id: batchId, brief_id: briefId, persona_id,
             title: item.title, status: 'draft',
@@ -98,7 +98,7 @@ export async function POST(req: Request) {
           .select('id').single()
         if (nErr || !naskahRow) throw new Error(nErr?.message || 'failed to create naskah')
 
-        const { data: version, error: vErr } = await service.rpc('create_naskah_version', {
+        const { data: version, error: vErr } = await service.rpc('sw_create_naskah_version', {
           p_naskah_id: naskahRow.id,
           p_body: blocks,
           p_hook_rubric_id: null,

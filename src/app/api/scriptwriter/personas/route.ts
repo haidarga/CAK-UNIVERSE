@@ -9,7 +9,7 @@ export async function GET() {
   if (unauthorized) return unauthorized
 
   const { data, error } = await supabase
-    .from('personas')
+    .from('sw_personas')
     .select('*')
     .eq('created_by', user.id)
     .eq('is_active', true)
@@ -33,12 +33,12 @@ export async function POST(req: Request) {
   let clientId: string | null = null
   const activeClient = await getActiveClientId()
   if (activeClient) {
-    const { data: client } = await supabase.from('clients').select('id').eq('id', activeClient).eq('created_by', user.id).eq('is_active', true).maybeSingle()
+    const { data: client } = await supabase.from('sw_clients').select('id').eq('id', activeClient).eq('created_by', user.id).eq('is_active', true).maybeSingle()
     clientId = client?.id ?? null
   }
 
   const { data, error } = await supabase
-    .from('personas')
+    .from('sw_personas')
     .insert({
       created_by: user.id,
       name,

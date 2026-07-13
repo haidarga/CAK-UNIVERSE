@@ -10,14 +10,14 @@ export default async function IdeasPage() {
   const user = await requirePageUser(supabase)
   const activeClient = await getActiveClientId()
 
-  let briefQuery = supabase.from('strategist_briefs').select('id, title').eq('created_by', user.id)
-  let batchQuery = supabase.from('batches').select('id, name').eq('created_by', user.id).eq('status', 'open')
+  let briefQuery = supabase.from('sw_strategist_briefs').select('id, title').eq('created_by', user.id)
+  let batchQuery = supabase.from('sw_batches').select('id, name').eq('created_by', user.id).eq('status', 'open')
   if (activeClient) { briefQuery = briefQuery.eq('client_id', activeClient); batchQuery = batchQuery.eq('client_id', activeClient) }
 
   const [{ data: personas }, { data: briefs }, { data: batches }] = await Promise.all([
     (activeClient
-      ? supabase.from('personas').select('id, name').eq('created_by', user.id).eq('is_active', true).or(`client_id.eq.${activeClient},client_id.is.null`)
-      : supabase.from('personas').select('id, name').eq('created_by', user.id).eq('is_active', true)),
+      ? supabase.from('sw_personas').select('id, name').eq('created_by', user.id).eq('is_active', true).or(`client_id.eq.${activeClient},client_id.is.null`)
+      : supabase.from('sw_personas').select('id, name').eq('created_by', user.id).eq('is_active', true)),
     briefQuery,
     batchQuery,
   ])

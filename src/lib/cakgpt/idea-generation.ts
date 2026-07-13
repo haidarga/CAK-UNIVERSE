@@ -39,7 +39,7 @@ export async function generateIdeas(params: GenerateIdeasParams): Promise<Genera
   }
 
   const { data: hookRubrics } = await supabase
-    .from('hook_rubrics').select('slug, name, description, example').eq('is_active', true).order('sort_order')
+    .from('sw_hook_rubrics').select('slug, name, description, example').eq('is_active', true).order('sort_order')
 
   let ideas
   try {
@@ -59,7 +59,7 @@ export async function generateIdeas(params: GenerateIdeasParams): Promise<Genera
   }
 
   const { data: row, error } = await supabase
-    .from('idea_sessions')
+    .from('sw_idea_sessions')
     .insert({
       created_by: createdBy,
       persona_id: params.personaId || null,
@@ -76,7 +76,7 @@ export async function generateIdeas(params: GenerateIdeasParams): Promise<Genera
 
 async function fetchPersona(supabase: SupabaseClient, id: string, createdBy: string) {
   const { data } = await supabase
-    .from('personas')
+    .from('sw_personas')
     .select('id, name, tone, diction_quirks, banned_words, required_words, sample_lines, red_flags')
     .eq('id', id).eq('created_by', createdBy).maybeSingle()
   return data
@@ -84,7 +84,7 @@ async function fetchPersona(supabase: SupabaseClient, id: string, createdBy: str
 
 async function fetchBrief(supabase: SupabaseClient, id: string, createdBy: string) {
   const { data } = await supabase
-    .from('strategist_briefs')
+    .from('sw_strategist_briefs')
     .select('id, title, product, platform, fields')
     .eq('id', id).eq('created_by', createdBy).maybeSingle()
   return data

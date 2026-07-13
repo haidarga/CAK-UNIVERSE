@@ -31,14 +31,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const userId = user.id
   const { data: batch, error: batchLookupErr } = await authClient
-    .from('batches').select('id').eq('id', batchId).eq('created_by', userId).maybeSingle()
+    .from('sw_batches').select('id').eq('id', batchId).eq('created_by', userId).maybeSingle()
   if (batchLookupErr) return NextResponse.json({ ok: false, error: batchLookupErr.message }, { status: 500 })
   if (!batch) return NextResponse.json({ ok: false, error: 'batch not found' }, { status: 404 })
 
   // ── Client scoping (decision #4) ──────────────────────────────────────────
   const briefIds = [...new Set(items.map((i) => i.brief_id))]
   const { data: briefRows, error: briefErr } = await authClient
-    .from('strategist_briefs').select('id, client_id').eq('created_by', userId).in('id', briefIds)
+    .from('sw_strategist_briefs').select('id, client_id').eq('created_by', userId).in('id', briefIds)
   if (briefErr) return NextResponse.json({ ok: false, error: briefErr.message }, { status: 500 })
 
   const foundBriefIds = new Set((briefRows || []).map((b) => b.id))
@@ -50,7 +50,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const candidateClientId = [...briefClientIds][0] ?? null
 
   const service = createServiceClient()
-  const { error: lockErr } = await service.rpc('lock_batch_client', {
+  const { error: lockErr } = await service.rpc('sw_lock_batch_client', {
     p_batch_id: batchId, p_created_by: userId, p_candidate_client_id: candidateClientId,
   })
   if (lockErr) {
@@ -68,7 +68,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // duplicate naskah / wasted Gemini quota. gen_jobs has no unique constraint
   // (persona_id is nullable), so we dedupe in code.
   const key = (briefId: string, personaId: string | null | undefined) => `${briefId}|${personaId ?? ''}`
-  const { data: existing } = await service.from('gen_jobs').select('brief_id, persona_id').eq('batch_id', batchId)
+  const { data: existing } = await service.from('sw_gen_jobs').select('brief_id, persona_id').eq('batch_id', batchId)
   const seen = new Set((existing || []).map((j) => key(j.brief_id, j.persona_id)))
   const rows = items
     .filter((it) => !seen.has(key(it.brief_id, it.persona_id)))
@@ -84,7 +84,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // Insert in chunks so a big fan-out (1000+ jobs) never hits a request-body limit.
   const INSERT_CHUNK = 500
   for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
-    const { error: insErr } = await service.from('gen_jobs').insert(rows.slice(i, i + INSERT_CHUNK))
+    const { error: insErr } = await service.from('sw_gen_jobs').insert(rows.slice(i, i + INSERT_CHUNK))
     if (insErr) return NextResponse.json({ ok: false, error: `failed to enqueue: ${insErr.message}` }, { status: 500 })
   }
 

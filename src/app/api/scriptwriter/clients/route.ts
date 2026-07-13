@@ -10,7 +10,7 @@ export async function GET() {
   if (unauthorized) return unauthorized
 
   const { data, error } = await supabase
-    .from('clients')
+    .from('sw_clients')
     .select('*')
     .eq('created_by', user.id)
     .eq('is_active', true)
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
   if (!name) return NextResponse.json({ ok: false, error: 'name is required' }, { status: 400 })
 
   const { data, error } = await supabase
-    .from('clients')
+    .from('sw_clients')
     .insert({ created_by: user.id, name, notes: body.notes ? String(body.notes) : null })
     .select('*')
     .single()

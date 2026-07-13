@@ -14,21 +14,21 @@ export default async function DashboardPage() {
   const user = await requirePageUser(supabase)
   const activeClient = await getActiveClientId()
 
-  let batchQuery = supabase.from('batches').select('*').eq('created_by', user.id).order('created_at', { ascending: false })
+  let batchQuery = supabase.from('sw_batches').select('*').eq('created_by', user.id).order('created_at', { ascending: false })
   if (activeClient) batchQuery = batchQuery.eq('client_id', activeClient)
 
   const [{ data: batches }, { data: clients }, { data: personas }] = await Promise.all([
     batchQuery,
-    supabase.from('clients').select('id, name').eq('created_by', user.id).eq('is_active', true),
+    supabase.from('sw_clients').select('id, name').eq('created_by', user.id).eq('is_active', true),
     // Personas are shared-or-scoped: in a workspace show that client's + shared (null).
     (activeClient
-      ? supabase.from('personas').select('id, name').eq('created_by', user.id).eq('is_active', true).or(`client_id.eq.${activeClient},client_id.is.null`)
-      : supabase.from('personas').select('id, name').eq('created_by', user.id).eq('is_active', true)),
+      ? supabase.from('sw_personas').select('id, name').eq('created_by', user.id).eq('is_active', true).or(`client_id.eq.${activeClient},client_id.is.null`)
+      : supabase.from('sw_personas').select('id, name').eq('created_by', user.id).eq('is_active', true)),
   ])
 
   const batchIds = (batches || []).map((b) => b.id)
   const { data: naskahRows } = batchIds.length
-    ? await supabase.from('naskah').select('batch_id, status').in('batch_id', batchIds)
+    ? await supabase.from('sw_naskah').select('batch_id, status').in('batch_id', batchIds)
     : { data: [] as Array<{ batch_id: string; status: string }> }
 
   const clientNameById = new Map((clients || []).map((c) => [c.id, c.name]))

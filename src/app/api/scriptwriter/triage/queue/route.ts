@@ -20,7 +20,7 @@ export async function GET(req: Request) {
   const categoryFilter = url.searchParams.get('category')
 
   let query = supabase
-    .from('naskah')
+    .from('sw_naskah')
     .select('id, title, status, current_version_id, updated_at, persona_id')
     .eq('created_by', user.id)
     .eq('status', status)
@@ -34,7 +34,7 @@ export async function GET(req: Request) {
 
   const personaIds = [...new Set(naskahRows.map((n) => n.persona_id).filter(Boolean))] as string[]
   const { data: personaRows } = personaIds.length
-    ? await supabase.from('personas').select('id, name').in('id', personaIds)
+    ? await supabase.from('sw_personas').select('id, name').in('id', personaIds)
     : { data: [] as Array<{ id: string; name: string }> }
   const personaNameById = new Map((personaRows || []).map((p) => [p.id, p.name]))
 
@@ -42,16 +42,16 @@ export async function GET(req: Request) {
 
   const [{ data: versions }, { data: flags }] = await Promise.all([
     versionIds.length
-      ? supabase.from('naskah_versions').select('id, hook_rubric_id').in('id', versionIds)
+      ? supabase.from('sw_naskah_versions').select('id, hook_rubric_id').in('id', versionIds)
       : Promise.resolve({ data: [] as Array<{ id: string; hook_rubric_id: string | null }> }),
     versionIds.length
-      ? supabase.from('qc_flags').select('naskah_version_id, severity, category').eq('status', 'open').in('naskah_version_id', versionIds)
+      ? supabase.from('sw_qc_flags').select('naskah_version_id, severity, category').eq('status', 'open').in('naskah_version_id', versionIds)
       : Promise.resolve({ data: [] as Array<{ naskah_version_id: string; severity: string; category: string }> }),
   ])
 
   const hookRubricIds = [...new Set((versions || []).map((v) => v.hook_rubric_id).filter(Boolean))] as string[]
   const { data: hookRubrics } = hookRubricIds.length
-    ? await supabase.from('hook_rubrics').select('id, slug, name').in('id', hookRubricIds)
+    ? await supabase.from('sw_hook_rubrics').select('id, slug, name').in('id', hookRubricIds)
     : { data: [] as Array<{ id: string; slug: string; name: string }> }
   const hookRubricById = new Map((hookRubrics || []).map((h) => [h.id, h]))
 

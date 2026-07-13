@@ -8,7 +8,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { user, unauthorized } = await requireUser(supabase)
   if (unauthorized) return unauthorized
 
-  const { data, error } = await supabase.from('personas').select('*').eq('id', id).eq('created_by', user.id).maybeSingle()
+  const { data, error } = await supabase.from('sw_personas').select('*').eq('id', id).eq('created_by', user.id).maybeSingle()
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   if (!data) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 })
   return NextResponse.json({ ok: true, persona: data })
@@ -30,7 +30,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (Object.keys(patch).length === 0) return NextResponse.json({ ok: false, error: 'no valid fields to update' }, { status: 400 })
 
   const { data, error } = await supabase
-    .from('personas').update(patch).eq('id', id).eq('created_by', user.id).select('*').maybeSingle()
+    .from('sw_personas').update(patch).eq('id', id).eq('created_by', user.id).select('*').maybeSingle()
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   if (!data) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 })
   return NextResponse.json({ ok: true, persona: data })

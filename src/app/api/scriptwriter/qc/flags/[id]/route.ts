@@ -18,7 +18,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   const { data, error } = await supabase
-    .from('qc_flags')
+    .from('sw_qc_flags')
     .update({ status: body.status, resolved_by: user.id, resolved_at: new Date().toISOString() })
     .eq('id', id)
     .select('*')

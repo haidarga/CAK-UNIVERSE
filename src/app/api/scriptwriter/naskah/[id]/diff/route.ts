@@ -11,7 +11,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const { user, unauthorized } = await requireUser(supabase)
   if (unauthorized) return unauthorized
 
-  const { data: naskah } = await supabase.from('naskah').select('id').eq('id', id).eq('created_by', user.id).maybeSingle()
+  const { data: naskah } = await supabase.from('sw_naskah').select('id').eq('id', id).eq('created_by', user.id).maybeSingle()
   if (!naskah) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 })
 
   const url = new URL(req.url)
@@ -22,7 +22,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   const { data: versions, error } = await supabase
-    .from('naskah_versions').select('id, version_no, body').eq('naskah_id', id).in('version_no', [fromNo, toNo])
+    .from('sw_naskah_versions').select('id, version_no, body').eq('naskah_id', id).in('version_no', [fromNo, toNo])
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
 
   const fromVersion = versions?.find((v) => v.version_no === fromNo)
@@ -46,7 +46,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   const { data: flags } = await supabase
-    .from('qc_flags').select('*').eq('naskah_version_id', toVersion.id)
+    .from('sw_qc_flags').select('*').eq('naskah_version_id', toVersion.id)
 
   return NextResponse.json({ ok: true, from: fromNo, to: toNo, diff, flags: flags || [] })
 }

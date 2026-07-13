@@ -10,12 +10,12 @@ export default async function BatchPage({ params }: { params: Promise<{ id: stri
   const supabase = await createServerClient()
   const user = await requirePageUser(supabase)
 
-  const { data: batch } = await supabase.from('batches').select('*').eq('id', id).eq('created_by', user.id).maybeSingle()
+  const { data: batch } = await supabase.from('sw_batches').select('*').eq('id', id).eq('created_by', user.id).maybeSingle()
   if (!batch) notFound()
 
   const [{ data: briefs }, { data: personas }] = await Promise.all([
-    supabase.from('strategist_briefs').select('id, title, status, client_id').eq('created_by', user.id).eq('status', 'ready').order('created_at', { ascending: false }),
-    supabase.from('personas').select('id, name').eq('created_by', user.id).eq('is_active', true).order('created_at', { ascending: false }),
+    supabase.from('sw_strategist_briefs').select('id, title, status, client_id').eq('created_by', user.id).eq('status', 'ready').order('created_at', { ascending: false }),
+    supabase.from('sw_personas').select('id, name').eq('created_by', user.id).eq('is_active', true).order('created_at', { ascending: false }),
   ])
 
   return (

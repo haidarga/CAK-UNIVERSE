@@ -10,7 +10,7 @@ export async function GET() {
   const { user, unauthorized } = await requireUser(supabase)
   if (unauthorized) return unauthorized
 
-  const { data } = await supabase.from('user_settings').select('gemini_api_key').eq('created_by', user.id).maybeSingle()
+  const { data } = await supabase.from('sw_user_settings').select('gemini_api_key').eq('created_by', user.id).maybeSingle()
   return NextResponse.json({ ok: true, gemini_configured: !!data?.gemini_api_key })
 }
 
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   if (!geminiApiKey) return NextResponse.json({ ok: false, error: 'gemini_api_key is required' }, { status: 400 })
 
   const { error } = await supabase
-    .from('user_settings')
+    .from('sw_user_settings')
     .upsert({ created_by: user.id, gemini_api_key: geminiApiKey }, { onConflict: 'created_by' })
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
 
