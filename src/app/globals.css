@@ -1,4 +1,6 @@
 @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap");
+/* Fira families power the CAKGPT Script Studio (scoped to `.sw-root`). */
+@import url("https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -262,4 +264,77 @@ p {
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* ============================================================
+   CAKGPT — Script Studio scoped theme
+   Everything under `.sw-root` (the (cakgpt) route-group layout) uses CAKGPT's
+   light, data-dense "content-ops dashboard" theme. We re-scope the design
+   tokens here instead of rewriting the ported components' Tailwind classes:
+   - `--sw-*` back the CAKGPT-only utilities (text, mutedText, onPrimary, …).
+   - the shared names (surface/muted/border/primary/accent/warning) are the
+     ecosystem's own CSS vars, overridden here so `bg-surface`, `border-border`,
+     etc. render CAKGPT colors inside the studio and Ethereal-Glass everywhere
+     else. Only CAKGPT components ever render inside `.sw-root`.
+   ============================================================ */
+.sw-root {
+  /* CAKGPT-only tokens */
+  --sw-primary: 37 99 235;       /* blue-600 */
+  --sw-onPrimary: 255 255 255;
+  --sw-secondary: 59 130 246;    /* blue-500 */
+  --sw-accent: 217 119 6;        /* amber-600 */
+  --sw-background: 250 250 249;  /* stone-50 */
+  --sw-surface: 255 255 255;
+  --sw-foreground: 24 24 27;     /* zinc-900 */
+  --sw-text: 24 24 27;           /* zinc-900 */
+  --sw-muted: 244 244 245;       /* zinc-100 fill */
+  --sw-mutedText: 82 82 91;      /* zinc-600 */
+  --sw-border: 228 228 231;      /* zinc-200 */
+  --sw-destructive: 220 38 38;   /* red-600 */
+  --sw-ring: 37 99 235;
+  --sw-nit: 113 113 122;         /* zinc-500 */
+
+  /* Re-scope the shared ecosystem tokens to CAKGPT values inside the studio */
+  --surface: 255 255 255;
+  --muted: 244 244 245;
+  --border: 228 228 231;
+  --primary: 37 99 235;
+  --accent: 217 119 6;
+  --warning: 217 119 6;
+
+  /* Base look — opaque light field covers the ecosystem's dark body + glow */
+  color-scheme: light;
+  min-height: 100dvh;
+  background-color: rgb(var(--sw-background));
+  color: rgb(var(--sw-text));
+  font-family: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Ecosystem applies `* { border-color: var(--border)/0.5 }` globally; inside the
+   studio the override above already points --border at zinc-200, so borders read
+   correctly. Normalize the default border color to full-opacity zinc-200. */
+.sw-root * {
+  border-color: rgb(var(--sw-border));
+}
+
+.sw-root .font-data,
+.sw-root .font-mono {
+  font-family: "Fira Code", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.sw-root :focus-visible {
+  outline: 2px solid rgb(var(--sw-ring));
+  outline-offset: 2px;
+}
+
+/* CAKGPT uses one family (Fira Sans) for everything — undo the ecosystem's
+   grotesk display override for headings inside the studio. */
+.sw-root h1,
+.sw-root h2,
+.sw-root h3 {
+  font-family: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: normal;
 }

@@ -9,8 +9,25 @@ const config: Config = {
         display: ["var(--font-display)", "system-ui", "sans-serif"],
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],
         mono: ["var(--font-mono)", "ui-monospace", "monospace"],
+        data: ['"Fira Code"', "ui-monospace", "monospace"],
       },
       colors: {
+        // ── Script Writer Studio (CAKGPT) tokens. CAKGPT components use these
+        //    un-prefixed names verbatim. They map to `--sw-*` CSS vars that are
+        //    defined ONLY inside `.sw-root` (see globals.css), so they never
+        //    affect the ecosystem's own pages. The colliding names
+        //    (surface/muted/border/primary/accent/warning) are handled by
+        //    re-scoping the ecosystem vars inside `.sw-root` instead. ──
+        onPrimary: "rgb(var(--sw-onPrimary) / <alpha-value>)",
+        secondary: "rgb(var(--sw-secondary) / <alpha-value>)",
+        background: "rgb(var(--sw-background) / <alpha-value>)",
+        foreground: "rgb(var(--sw-foreground) / <alpha-value>)",
+        text: "rgb(var(--sw-text) / <alpha-value>)",
+        mutedText: "rgb(var(--sw-mutedText) / <alpha-value>)",
+        destructive: "rgb(var(--sw-destructive) / <alpha-value>)",
+        ring: "rgb(var(--sw-ring) / <alpha-value>)",
+        nit: "rgb(var(--sw-nit) / <alpha-value>)",
+        blocker: "rgb(var(--sw-destructive) / <alpha-value>)",
         // Semantic tokens mapped to CSS custom properties (see globals.css)
         bg: "rgb(var(--bg) / <alpha-value>)",
         surface: "rgb(var(--surface) / <alpha-value>)",

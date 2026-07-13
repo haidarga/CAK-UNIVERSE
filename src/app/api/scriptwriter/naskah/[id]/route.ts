@@ -1,32 +1,24 @@
-import { admin, nowIso } from "@/lib/supabase";
-import { ok, err } from "@/lib/api";
+import { NextResponse } from 'next/server'
+import { createServerClient } from '@/lib/cakgpt/supabase/server'
+import { requireUser } from '@/lib/cakgpt/auth'
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-// GET → naskah + current version (body, hook) + open flags.
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const db = admin();
-  const { data: naskah, error } = await db.from("sw_naskah").select("*").eq("id", id).single();
-  if (error || !naskah) return err("not found", 404);
+  const { id } = await params
+  const supabase = await createServerClient()
+  const { user, unauthorized } = await requireUser(supabase)
+  if (unauthorized) return unauthorized
 
-  const [{ data: version }, { data: flags }] = await Promise.all([
-    naskah.current_version_id ? db.from("sw_naskah_versions").select("*").eq("id", naskah.current_version_id).single() : Promise.resolve({ data: null }),
-    naskah.current_version_id ? db.from("sw_qc_flags").select("*").eq("naskah_version_id", naskah.current_version_id).order("created_at", { ascending: true }) : Promise.resolve({ data: [] }),
-  ]);
-  return ok({ naskah, version, flags: flags ?? [] });
-}
+  const { data: naskah, error } = await supabase
+    .from('naskah')
+    .select('*, current_version:naskah_versions!naskah_current_version_id_fkey(*)')
+    .eq('id', id).eq('created_by', user.id).maybeSingle()
+  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+  if (!naskah) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 })
 
-// PATCH { status: 'approved'|'rejected' } → triage decision.
-export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  let body: Record<string, unknown>;
-  try { body = await req.json(); } catch { return err("invalid json"); }
-  const status = body.status;
-  if (status !== "approved" && status !== "rejected" && status !== "draft") return err("status must be approved|rejected|draft");
+  const versionId = naskah.current_version_id
+  const { data: flags } = versionId
+    ? await supabase.from('qc_flags').select('*').eq('naskah_version_id', versionId).order('created_at', { ascending: true })
+    : { data: [] }
 
-  const { data, error } = await admin().from("sw_naskah").update({ status, updated_at: nowIso() }).eq("id", id).select("id, status").single();
-  if (error || !data) return err("not found", 404);
-  return ok({ naskah: data });
+  return NextResponse.json({ ok: true, naskah, flags: flags || [] })
 }

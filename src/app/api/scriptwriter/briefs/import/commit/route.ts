@@ -1,37 +1,45 @@
-import { admin, nowIso } from "@/lib/supabase";
-import { ok, err } from "@/lib/api";
-import type { ImportedBrief } from "@/lib/scriptwriter/types";
+import { NextResponse } from 'next/server'
+import { createServerClient } from '@/lib/cakgpt/supabase/server'
+import { requireUser } from '@/lib/cakgpt/auth'
+import { ImportCommitSchema } from '@/lib/cakgpt/schemas'
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-// POST { brand_id, briefs: ImportedBrief[], import_label?, status? } → bulk-insert.
+// POST /api/briefs/import/commit — bulk-insert the reviewed briefs. Returns the
+// created brief ids so the caller can immediately fan them out into naskah via
+// /api/batches/[id]/generate (the "content plan → naskah per persona" flow).
 export async function POST(req: Request) {
-  let body: Record<string, unknown>;
-  try { body = await req.json(); } catch { return err("invalid json"); }
-  const brandId = String(body.brand_id || "");
-  if (!brandId) return err("brand_id required");
-  const briefs = Array.isArray(body.briefs) ? (body.briefs as ImportedBrief[]) : [];
-  if (briefs.length === 0) return err("briefs required (non-empty array)");
-  if (briefs.length > 300) return err("max 300 briefs per import");
-  const status = body.status === "draft" ? "draft" : "ready";
-  const importGroup = typeof body.import_label === "string" && body.import_label.trim() ? body.import_label.trim().slice(0, 200) : null;
+  const supabase = await createServerClient()
+  const { user, unauthorized } = await requireUser(supabase)
+  if (unauthorized) return unauthorized
 
-  const rows = briefs
-    .filter((b) => b && typeof b.title === "string" && b.title.trim())
-    .map((b) => ({
-      brand_id: brandId,
-      title: String(b.title).slice(0, 200),
-      product: b.product ? String(b.product).slice(0, 200) : null,
-      platform: b.platform ? String(b.platform).slice(0, 40) : null,
-      fields: b.fields && typeof b.fields === "object" ? b.fields : {},
-      status,
-      import_group: importGroup,
-      updated_at: nowIso(),
-    }));
-  if (rows.length === 0) return err("no valid briefs");
+  let json: unknown
+  try { json = await req.json() } catch { return NextResponse.json({ ok: false, error: 'invalid json' }, { status: 400 }) }
+  const parsed = ImportCommitSchema.safeParse(json)
+  if (!parsed.success) return NextResponse.json({ ok: false, error: 'invalid payload: expected { briefs: [...], client_id?, status? }' }, { status: 400 })
+  const { briefs, status } = parsed.data
 
-  const { data, error } = await admin().from("sw_briefs").insert(rows).select("id");
-  if (error) return err(error.message, 500);
-  return ok({ brief_ids: (data ?? []).map((r: { id: string }) => r.id), count: data?.length ?? 0 });
+  // Verify the client belongs to this user before attaching it to every brief.
+  let clientId: string | null = null
+  if (parsed.data.client_id) {
+    const { data: client } = await supabase
+      .from('clients').select('id').eq('id', parsed.data.client_id).eq('created_by', user.id).eq('is_active', true).maybeSingle()
+    if (!client) return NextResponse.json({ ok: false, error: 'client not found' }, { status: 400 })
+    clientId = client.id
+  }
+
+  const importGroup = parsed.data.import_label?.trim() || null
+  const rows = briefs.map((b) => ({
+    created_by: user.id,
+    title: b.title,
+    product: b.product ?? null,
+    platform: b.platform ?? null,
+    client_id: clientId,
+    fields: b.fields ?? {},
+    status,
+    import_group: importGroup,
+  }))
+
+  const { data, error } = await supabase.from('strategist_briefs').insert(rows).select('id')
+  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+
+  return NextResponse.json({ ok: true, brief_ids: (data || []).map((r) => r.id), count: data?.length || 0 })
 }

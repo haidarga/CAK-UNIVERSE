@@ -1,50 +1,75 @@
-import { admin, nowIso } from "@/lib/supabase";
-import { ok, err } from "@/lib/api";
-import { generateNaskah } from "@/lib/scriptwriter/generate";
+import { NextResponse } from 'next/server'
+import { createServerClient, createServiceClient } from '@/lib/cakgpt/supabase/server'
+import { requireUser } from '@/lib/cakgpt/auth'
+import { generateNaskah } from '@/lib/cakgpt/generation'
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const runtime = 'nodejs'
+export const maxDuration = 120
 
-const CHUNK = 12;
-const MAX_ATTEMPTS = 3;
+const CHUNK = 12 // jobs claimed + run per call. Each is now 1 Gemini call (critic
+// skipped in bulk), so 12-in-flight still fits maxDuration=120 (they run in
+// parallel, wall-time bounded by the slowest job ≈30s worst-case with retries);
+// Gemini rate-limit + backoff/retry in llm.ts self-throttle if the tier can't sustain it.
+const MAX_ATTEMPTS = 3 // a job that keeps failing gives up after this many tries
 
-interface Job { id: string; brand_id: string; brief_id: string; persona_id: string | null; attempts: number }
-
-// POST { batch_id } → claim up to CHUNK pending jobs, run them (1 LLM call each,
-// critic skipped in bulk), update status. Returns { remaining } so the client
-// keeps pumping. Safe to call concurrently (RPC uses FOR UPDATE SKIP LOCKED).
+// POST /api/gen-jobs/process — claim up to CHUNK pending jobs for a batch and
+// run them. Called in a loop by the client after enqueue; each call is short and
+// returns how many jobs remain so the client knows whether to keep pumping. Safe
+// to call concurrently — claim_gen_jobs uses FOR UPDATE SKIP LOCKED.
 export async function POST(req: Request) {
-  let body: Record<string, unknown>;
-  try { body = await req.json(); } catch { return err("invalid json"); }
-  const batchId = String(body.batch_id || "");
-  if (!batchId) return err("batch_id required");
+  const authClient = await createServerClient()
+  const { user, unauthorized } = await requireUser(authClient)
+  if (unauthorized) return unauthorized
 
-  const db = admin();
-  const { data: claimed, error: claimErr } = await db.rpc("sw_claim_gen_jobs", { p_batch_id: batchId, p_limit: CHUNK });
-  if (claimErr) return err(claimErr.message, 500);
-  const jobs = (claimed ?? []) as Job[];
+  let body: Record<string, unknown>
+  try { body = await req.json() } catch { return NextResponse.json({ ok: false, error: 'invalid json' }, { status: 400 }) }
+  const batchId = String(body.batch_id || '')
+  if (!batchId) return NextResponse.json({ ok: false, error: 'batch_id required' }, { status: 400 })
 
-  let done = 0;
-  let failed = 0;
+  const { data: batch } = await authClient.from('batches').select('id').eq('id', batchId).eq('created_by', user.id).maybeSingle()
+  if (!batch) return NextResponse.json({ ok: false, error: 'batch not found' }, { status: 404 })
+
+  const service = createServiceClient()
+  const { data: claimed, error: claimErr } = await service.rpc('claim_gen_jobs', {
+    p_batch_id: batchId, p_created_by: user.id, p_limit: CHUNK,
+  })
+  if (claimErr) return NextResponse.json({ ok: false, error: claimErr.message }, { status: 500 })
+
+  const jobs = (claimed || []) as Array<{ id: string; brief_id: string; persona_id: string | null; attempts: number }>
+  let done = 0
+  let failed = 0
+
   await Promise.all(jobs.map(async (job) => {
     try {
-      const res = await generateNaskah({ brandId: job.brand_id, batchId, briefId: job.brief_id, personaId: job.persona_id || undefined, skipCritic: true });
+      const res = await generateNaskah({
+        supabase: service,
+        createdBy: user.id,
+        briefId: job.brief_id,
+        batchId,
+        personaIdOverride: job.persona_id || undefined,
+        skipCritic: true, // bulk fast-path: rule-QC now, full critic on demand via /qc/rerun
+      })
       if (res.ok) {
-        await db.from("sw_gen_jobs").update({ status: "done", naskah_id: res.naskahId, error: null, updated_at: nowIso() }).eq("id", job.id);
-        done++;
+        await service.from('gen_jobs').update({ status: 'done', naskah_id: res.naskahId, error: null }).eq('id', job.id)
+        done++
       } else {
-        const giveUp = job.attempts >= MAX_ATTEMPTS;
-        await db.from("sw_gen_jobs").update({ status: giveUp ? "failed" : "pending", error: res.error, updated_at: nowIso() }).eq("id", job.id);
-        if (giveUp) failed++;
+        // Requeue for another attempt unless we've exhausted retries.
+        const giveUp = job.attempts >= MAX_ATTEMPTS
+        await service.from('gen_jobs').update({ status: giveUp ? 'failed' : 'pending', error: res.error }).eq('id', job.id)
+        if (giveUp) failed++
       }
     } catch (e) {
-      const giveUp = job.attempts >= MAX_ATTEMPTS;
-      await db.from("sw_gen_jobs").update({ status: giveUp ? "failed" : "pending", error: e instanceof Error ? e.message : "job threw", updated_at: nowIso() }).eq("id", job.id);
-      if (giveUp) failed++;
+      const giveUp = job.attempts >= MAX_ATTEMPTS
+      await service.from('gen_jobs').update({ status: giveUp ? 'failed' : 'pending', error: e instanceof Error ? e.message : 'job threw' }).eq('id', job.id)
+      if (giveUp) failed++
     }
-  }));
+  }))
 
-  const { count: remaining } = await db.from("sw_gen_jobs").select("id", { count: "exact", head: true }).eq("batch_id", batchId).in("status", ["pending", "running"]);
-  return ok({ claimed: jobs.length, done, failed, remaining: remaining ?? 0 });
+  // Anything still pending OR running (claimed by another in-flight pump) means
+  // the client should keep going.
+  const { count: remaining } = await service
+    .from('gen_jobs').select('id', { count: 'exact', head: true })
+    .eq('batch_id', batchId).in('status', ['pending', 'running'])
+
+  return NextResponse.json({ ok: true, claimed: jobs.length, done, failed, remaining: remaining ?? 0 })
 }

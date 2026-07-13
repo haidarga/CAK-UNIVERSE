@@ -1,46 +1,54 @@
-import { admin, nowIso } from "@/lib/supabase";
-import { ok, err } from "@/lib/api";
+import { NextResponse } from 'next/server'
+import { createServerClient } from '@/lib/cakgpt/supabase/server'
+import { requireUser } from '@/lib/cakgpt/auth'
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-// POST { brand_id, batch_id?, threshold } — approve clean drafts.
-// threshold 'none' = zero open flags; 'blocker_only' = no open blocker.
+// Bulk-approve by severity threshold (ARCHITECTURE.md §6). Server re-validates
+// flag state per naskah right before flipping status — never trust a stale
+// client-side selection (the client may have fetched the queue before a
+// background re-QC changed something).
 export async function POST(req: Request) {
-  let body: Record<string, unknown>;
-  try { body = await req.json(); } catch { return err("invalid json"); }
-  const brandId = String(body.brand_id || "");
-  if (!brandId) return err("brand_id required");
-  const batchId = body.batch_id ? String(body.batch_id) : null;
-  const threshold = body.threshold === "blocker_only" ? "blocker_only" : "none";
+  const supabase = await createServerClient()
+  const { user, unauthorized } = await requireUser(supabase)
+  if (unauthorized) return unauthorized
 
-  const db = admin();
-  let q = db.from("sw_naskah").select("id, current_version_id").eq("brand_id", brandId).eq("status", "draft");
-  if (batchId) q = q.eq("batch_id", batchId);
-  const { data: drafts, error } = await q;
-  if (error) return err(error.message, 500);
-  if (!drafts || drafts.length === 0) return ok({ approved: 0, skipped: 0 });
+  let body: Record<string, unknown>
+  try { body = await req.json() } catch { return NextResponse.json({ ok: false, error: 'invalid json' }, { status: 400 }) }
+  const batchId = body.batch_id ? String(body.batch_id) : null
+  const threshold = body.severity_threshold === 'blocker_only' ? 'blocker_only' : 'none'
 
-  const versionIds = drafts.map((d) => d.current_version_id).filter(Boolean) as string[];
+  let draftQuery = supabase
+    .from('naskah').select('id, current_version_id').eq('created_by', user.id).eq('status', 'draft')
+  if (batchId) draftQuery = draftQuery.eq('batch_id', batchId)
+  const { data: drafts, error: draftErr } = await draftQuery
+  if (draftErr) return NextResponse.json({ ok: false, error: draftErr.message }, { status: 500 })
+  if (!drafts || drafts.length === 0) return NextResponse.json({ ok: true, approved: 0, skipped: 0 })
+
+  const versionIds = drafts.map((d) => d.current_version_id).filter(Boolean) as string[]
   const { data: openFlags } = versionIds.length
-    ? await db.from("sw_qc_flags").select("naskah_version_id, severity").eq("status", "open").in("naskah_version_id", versionIds)
-    : { data: [] };
-  const byVersion = new Map<string, string[]>();
-  for (const f of (openFlags ?? []) as { naskah_version_id: string; severity: string }[]) {
-    const l = byVersion.get(f.naskah_version_id) ?? [];
-    l.push(f.severity);
-    byVersion.set(f.naskah_version_id, l);
+    ? await supabase.from('qc_flags').select('naskah_version_id, severity').eq('status', 'open').in('naskah_version_id', versionIds)
+    : { data: [] as Array<{ naskah_version_id: string; severity: string }> }
+
+  const flagsByVersion = new Map<string, string[]>()
+  for (const f of openFlags || []) {
+    const list = flagsByVersion.get(f.naskah_version_id) || []
+    list.push(f.severity)
+    flagsByVersion.set(f.naskah_version_id, list)
   }
 
-  const eligible = drafts
-    .filter((n) => {
-      const sev = n.current_version_id ? byVersion.get(n.current_version_id) ?? [] : [];
-      return threshold === "blocker_only" ? !sev.includes("blocker") : sev.length === 0;
-    })
-    .map((n) => n.id);
-  if (eligible.length === 0) return ok({ approved: 0, skipped: drafts.length });
+  const eligibleIds: string[] = []
+  for (const n of drafts) {
+    const severities = n.current_version_id ? flagsByVersion.get(n.current_version_id) || [] : []
+    const hasBlocker = severities.includes('blocker')
+    const hasAny = severities.length > 0
+    const eligible = threshold === 'blocker_only' ? !hasBlocker : !hasAny
+    if (eligible) eligibleIds.push(n.id)
+  }
 
-  const { error: upErr } = await db.from("sw_naskah").update({ status: "approved", updated_at: nowIso() }).in("id", eligible);
-  if (upErr) return err(upErr.message, 500);
-  return ok({ approved: eligible.length, skipped: drafts.length - eligible.length });
+  if (eligibleIds.length === 0) return NextResponse.json({ ok: true, approved: 0, skipped: drafts.length })
+
+  const { error: updateErr } = await supabase
+    .from('naskah').update({ status: 'approved' }).in('id', eligibleIds).eq('created_by', user.id)
+  if (updateErr) return NextResponse.json({ ok: false, error: updateErr.message }, { status: 500 })
+
+  return NextResponse.json({ ok: true, approved: eligibleIds.length, skipped: drafts.length - eligibleIds.length })
 }

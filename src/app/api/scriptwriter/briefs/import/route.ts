@@ -1,53 +1,122 @@
-import { err, ok } from "@/lib/api";
-import { readRange } from "@/lib/integrations/google/sheets";
-import { readDoc } from "@/lib/integrations/google/docs";
-import { extractBriefs } from "@/lib/scriptwriter/extract";
+import { NextResponse } from 'next/server'
+import { createServerClient, createServiceClient } from '@/lib/cakgpt/supabase/server'
+import { requireUser } from '@/lib/cakgpt/auth'
+import { getGeminiApiKey } from '@/lib/cakgpt/settings'
+import { getValidAccessToken } from '@/lib/cakgpt/google-oauth'
+import { getDoc } from '@/lib/cakgpt/google-docs'
+import { detectSourceKind, parseFileToText, extractBriefsFromText } from '@/lib/cakgpt/brief-extract'
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// File parsing (pdf/xlsx/docx) needs the Node runtime, not edge.
+export const runtime = 'nodejs'
+export const maxDuration = 60
 
-function parseSheetId(input: string): string | null {
-  const m = input.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-  if (m) return m[1];
-  return /^[a-zA-Z0-9_-]{20,}$/.test(input.trim()) ? input.trim() : null;
-}
-function parseDocId(input: string): string | null {
-  const m = input.match(/\/document\/d\/([a-zA-Z0-9_-]+)/);
-  if (m) return m[1];
-  return /^[a-zA-Z0-9_-]{20,}$/.test(input.trim()) ? input.trim() : null;
-}
+const MAX_FILE_BYTES = 5 * 1024 * 1024 // 5 MB — file uploads
+const MAX_TEXT_CHARS = 200_000 // paste / Google Doc source (bounds memory before extraction)
 
-// POST — extract briefs from a content plan. Source is ONE of:
-//   { text }                → pasted plan
-//   { google_sheet, range? } → a Google Sheet (reuses the ecosystem Google layer)
-//   { google_doc }          → a Google Doc
-// Returns a PREVIEW only (nothing is written). Brand-scoped commit happens later.
-export async function POST(req: Request) {
-  let body: Record<string, unknown>;
-  try { body = await req.json(); } catch { return err("invalid json"); }
+// Pull readable text out of a Google Doc, including table cells (content plans
+// are often laid out as tables). Rows render pipe-separated so the extractor
+// still sees column structure.
+function docToPlainText(doc: { body?: { content?: unknown[] } }): string {
+  const out: string[] = []
+  type Para = { elements?: Array<{ textRun?: { content?: string } }> }
+  const paraText = (p: Para) => (p.elements || []).map((e) => e.textRun?.content || '').join('').replace(/\n$/, '')
 
-  let text = "";
-  try {
-    if (typeof body.text === "string" && body.text.trim()) {
-      text = body.text;
-    } else if (typeof body.google_sheet === "string" && body.google_sheet.trim()) {
-      const id = parseSheetId(body.google_sheet);
-      if (!id) return err("could not read a Google Sheet id from that input");
-      const rows = await readRange(id, typeof body.range === "string" && body.range ? body.range : "A1:Z2000");
-      text = rows.map((r) => r.join(" | ")).join("\n");
-    } else if (typeof body.google_doc === "string" && body.google_doc.trim()) {
-      const id = parseDocId(body.google_doc);
-      if (!id) return err("could not read a Google Doc id from that input");
-      text = await readDoc(id);
-    } else {
-      return err("provide text, google_sheet, or google_doc");
+  for (const el of doc.body?.content || []) {
+    const node = el as { paragraph?: Para; table?: { tableRows?: Array<{ tableCells?: Array<{ content?: Array<{ paragraph?: Para }> }> }> } }
+    if (node.paragraph) {
+      out.push(paraText(node.paragraph))
+    } else if (node.table) {
+      for (const row of node.table.tableRows || []) {
+        const cells = (row.tableCells || []).map((cell) =>
+          (cell.content || []).map((c) => (c.paragraph ? paraText(c.paragraph) : '')).join(' ').trim(),
+        )
+        out.push(cells.join(' | '))
+      }
     }
+  }
+  return out.join('\n')
+}
+
+function parseGoogleDocId(input: string): string | null {
+  const m = input.match(/\/document\/d\/([a-zA-Z0-9_-]+)/)
+  if (m) return m[1]
+  // Bare id (letters/digits/_/-, reasonable length)
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(input.trim())) return input.trim()
+  return null
+}
+
+// POST /api/briefs/import — extract briefs from an uploaded file, pasted text,
+// or a Google Doc. Returns a PREVIEW only (nothing is written to the DB here);
+// the writer reviews/edits, then /import/commit persists them.
+export async function POST(req: Request) {
+  const authClient = await createServerClient()
+  const { user, unauthorized } = await requireUser(authClient)
+  if (unauthorized) return unauthorized
+
+  let apiKey: string
+  const service = createServiceClient()
+  try {
+    apiKey = await getGeminiApiKey(service, user.id)
   } catch (e) {
-    return err(e instanceof Error ? e.message : "failed to read source", 502);
+    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'Gemini API key not configured' }, { status: 400 })
   }
 
-  const result = await extractBriefs(text);
-  if (!result.ok) return err(result.error, 422);
-  return ok({ briefs: result.briefs, count: result.briefs.length });
+  const contentType = (req.headers.get('content-type') || '').toLowerCase()
+
+  // Reject oversized bodies up front, using the declared length, before
+  // formData()/json() buffers the whole request into memory. (Spoofable/absent,
+  // so it's a first gate — the per-path file.size / text-length checks below are
+  // the authoritative bounds.)
+  const declaredLen = Number(req.headers.get('content-length') || '0')
+  if (declaredLen > MAX_FILE_BYTES) {
+    return NextResponse.json({ ok: false, error: 'request too large (max 5 MB)' }, { status: 413 })
+  }
+
+  let sourceText: string
+  let hint: string | undefined
+
+  try {
+    if (contentType.includes('multipart/form-data')) {
+      const form = await req.formData()
+      const file = form.get('file')
+      const hintValue = form.get('hint')
+      hint = typeof hintValue === 'string' ? hintValue : undefined
+      if (!(file instanceof File)) return NextResponse.json({ ok: false, error: 'no file provided' }, { status: 400 })
+      if (file.size === 0) return NextResponse.json({ ok: false, error: 'file is empty' }, { status: 400 })
+      if (file.size > MAX_FILE_BYTES) return NextResponse.json({ ok: false, error: 'file too large (max 5 MB)' }, { status: 413 })
+
+      const kind = detectSourceKind(file.name, file.type)
+      if (!kind) return NextResponse.json({ ok: false, error: `unsupported file type: ${file.name}` }, { status: 415 })
+
+      const buffer = Buffer.from(await file.arrayBuffer())
+      sourceText = await parseFileToText(buffer, kind)
+    } else {
+      const body = await req.json().catch(() => ({}))
+      hint = typeof body.hint === 'string' ? body.hint : undefined
+
+      if (typeof body.text === 'string' && body.text.trim()) {
+        if (body.text.length > MAX_TEXT_CHARS) return NextResponse.json({ ok: false, error: 'pasted text too large (max 200k chars)' }, { status: 413 })
+        sourceText = body.text
+      } else if (typeof body.google_doc === 'string' && body.google_doc.trim()) {
+        const docId = parseGoogleDocId(body.google_doc)
+        if (!docId) return NextResponse.json({ ok: false, error: 'could not read a Google Doc id from that input' }, { status: 400 })
+        let accessToken: string
+        try {
+          accessToken = await getValidAccessToken(service, user.id)
+        } catch (e) {
+          return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'Google not connected', connect_url: '/api/scriptwriter/google/oauth/start' }, { status: 428 })
+        }
+        const doc = await getDoc(accessToken, docId)
+        sourceText = docToPlainText(doc).slice(0, MAX_TEXT_CHARS)
+      } else {
+        return NextResponse.json({ ok: false, error: 'provide a file, text, or google_doc' }, { status: 400 })
+      }
+    }
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'failed to read source' }, { status: 400 })
+  }
+
+  const result = await extractBriefsFromText({ apiKey, text: sourceText, hint })
+  if (!result.ok) return NextResponse.json({ ok: false, error: result.error }, { status: 422 })
+  return NextResponse.json({ ok: true, briefs: result.briefs, count: result.briefs.length })
 }
