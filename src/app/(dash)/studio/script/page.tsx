@@ -1,90 +1,45 @@
 import { PenLine } from "lucide-react";
 import { admin } from "@/lib/supabase";
-import { loadBrands, loadPipeline } from "@/lib/dash-data";
-import type { Persona, Hook } from "@/lib/types";
+import { loadBrands } from "@/lib/dash-data";
 import PageHeader from "@/components/page-header";
 import BrandSelector from "@/components/brand-selector";
 import EmptyState from "@/components/empty-state";
-import ScriptWorkspace from "@/components/studio/script-workspace";
+import ScriptStudio from "@/components/studio/scriptwriter/script-studio";
 
 export const dynamic = "force-dynamic";
 
-// Scripts already in flight (the writer's running work).
-const SCRIPT_STAGES = ["scripted", "script_reviewed", "guardrail_review"];
-// Planned directions from the strategist, waiting to be written.
-const TO_WRITE_STAGES = ["direction_set", "briefed"];
-
-async function loadPersonas(brandId: string): Promise<Persona[]> {
+async function loadPersonas(brandId: string) {
   try {
-    const { data, error } = await admin()
-      .from("personas")
-      .select("*")
-      .eq("brand_id", brandId)
-      .order("name", { ascending: true });
-    if (error) throw error;
-    return (data ?? []) as Persona[];
-  } catch {
-    return [];
-  }
+    const { data } = await admin().from("personas").select("id, name").eq("brand_id", brandId).order("name", { ascending: true });
+    return (data ?? []) as { id: string; name: string }[];
+  } catch { return []; }
 }
 
-async function loadHooks(brandId: string): Promise<Hook[]> {
+async function loadBatches(brandId: string) {
   try {
-    const { data, error } = await admin()
-      .from("hooks")
-      .select("*")
-      .eq("brand_id", brandId)
-      .order("performance_score", { ascending: false });
-    if (error) throw error;
-    return (data ?? []) as Hook[];
-  } catch {
-    return [];
-  }
+    const { data } = await admin().from("sw_batches").select("id, name, external_doc_ref, created_at").eq("brand_id", brandId).order("created_at", { ascending: false }).limit(50);
+    return (data ?? []) as { id: string; name: string; external_doc_ref: unknown; created_at: string }[];
+  } catch { return []; }
 }
 
-export default async function ScriptStudioPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ brand?: string }>;
-}) {
+export default async function ScriptStudioPage({ searchParams }: { searchParams: Promise<{ brand?: string }> }) {
   const { brand } = await searchParams;
   const { brands, selected } = await loadBrands(brand);
-
-  const [personas, hooks, items, toWrite] = selected
-    ? await Promise.all([
-        loadPersonas(selected.id),
-        loadHooks(selected.id),
-        loadPipeline(selected.id, SCRIPT_STAGES),
-        loadPipeline(selected.id, TO_WRITE_STAGES),
-      ])
-    : [[], [], [], []];
+  const [personas, batches] = selected ? await Promise.all([loadPersonas(selected.id), loadBatches(selected.id)]) : [[], []];
 
   return (
     <>
-      <PageHeader
-        eyebrow="Studio"
-        title="Script Writer Studio"
-        subtitle="Draft scripts with inline AI and live guardrail checks"
-      >
-        <BrandSelector
-          brands={brands.map((b) => ({ id: b.id, slug: b.slug, name: b.name }))}
-          selected={selected?.slug}
-        />
+      <PageHeader eyebrow="Studio" title="Script Writer Studio" subtitle="Import a content plan, fan out naskah per persona, triage with live QC — powered by CAKGPT.">
+        <BrandSelector brands={brands.map((b) => ({ id: b.id, slug: b.slug, name: b.name }))} selected={selected?.slug} />
       </PageHeader>
 
       {!selected ? (
         <div className="animate-fade-up">
-          <EmptyState
-            icon={PenLine}
-            title="No brands configured"
-            hint="Add a brand to start writing scripts. The database may be empty or environment variables are not set."
-          />
+          <EmptyState icon={PenLine} title="No brands configured" hint="Add a brand to start writing scripts." />
         </div>
       ) : (
         <div className="animate-fade-up">
-          <ScriptWorkspace
-            toWrite={toWrite}
-          />
+          <ScriptStudio brandId={selected.id} personas={personas} batches={batches} />
         </div>
       )}
     </>
