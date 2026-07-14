@@ -1,8 +1,8 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { Upload, Loader2, Copy, Check, ImageIcon, Sparkles, X } from 'lucide-react'
-import { uploadFileForImport, MAX_IMPORT_UPLOAD_BYTES } from '@/lib/cakgpt/upload-client'
+import { Loader2, Copy, Check, ImageIcon, Sparkles, X } from 'lucide-react'
+import { uploadFileForImport, MAX_IMPORT_UPLOAD_BYTES, MAX_VIDEO_UPLOAD_BYTES } from '@/lib/cakgpt/upload-client'
 
 type VisualDirection = {
   hook_type: string
@@ -17,7 +17,8 @@ type VisualDirection = {
   suggested_angle_for_reuse: string
 }
 
-const ACCEPTED = 'image/png,image/jpeg,image/webp,image/heic,image/heif'
+const ACCEPTED = 'image/png,image/jpeg,image/webp,image/heic,image/heif,video/mp4,video/quicktime,video/webm,video/x-matroska'
+const isVideoFile = (file: File) => file.type.startsWith('video/')
 
 function directionToArahan(d: VisualDirection): string {
   const lines = [
@@ -35,6 +36,7 @@ function directionToArahan(d: VisualDirection): string {
 export function ContentTranslator() {
   const fileRef = useRef<HTMLInputElement>(null)
   const [preview, setPreview] = useState<string | null>(null)
+  const [previewIsVideo, setPreviewIsVideo] = useState(false)
   const [fileName, setFileName] = useState<string | null>(null)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
@@ -47,6 +49,7 @@ export function ContentTranslator() {
     setError(null)
     setDirection(null)
     setFileName(file.name)
+    setPreviewIsVideo(isVideoFile(file))
     setPreview((prev) => {
       if (prev) URL.revokeObjectURL(prev)
       return URL.createObjectURL(file)
@@ -55,16 +58,16 @@ export function ContentTranslator() {
 
   function reset() {
     if (preview) URL.revokeObjectURL(preview)
-    setPreview(null); setFileName(null); setNote(''); setError(null); setDirection(null); setCopied(false)
+    setPreview(null); setPreviewIsVideo(false); setFileName(null); setNote(''); setError(null); setDirection(null); setCopied(false)
     if (fileRef.current) fileRef.current.value = ''
   }
 
   async function translate() {
     const file = fileRef.current?.files?.[0]
-    if (!file) { setError('pilih gambar dulu'); return }
+    if (!file) { setError('pilih gambar atau video dulu'); return }
     setBusy(true); setError(null); setDirection(null)
     try {
-      const uploaded = await uploadFileForImport(file)
+      const uploaded = await uploadFileForImport(file, isVideoFile(file) ? MAX_VIDEO_UPLOAD_BYTES : MAX_IMPORT_UPLOAD_BYTES)
       if (!uploaded.ok) { setError(uploaded.error); return }
 
       const res = await fetch('/api/scriptwriter/translator/analyze', {
@@ -115,13 +118,17 @@ export function ContentTranslator() {
             />
             {preview ? (
               <div className="relative">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={preview} alt="" className="h-52 w-full rounded-lg border border-border object-cover" />
+                {previewIsVideo ? (
+                  <video src={preview} controls muted className="h-52 w-full rounded-lg border border-border object-cover" />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={preview} alt="" className="h-52 w-full rounded-lg border border-border object-cover" />
+                )}
                 {!busy && (
                   <button
                     type="button"
                     onClick={reset}
-                    aria-label="Remove image"
+                    aria-label="Remove file"
                     className="absolute right-1.5 top-1.5 rounded-full bg-background/90 p-1 text-mutedText hover:text-destructive"
                   >
                     <X size={14} />
@@ -134,8 +141,8 @@ export function ContentTranslator() {
                 className="flex h-52 w-full cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border text-mutedText hover:border-primary hover:text-primary"
               >
                 <ImageIcon size={24} aria-hidden />
-                <span className="text-xs font-medium">Pilih gambar</span>
-                <span className="text-[11px]">Maks {MAX_IMPORT_UPLOAD_BYTES / 1024 / 1024} MB</span>
+                <span className="text-xs font-medium">Pilih gambar / video</span>
+                <span className="text-[11px]">Gambar maks {MAX_IMPORT_UPLOAD_BYTES / 1024 / 1024} MB · Video maks {MAX_VIDEO_UPLOAD_BYTES / 1024 / 1024} MB</span>
               </label>
             )}
             {fileName && <p className="mt-1.5 truncate text-[11px] text-mutedText">{fileName}</p>}
@@ -162,7 +169,9 @@ export function ContentTranslator() {
               disabled={busy || !preview}
               className="mt-auto flex items-center justify-center gap-1.5 rounded-md bg-primary py-2 text-sm font-medium text-onPrimary hover:opacity-90 disabled:opacity-50"
             >
-              {busy ? <><Loader2 size={15} className="animate-spin" aria-hidden /> Menganalisis…</> : <><Sparkles size={15} aria-hidden /> Translate ke direction</>}
+              {busy
+                ? <><Loader2 size={15} className="animate-spin" aria-hidden /> {previewIsVideo ? 'Menganalisis video (bisa 1-2 menit)…' : 'Menganalisis…'}</>
+                : <><Sparkles size={15} aria-hidden /> Translate ke direction</>}
             </button>
           </div>
         </div>
