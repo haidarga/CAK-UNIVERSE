@@ -19,6 +19,15 @@ export interface LLMRequest {
   provider?: LLMProvider;
   /** Override the model id for this call. */
   model?: string;
+  /**
+   * Gemini-only: a response schema (Gemini's subset of OpenAPI/JSON Schema —
+   * type: "OBJECT"/"ARRAY"/"STRING" etc.) that constrains the exact shape of
+   * the JSON response, not just that it's valid JSON. Without this, the model
+   * is free to pick any shape it thinks fits the prompt (e.g. a bare array
+   * when a caller expects `{items: [...]}`), which downstream Zod parsing
+   * then rejects. Ignored by the Anthropic path (no equivalent param here).
+   */
+  responseSchema?: object;
 }
 
 export interface LLMResult {
@@ -89,6 +98,8 @@ async function runGemini(req: LLMRequest): Promise<LLMResult> {
       maxOutputTokens: req.maxTokens ?? 4096,
       temperature: req.temperature ?? 0.7,
       ...(req.json ? { responseMimeType: "application/json" } : {}),
+      // responseSchema only takes effect alongside responseMimeType "application/json".
+      ...(req.json && req.responseSchema ? { responseSchema: req.responseSchema } : {}),
     },
   });
 

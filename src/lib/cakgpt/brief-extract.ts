@@ -125,7 +125,11 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
 async function extractBriefsChunk(apiKey: string, text: string, hint?: string): Promise<ImportBrief[]> {
   const prompt = buildBriefExtractionPrompt({ sourceText: text, hint })
   const raw = await callGeminiJSON({ apiKey, prompt, responseSchema: BRIEF_EXTRACTION_RESPONSE_SCHEMA, temperature: 0.3, maxOutputTokens: 30000 })
-  const parsed = BriefExtractionOutputSchema.parse(raw)
+  // Defensive: the responseSchema constrains the model to {briefs:[...]}, but
+  // tolerate a bare array too (observed in production before responseSchema
+  // was actually wired through) rather than crashing the whole import.
+  const normalized = Array.isArray(raw) ? { briefs: raw } : raw
+  const parsed = BriefExtractionOutputSchema.parse(normalized)
   return parsed.briefs.map((b) => {
     const fields: Record<string, string> = {}
     for (const { key, value } of b.fields) {
