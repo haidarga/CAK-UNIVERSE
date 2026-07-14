@@ -90,7 +90,15 @@ export type ExtractBriefsResult =
 // exactly the failure mode a large content-plan PDF can hit.
 const MAX_CHUNKS = 40
 
-function splitForExtraction(text: string, maxChars = 20000): string[] {
+// Smaller than before (was 20000): a content-dense chunk (many rows, each
+// needing several output fields) can need MORE output tokens than input
+// chars would suggest, and gemini-2.5-flash has "thinking" enabled by
+// default — thinking tokens are deducted from the same maxOutputTokens
+// budget, silently shrinking the room left for the actual JSON. Smaller
+// chunks -> smaller required output per call -> less truncation risk,
+// independent of that thinking-token overhead we can't disable on the
+// currently installed SDK version.
+function splitForExtraction(text: string, maxChars = 8000): string[] {
   if (text.length <= maxChars) return [text]
   const lines = text.split('\n')
   const header = lines[0] || ''
@@ -124,7 +132,11 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
 
 async function extractBriefsChunk(apiKey: string, text: string, hint?: string): Promise<ImportBrief[]> {
   const prompt = buildBriefExtractionPrompt({ sourceText: text, hint })
-  const raw = await callGeminiJSON({ apiKey, prompt, responseSchema: BRIEF_EXTRACTION_RESPONSE_SCHEMA, temperature: 0.3, maxOutputTokens: 30000 })
+  // gemini-2.5-flash's real ceiling is 65,535 — pushed close to that (not just
+  // "enough for the JSON") because "thinking" tokens (on by default, not
+  // disableable on the installed SDK version) are deducted from this same
+  // budget before any visible output is written.
+  const raw = await callGeminiJSON({ apiKey, prompt, responseSchema: BRIEF_EXTRACTION_RESPONSE_SCHEMA, temperature: 0.3, maxOutputTokens: 60000 })
   // Defensive: the responseSchema constrains the model to {briefs:[...]}, but
   // tolerate a bare array too (observed in production before responseSchema
   // was actually wired through) rather than crashing the whole import.
@@ -170,8 +182,12 @@ export async function extractBriefsFromText(opts: { apiKey: string; text: string
     return { ok: true, briefs: briefs.slice(0, 300) }
   } catch (e) {
     const msg = e instanceof LLMError ? e.message : e instanceof Error ? e.message : 'extraction failed'
-    if (/truncat|maxOutputTokens/i.test(msg)) {
-      return { ok: false, error: 'a section of this plan is too large to extract — try a smaller file.' }
+    // "Unterminated JSON"/"No JSON found" (extractJson's own errors, see
+    // src/lib/llm.ts) are what a cut-off model response actually looks like —
+    // the response hit the output-token ceiling mid-write, not a literal
+    // "truncated"/"maxOutputTokens" string in the message.
+    if (/truncat|maxOutputTokens|Unterminated JSON|No JSON found/i.test(msg)) {
+      return { ok: false, error: 'a section of this plan is too large to extract in one go — try a smaller file or split it into parts.' }
     }
     return { ok: false, error: `extraction failed: ${msg}` }
   }
