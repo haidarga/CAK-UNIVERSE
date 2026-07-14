@@ -51,7 +51,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Studios",
     items: [
       { href: "/studio/strategy", label: "Strategy", icon: Lightbulb },
-      { href: "/studio/script", label: "Script", icon: PenLine },
+      { href: "/studio/script", label: "Script Studio", icon: PenLine },
       { href: "/studio/creator", label: "Creator", icon: Clapperboard },
       { href: "/studio/qc", label: "QC Station", icon: ShieldCheck },
     ],
