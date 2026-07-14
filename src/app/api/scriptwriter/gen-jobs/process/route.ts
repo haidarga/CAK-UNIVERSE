@@ -35,7 +35,7 @@ export async function POST(req: Request) {
   })
   if (claimErr) return NextResponse.json({ ok: false, error: claimErr.message }, { status: 500 })
 
-  const jobs = (claimed || []) as Array<{ id: string; brief_id: string; persona_id: string | null; attempts: number }>
+  const jobs = (claimed || []) as Array<{ id: string; brief_id: string; persona_id: string | null; extra_context: string | null; attempts: number }>
   let done = 0
   let failed = 0
 
@@ -47,6 +47,7 @@ export async function POST(req: Request) {
         briefId: job.brief_id,
         batchId,
         personaIdOverride: job.persona_id || undefined,
+        extraContext: job.extra_context || undefined,
         skipCritic: true, // bulk fast-path: rule-QC now, full critic on demand via /qc/rerun
       })
       if (res.ok) {

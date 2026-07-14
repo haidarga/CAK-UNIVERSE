@@ -69,6 +69,9 @@ export const IdeaOutputSchema = z.object({
 export const GenerateBatchItemSchema = z.object({
   brief_id: z.string().uuid(),
   persona_id: z.string().uuid().nullable().optional(),
+  // Optional writer steering ("arahan") applied to this fan-out item — shapes
+  // how the naskah turns out. Empty/omitted = plain direct generate.
+  extra_context: z.string().max(4000).nullable().optional(),
 })
 export type GenerateBatchItem = z.infer<typeof GenerateBatchItemSchema>
 

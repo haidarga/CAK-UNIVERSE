@@ -129,11 +129,19 @@ export default function Nav({
   );
 }
 
+// The Script studio (/studio/script) is a standalone route-group shell with its
+// own root layout. Soft-navigating between the two disjoint layout trees breaks
+// re-entry, so links into it use a plain <a> (full load) instead of next/link.
+function isStandaloneShell(href: string): boolean {
+  return href === "/studio/script" || href.startsWith("/studio/script/");
+}
+
 function NavLink({ item, active, rail }: { item: NavItem; active: boolean; rail?: boolean }) {
   const { href, label, icon: Icon } = item;
+  const LinkTag: React.ElementType = isStandaloneShell(href) ? "a" : Link;
   if (rail) {
     return (
-      <Link
+      <LinkTag
         href={href}
         aria-current={active ? "page" : undefined}
         aria-label={label}
@@ -141,11 +149,11 @@ function NavLink({ item, active, rail }: { item: NavItem; active: boolean; rail?
         className="nav-item size-11 shrink-0 justify-center px-0 outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
       >
         <Icon className="size-[18px] shrink-0" aria-hidden strokeWidth={1.5} />
-      </Link>
+      </LinkTag>
     );
   }
   return (
-    <Link
+    <LinkTag
       href={href}
       aria-current={active ? "page" : undefined}
       data-active={active}
@@ -157,6 +165,6 @@ function NavLink({ item, active, rail }: { item: NavItem; active: boolean; rail?
         strokeWidth={1.5}
       />
       <span className="truncate">{label}</span>
-    </Link>
+    </LinkTag>
   );
 }

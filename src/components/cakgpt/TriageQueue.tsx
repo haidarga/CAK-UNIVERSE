@@ -64,6 +64,9 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
   const [threshold, setThreshold] = useState<'none' | 'blocker_only'>('none')
   const [selectedBriefIds, setSelectedBriefIds] = useState<string[]>([])
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<string[]>([])
+  // Optional writer steering ("arahan") applied to this fan-out — empty = plain
+  // direct generate (decision #2 + steering feature).
+  const [steering, setSteering] = useState('')
   const [generating, setGenerating] = useState(false)
   const [genProgress, setGenProgress] = useState<string | null>(null)
   const [fanoutOpen, setFanoutOpen] = useState(false)
@@ -269,8 +272,9 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
   async function generateBatch() {
     if (selectedBriefIds.length === 0) return
     const personaIds = selectedPersonaIds.length > 0 ? selectedPersonaIds : [null]
+    const arahan = steering.trim() || undefined
     const genItems = selectedBriefIds.flatMap((briefId) =>
-      personaIds.map((personaId) => ({ brief_id: briefId, persona_id: personaId })),
+      personaIds.map((personaId) => ({ brief_id: briefId, persona_id: personaId, extra_context: arahan })),
     )
     setGenerating(true)
     setGenProgress(`Queueing ${genItems.length} naskah…`)
@@ -281,7 +285,7 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
       })
       const data = await res.json()
       if (!data.ok) { setGenProgress(data.error || 'failed to queue generation'); return }
-      setSelectedBriefIds([]); setSelectedPersonaIds([])
+      setSelectedBriefIds([]); setSelectedPersonaIds([]); setSteering('')
       setGenProgress(`Queued ${data.enqueued} naskah — generating in the background…`)
       pump() // drain the queue; naskah stream into the list as they finish
     } catch {
@@ -575,6 +579,21 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
                   </div>
                 </div>
               )}
+
+              <div>
+                <div className="mb-1 flex items-center gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-mutedText">Arahan</span>
+                  <span className="text-[11px] text-mutedText">opsional — arahin gaya/angle/isi naskah. Kosongin = generate langsung.</span>
+                </div>
+                <textarea
+                  value={steering}
+                  onChange={(e) => setSteering(e.target.value)}
+                  maxLength={4000}
+                  rows={2}
+                  placeholder="mis. Bikin lebih santai & lucu, buka pakai pertanyaan, sisipin CTA follow di akhir, hindari kata 'guys'…"
+                  className="w-full resize-y rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-text outline-none placeholder:text-mutedText focus:border-primary"
+                />
+              </div>
 
               <div className="flex items-center gap-2 pt-0.5">
                 <button onClick={generateBatch} disabled={generating || selectedBriefIds.length === 0 || (genStatus?.active ?? 0) > 0}

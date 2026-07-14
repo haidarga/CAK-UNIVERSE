@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutGrid, Users, FileText, Lightbulb, Settings, ArrowLeft, Building2 } from 'lucide-react'
+import { LayoutGrid, Users, FileText, Lightbulb, Settings, ArrowLeft, Building2, TrendingUp } from 'lucide-react'
 import { ClientSwitcher } from '@/components/cakgpt/ClientSwitcher'
 
 const ROOT = '/studio/script'
@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: `${ROOT}/clients`, label: 'Clients', icon: Building2 },
   { href: `${ROOT}/personas`, label: 'Personas', icon: Users },
   { href: `${ROOT}/briefs`, label: 'Briefs', icon: FileText },
+  { href: `${ROOT}/trends`, label: 'Trend Radar', icon: TrendingUp },
   { href: `${ROOT}/ideas`, label: 'Ideas', icon: Lightbulb },
   { href: `${ROOT}/settings`, label: 'Settings', icon: Settings },
 ]
@@ -55,13 +56,17 @@ export function NavShell({ children, initialClient }: { children: React.ReactNod
         </nav>
 
         <div className="border-t border-border p-3">
-          <Link
-            href="/"
+          {/* Hard navigation (<a>, not next/link): the ecosystem lives in a
+              separate route-group shell with a different root layout. Soft
+              navigating between the two disjoint layout trees is what broke
+              re-entry ("can't reopen studio"); a full load remounts cleanly. */}
+          <a
+            href="/accounts"
             className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-mutedText hover:bg-muted hover:text-text"
           >
             <ArrowLeft size={18} strokeWidth={1.75} aria-hidden />
             Back to Ecosystem
-          </Link>
+          </a>
         </div>
       </aside>
       <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>

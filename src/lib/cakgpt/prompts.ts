@@ -126,7 +126,13 @@ export function buildGenerationPrompt(opts: {
     'Break the naskah into shots; each shot may have multiple lines/blocks. Number shot_no and',
     'line_no sequentially starting at 1. Use section_key to label structural parts (e.g. "hook",',
     '"body", "cta").',
-    opts.extraContext ? `\n## ADDITIONAL CONTEXT\n${untrustedBlock('EXTRA_CONTEXT', opts.extraContext)}` : '',
+    // Writer steering ("arahan"): unlike persona/brief data, this is a
+    // directive the writer typed to shape THIS generation — present it as an
+    // instruction to follow (still sanitized: control/hidden chars stripped,
+    // length capped) rather than untrusted data to merely react to.
+    opts.extraContext
+      ? `\n## WRITER STEERING — follow this direction for this naskah\n${sanitizeUntrusted(opts.extraContext)}`
+      : '',
     '',
     'Respond ONLY with JSON matching the required schema.',
   ].filter(Boolean).join('\n')

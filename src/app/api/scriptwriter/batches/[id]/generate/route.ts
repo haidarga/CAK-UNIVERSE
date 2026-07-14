@@ -77,6 +77,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       batch_id: batchId,
       brief_id: it.brief_id,
       persona_id: it.persona_id ?? null,
+      extra_context: it.extra_context?.trim() || null,
       status: 'pending' as const,
     }))
   if (rows.length === 0) return NextResponse.json({ ok: true, enqueued: 0, batch_id: batchId })
