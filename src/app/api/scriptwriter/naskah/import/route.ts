@@ -9,7 +9,10 @@ import { getDoc, docToPlainText, parseGoogleDocId } from '@/lib/cakgpt/google-do
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
-const MAX_FILE_BYTES = 5 * 1024 * 1024 // 5 MB
+// Vercel Serverless Functions hard-cap the request body at 4.5 MB — anything
+// over that is rejected by the PLATFORM before this route runs (a raw
+// connection error, not our JSON response). Keep our limit under that.
+const MAX_FILE_BYTES = 4 * 1024 * 1024 // 4 MB
 // Aligned with MAX_EXTRACTION_SOURCE_LEN in prompts.ts so accepted text == text
 // actually sent to the model (no silent truncation past this point).
 const MAX_TEXT_CHARS = 120_000
@@ -32,7 +35,7 @@ export async function POST(req: Request) {
 
   const contentType = (req.headers.get('content-type') || '').toLowerCase()
   const declaredLen = Number(req.headers.get('content-length') || '0')
-  if (declaredLen > MAX_FILE_BYTES) return NextResponse.json({ ok: false, error: 'request too large (max 5 MB)' }, { status: 413 })
+  if (declaredLen > MAX_FILE_BYTES) return NextResponse.json({ ok: false, error: 'request too large (max 4 MB) — try Paste text or Google Doc instead' }, { status: 413 })
 
   let sourceText: string
   try {
@@ -41,7 +44,7 @@ export async function POST(req: Request) {
       const file = form.get('file')
       if (!(file instanceof File)) return NextResponse.json({ ok: false, error: 'no file provided' }, { status: 400 })
       if (file.size === 0) return NextResponse.json({ ok: false, error: 'file is empty' }, { status: 400 })
-      if (file.size > MAX_FILE_BYTES) return NextResponse.json({ ok: false, error: 'file too large (max 5 MB)' }, { status: 413 })
+      if (file.size > MAX_FILE_BYTES) return NextResponse.json({ ok: false, error: 'file too large (max 4 MB) — try Paste text or Google Doc instead' }, { status: 413 })
       const kind = detectSourceKind(file.name, file.type)
       if (!kind) return NextResponse.json({ ok: false, error: `unsupported file type: ${file.name}` }, { status: 415 })
       sourceText = await parseFileToText(Buffer.from(await file.arrayBuffer()), kind)

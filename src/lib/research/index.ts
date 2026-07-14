@@ -32,6 +32,7 @@ import {
   svcInstagramHashtag,
 } from "./scraper-service";
 import { tiktokCreativeCenterHashtags } from "./tiktok-creative-center";
+import { ensembleDataEnabled, edTikTokKeyword } from "./ensembledata";
 import {
   scrapeCreatorsEnabled,
   scTikTokSearch as scTikTok,
@@ -124,12 +125,18 @@ function finalize(item: ResearchItem, keywords: string[]): ResearchItem {
 async function fromTikTok(tag: string, topic: string): Promise<ResearchItem[]> {
   // Priority:
   //  1. Python sidecar (self-hosted, if configured)
-  //  2. ScrapeCreators keyword search — real topic search (opt-in, needs key)
-  //  3. Creative Center trending hashtags — FREE, keyless, no login
-  //  4. Lightpanda/CDP hashtag scrape (needs a browser endpoint)
+  //  2. EnsembleData keyword search — FREE 50 units/day (recurring, resets
+  //     daily), real topic search, no browser needed (opt-in, needs token)
+  //  3. ScrapeCreators keyword search — paid-after-free-100 (opt-in, needs key)
+  //  4. Creative Center trending hashtags — FREE, keyless, no login
+  //  5. Lightpanda/CDP hashtag scrape (needs a browser endpoint)
   if (scraperServiceEnabled()) {
     const svc = await svcTikTokSearch(topic || tag);
     if (svc.length > 0) return svc;
+  }
+  if (ensembleDataEnabled()) {
+    const via = await edTikTokKeyword(topic || tag);
+    if (via.length > 0) return via;
   }
   if (scrapeCreatorsEnabled()) {
     const via = await scTikTok(topic || tag);

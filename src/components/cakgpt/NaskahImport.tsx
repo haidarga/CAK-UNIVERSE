@@ -10,6 +10,12 @@ type PreviewNaskah = {
   body: unknown[] // opaque block list — only its length is shown in the preview
 }
 
+// Mirrors MAX_FILE_BYTES in the API route. Vercel Serverless Functions
+// hard-cap the request body at 4.5 MB regardless of what we set — this stays
+// under that so oversized uploads are caught here, client-side, instead of
+// hitting an opaque platform-level rejection.
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024
+
 export function NaskahImport({ clients, personas }: {
   clients: Array<{ id: string; name: string }>
   personas: Array<{ id: string; name: string }>
@@ -39,6 +45,11 @@ export function NaskahImport({ clients, personas }: {
       if (mode === 'file') {
         const file = fileRef.current?.files?.[0]
         if (!file) { setError('pick a file first'); return }
+        // Fail fast, before spending a round trip — see MAX_UPLOAD_BYTES.
+        if (file.size > MAX_UPLOAD_BYTES) {
+          setError(`File terlalu besar (${(file.size / 1024 / 1024).toFixed(1)} MB, maks 4 MB) — coba Paste text atau Google Doc.`)
+          return
+        }
         const form = new FormData()
         form.append('file', file)
         res = await fetch('/api/scriptwriter/naskah/import', { method: 'POST', body: form })
@@ -46,7 +57,20 @@ export function NaskahImport({ clients, personas }: {
         const payload = mode === 'gdoc' ? { google_doc: gdoc } : { text }
         res = await fetch('/api/scriptwriter/naskah/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       }
-      const data = await res.json()
+
+      let data: { ok?: boolean; error?: string; naskah?: unknown[] }
+      try {
+        data = await res.json()
+      } catch {
+        // Response wasn't valid JSON — a platform-level rejection that never
+        // reached our route handler. Surface the real HTTP status.
+        setError(
+          res.status === 413
+            ? 'File terlalu besar buat server (maks ~4 MB) — coba Paste text atau Google Doc.'
+            : `Server error (status ${res.status}) — coba lagi atau pakai Paste text.`,
+        )
+        return
+      }
       if (!data.ok) {
         if (res.status === 428) { setError('Google not connected.'); window.open('/api/scriptwriter/google/oauth/start', '_blank', 'noopener,noreferrer') }
         else setError(data.error || 'extraction failed')
@@ -54,14 +78,17 @@ export function NaskahImport({ clients, personas }: {
       }
       // Defensively normalize the response shape — a malformed item must not
       // crash the dashboard render (body is only ever read via .length).
-      const list: PreviewNaskah[] = (Array.isArray(data.naskah) ? data.naskah : []).map((n: { title?: string; body?: unknown[] }) => ({
-        title: n.title ?? '',
-        body: Array.isArray(n.body) ? n.body : [],
-        _id: crypto.randomUUID(),
-      }))
+      const list: PreviewNaskah[] = (Array.isArray(data.naskah) ? data.naskah : []).map((n) => {
+        const item = n as { title?: string; body?: unknown[] }
+        return {
+          title: item.title ?? '',
+          body: Array.isArray(item.body) ? item.body : [],
+          _id: crypto.randomUUID(),
+        }
+      })
       setNaskah(list)
-    } catch {
-      setError('network error during extraction')
+    } catch (e) {
+      setError(e instanceof Error && e.message ? `Network error: ${e.message}` : 'network error during extraction')
     } finally {
       setExtracting(false)
     }
@@ -152,6 +179,7 @@ export function NaskahImport({ clients, personas }: {
                 onChange={(e) => setFileName(e.target.files?.[0]?.name || null)}
                 className="block w-full text-xs text-mutedText file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-text hover:file:bg-border" />
               {fileName && <p className="mt-1 truncate text-xs text-mutedText">Selected: {fileName}</p>}
+              <p className="mt-1 text-[11px] text-mutedText">Maks 4 MB. File gede? Pakai tab Paste atau Google Doc.</p>
             </div>
           )}
           {mode === 'text' && (

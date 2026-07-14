@@ -14,6 +14,12 @@ type PreviewBrief = {
 
 type SourceMode = 'file' | 'text' | 'gdoc'
 
+// Mirrors MAX_FILE_BYTES in the API route. Vercel Serverless Functions
+// hard-cap the request body at 4.5 MB regardless of what we set — this stays
+// under that so uploads that would fail get caught here, client-side,
+// instead of hitting an opaque platform-level rejection.
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024
+
 export function BriefImport({ clients, personas }: {
   clients: Array<{ id: string; name: string }>
   personas: Array<{ id: string; name: string }>
@@ -49,6 +55,14 @@ export function BriefImport({ clients, personas }: {
       if (mode === 'file') {
         const file = fileRef.current?.files?.[0]
         if (!file) { setError('pick a file first'); return }
+        // Fail fast, before spending a round trip: Vercel hard-caps request
+        // bodies at 4.5 MB and rejects overage at the platform level (a raw
+        // connection error, not our JSON response) — catching it here gives a
+        // clear message instead of a dead-end "network error".
+        if (file.size > MAX_UPLOAD_BYTES) {
+          setError(`File terlalu besar (${(file.size / 1024 / 1024).toFixed(1)} MB, maks 4 MB) — coba Paste text atau Google Doc.`)
+          return
+        }
         const form = new FormData()
         form.append('file', file)
         if (hint.trim()) form.append('hint', hint)
@@ -59,18 +73,32 @@ export function BriefImport({ clients, personas }: {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
         })
       }
-      const data = await res.json()
+
+      let data: { ok?: boolean; error?: string; briefs?: Omit<PreviewBrief, '_id'>[] }
+      try {
+        data = await res.json()
+      } catch {
+        // Response wasn't valid JSON — a platform-level rejection (e.g. body
+        // too large, gateway timeout) that never reached our route handler.
+        // Surface the real HTTP status instead of a dead-end message.
+        setError(
+          res.status === 413
+            ? 'File terlalu besar buat server (maks ~4 MB) — coba Paste text atau Google Doc.'
+            : `Server error (status ${res.status}) — coba lagi atau pakai Paste text.`,
+        )
+        return
+      }
       if (!data.ok) {
         if (res.status === 428) { setError('Google not connected.'); window.open('/api/scriptwriter/google/oauth/start', '_blank', 'noopener,noreferrer') }
         else setError(data.error || 'extraction failed')
         return
       }
-      const list: PreviewBrief[] = (data.briefs || []).map((b: Omit<PreviewBrief, '_id'>) => ({ ...b, _id: crypto.randomUUID() }))
+      const list: PreviewBrief[] = (data.briefs || []).map((b) => ({ ...b, _id: crypto.randomUUID() }))
       setBriefs(list) // may be [] — the empty-state branch handles that
       setCommittedIds(null)
       setCreatedBatchId(null)
-    } catch {
-      setError('network error during extraction')
+    } catch (e) {
+      setError(e instanceof Error && e.message ? `Network error: ${e.message}` : 'network error during extraction')
     } finally {
       setExtracting(false)
     }
@@ -205,6 +233,7 @@ export function BriefImport({ clients, personas }: {
                 onChange={(e) => setFileName(e.target.files?.[0]?.name || null)}
                 className="block w-full text-xs text-mutedText file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-text hover:file:bg-border" />
               {fileName && <p className="mt-1 truncate text-xs text-mutedText">Selected: {fileName}</p>}
+              <p className="mt-1 text-[11px] text-mutedText">Maks 4 MB. File PDF gede (banyak gambar/screenshot)? Pakai tab Paste atau Google Doc.</p>
             </div>
           )}
           {mode === 'text' && (

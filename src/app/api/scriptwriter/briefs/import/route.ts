@@ -10,7 +10,13 @@ import { detectSourceKind, parseFileToText, extractBriefsFromText } from '@/lib/
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
-const MAX_FILE_BYTES = 5 * 1024 * 1024 // 5 MB — file uploads
+// Vercel Serverless Functions hard-cap the request body at 4.5 MB — anything
+// over that is rejected by the PLATFORM before this route even runs (a raw
+// connection reset / non-JSON error, not our clean JSON response, which is
+// what shows up client-side as an opaque "network error"). Keep our own
+// limit safely under that so OUR check always fires first with a real,
+// actionable error.
+const MAX_FILE_BYTES = 4 * 1024 * 1024 // 4 MB — file uploads
 const MAX_TEXT_CHARS = 200_000 // paste / Google Doc source (bounds memory before extraction)
 
 // Pull readable text out of a Google Doc, including table cells (content plans
@@ -69,7 +75,7 @@ export async function POST(req: Request) {
   // the authoritative bounds.)
   const declaredLen = Number(req.headers.get('content-length') || '0')
   if (declaredLen > MAX_FILE_BYTES) {
-    return NextResponse.json({ ok: false, error: 'request too large (max 5 MB)' }, { status: 413 })
+    return NextResponse.json({ ok: false, error: 'request too large (max 4 MB) — try Paste text or Google Doc instead' }, { status: 413 })
   }
 
   let sourceText: string
@@ -83,7 +89,7 @@ export async function POST(req: Request) {
       hint = typeof hintValue === 'string' ? hintValue : undefined
       if (!(file instanceof File)) return NextResponse.json({ ok: false, error: 'no file provided' }, { status: 400 })
       if (file.size === 0) return NextResponse.json({ ok: false, error: 'file is empty' }, { status: 400 })
-      if (file.size > MAX_FILE_BYTES) return NextResponse.json({ ok: false, error: 'file too large (max 5 MB)' }, { status: 413 })
+      if (file.size > MAX_FILE_BYTES) return NextResponse.json({ ok: false, error: 'file too large (max 4 MB) — try Paste text or Google Doc instead' }, { status: 413 })
 
       const kind = detectSourceKind(file.name, file.type)
       if (!kind) return NextResponse.json({ ok: false, error: `unsupported file type: ${file.name}` }, { status: 415 })
