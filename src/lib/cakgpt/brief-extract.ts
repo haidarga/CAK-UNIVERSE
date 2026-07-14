@@ -80,6 +80,14 @@ export type ExtractBriefsResult =
 // Split source text on LINE boundaries (never mid-row) into ~20k-char chunks,
 // prepending the first line (a spreadsheet's header row) to each chunk so column
 // context isn't lost. Small inputs return a single chunk (no overhead).
+// Hard ceiling on how many chunks (= how many parallel LLM calls) one import
+// can fan out into. Without this, a big-enough source (now allowed up to
+// 10 MB post-upload — see supabase/migrations/011) produces an unbounded
+// number of concurrent large-output LLM calls, which is slow, expensive, and
+// prone to tripping provider rate limits or the route's own time budget —
+// exactly the failure mode a large content-plan PDF can hit.
+const MAX_CHUNKS = 40
+
 function splitForExtraction(text: string, maxChars = 20000): string[] {
   if (text.length <= maxChars) return [text]
   const lines = text.split('\n')
@@ -95,6 +103,21 @@ function splitForExtraction(text: string, maxChars = 20000): string[] {
   }
   if (cur.trim()) chunks.push(cur)
   return chunks.length ? chunks : [text]
+}
+
+// Run async tasks with at most `limit` in flight at once — bounds concurrent
+// LLM calls instead of firing all chunks at the same time (Promise.all).
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let next = 0
+  async function worker() {
+    while (next < items.length) {
+      const i = next++
+      results[i] = await fn(items[i])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return results
 }
 
 async function extractBriefsChunk(apiKey: string, text: string, hint?: string): Promise<ImportBrief[]> {
@@ -116,10 +139,14 @@ export async function extractBriefsFromText(opts: { apiKey: string; text: string
   if (!trimmed) return { ok: false, error: 'the source is empty — nothing to extract' }
 
   try {
-    // Extract chunks in PARALLEL — one giant call that emits all ~100 briefs
-    // sequentially is the slow part; splitting cuts wall-time roughly Nx.
     const chunks = splitForExtraction(trimmed)
-    const perChunk = await Promise.all(chunks.map((c) => extractBriefsChunk(opts.apiKey, c, opts.hint)))
+    if (chunks.length > MAX_CHUNKS) {
+      return { ok: false, error: `this plan is too large to extract in one go (${chunks.length} sections, max ${MAX_CHUNKS}) — split the file and import in parts.` }
+    }
+    // Extract chunks with bounded concurrency — a handful in flight at once
+    // cuts wall-time vs. one-at-a-time, without firing dozens of large-output
+    // LLM calls simultaneously (rate limits, memory, time budget).
+    const perChunk = await mapWithConcurrency(chunks, 4, (c) => extractBriefsChunk(opts.apiKey, c, opts.hint))
 
     // Merge; dedupe only EXACT duplicates (same title AND fields) — collapses the
     // repeated header row / any boundary artifact without dropping two real briefs

@@ -9,7 +9,10 @@ import { readSourceFromStorage } from '@/lib/cakgpt/import-storage'
 
 // File parsing (pdf/xlsx/docx) needs the Node runtime, not edge.
 export const runtime = 'nodejs'
-export const maxDuration = 60
+// A large content-plan source can fan out into several chunked LLM calls
+// (see MAX_CHUNKS/mapWithConcurrency in brief-extract.ts) — give it real
+// headroom. Hobby plan allows up to 300s; this stays comfortably under that.
+export const maxDuration = 180
 
 const MAX_TEXT_CHARS = 200_000 // paste / Google Doc source (bounds memory before extraction)
 
@@ -48,7 +51,20 @@ function parseGoogleDocId(input: string): string | null {
 // POST /api/briefs/import — extract briefs from an uploaded file, pasted text,
 // or a Google Doc. Returns a PREVIEW only (nothing is written to the DB here);
 // the writer reviews/edits, then /import/commit persists them.
+//
+// Outermost safety net: every code path below already returns a clean JSON
+// error on failure, but this catch-all guarantees the CLIENT NEVER SEES A
+// RAW, NON-JSON 500 — whatever throws, the browser gets `{ok:false,error}`
+// with the real message instead of a dead-end "Server error" it can't act on.
 export async function POST(req: Request) {
+  try {
+    return await handleImport(req)
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'unexpected server error' }, { status: 500 })
+  }
+}
+
+async function handleImport(req: Request) {
   const authClient = await createServerClient()
   const { user, unauthorized } = await requireUser(authClient)
   if (unauthorized) return unauthorized

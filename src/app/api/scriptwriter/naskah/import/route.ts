@@ -8,7 +8,7 @@ import { getValidAccessToken } from '@/lib/cakgpt/google-oauth'
 import { getDoc, docToPlainText, parseGoogleDocId } from '@/lib/cakgpt/google-docs'
 
 export const runtime = 'nodejs'
-export const maxDuration = 60
+export const maxDuration = 120
 
 // Aligned with MAX_EXTRACTION_SOURCE_LEN in prompts.ts so accepted text == text
 // actually sent to the model (no silent truncation past this point).
@@ -17,7 +17,19 @@ const MAX_TEXT_CHARS = 120_000
 // POST /api/naskah/import — split an uploaded document (or pasted text) that
 // contains one or more FINISHED naskah into structured, block-mapped naskah.
 // Returns a PREVIEW only; /import/commit persists them as real naskah + versions.
+//
+// Outermost safety net: every path below already returns clean JSON on
+// failure, but this catch-all guarantees the client never sees a raw,
+// non-JSON 500 — it always gets a real, actionable error message instead.
 export async function POST(req: Request) {
+  try {
+    return await handleImport(req)
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'unexpected server error' }, { status: 500 })
+  }
+}
+
+async function handleImport(req: Request) {
   const authClient = await createServerClient()
   const { user, unauthorized } = await requireUser(authClient)
   if (unauthorized) return unauthorized
