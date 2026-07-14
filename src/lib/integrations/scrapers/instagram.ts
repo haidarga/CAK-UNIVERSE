@@ -27,6 +27,41 @@ import type { Page } from "puppeteer-core";
 import { withLightpanda } from "../browser";
 import { parseCount } from "./util";
 
+/**
+ * Free auth: inject the user's own Instagram session cookie (grabbed from a
+ * logged-in browser) so /explore/tags renders real content instead of a login
+ * wall. Reads env only — never hardcode credentials:
+ *   - IG_SESSIONID       → just the `sessionid` cookie value (simplest)
+ *   - IG_SESSION_COOKIE  → a full "name=value; name2=value2" cookie string
+ *                          (paste the whole Cookie header for best results)
+ * No env set → no-op (public view, usually empty). Never throws.
+ */
+async function applyIgSession(page: Page): Promise<void> {
+  try {
+    const raw = process.env.IG_SESSION_COOKIE?.trim();
+    const sid = process.env.IG_SESSIONID?.trim();
+    const cookies: { name: string; value: string; domain: string; path: string }[] = [];
+    if (raw) {
+      for (const part of raw.split(";")) {
+        const eq = part.indexOf("=");
+        if (eq === -1) continue;
+        const name = part.slice(0, eq).trim();
+        const value = part.slice(eq + 1).trim();
+        if (name && value) cookies.push({ name, value, domain: ".instagram.com", path: "/" });
+      }
+    } else if (sid) {
+      cookies.push({ name: "sessionid", value: sid, domain: ".instagram.com", path: "/" });
+    }
+    if (cookies.length) await page.setCookie(...cookies);
+  } catch {
+    // cookie injection is best-effort — never block the scrape
+  }
+}
+
+export function instagramSessionConfigured(): boolean {
+  return !!(process.env.IG_SESSIONID?.trim() || process.env.IG_SESSION_COOKIE?.trim());
+}
+
 export interface InstagramItem {
   url: string;
   views?: number;
@@ -52,8 +87,7 @@ export async function scrapeInstagramReelsExplore(limit = DEFAULT_LIMIT): Promis
   const url = "https://www.instagram.com/explore/";
   try {
     return await withLightpanda(async (page) => {
-      // SESSION ANCHOR — see TODO(login) above. Inject session cookie here
-      // (before goto) when this code must own authentication.
+      await applyIgSession(page); // free auth via user's own session cookie (env)
       await page.goto(url, { waitUntil: WAIT_UNTIL });
       const items = await collectItems(page, limit);
       return mapItems(items);
@@ -73,8 +107,7 @@ export async function scrapeInstagramHashtag(tag: string, limit = DEFAULT_LIMIT)
   const url = `https://www.instagram.com/explore/tags/${encodeURIComponent(cleanTag)}/`;
   try {
     return await withLightpanda(async (page) => {
-      // SESSION ANCHOR — see TODO(login) above. Inject session cookie here
-      // (before goto) when this code must own authentication.
+      await applyIgSession(page); // free auth via user's own session cookie (env)
       await page.goto(url, { waitUntil: WAIT_UNTIL });
       const items = await collectItems(page, limit);
       return mapItems(items);

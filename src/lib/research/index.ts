@@ -23,7 +23,7 @@
 //                Chrome CDP (:9222) is not running — start it via START.cmd.
 // ============================================================
 import { scrapeTikTokHashtag } from "../integrations/scrapers/tiktok";
-import { scrapeInstagramHashtag } from "../integrations/scrapers/instagram";
+import { scrapeInstagramHashtag, instagramSessionConfigured } from "../integrations/scrapers/instagram";
 import { searchYouTube } from "./youtube-search";
 import { searchSGE } from "../integrations/scrapers/sge";
 import {
@@ -31,6 +31,12 @@ import {
   svcTikTokSearch,
   svcInstagramHashtag,
 } from "./scraper-service";
+import { tiktokCreativeCenterHashtags } from "./tiktok-creative-center";
+import {
+  scrapeCreatorsEnabled,
+  scTikTokSearch as scTikTok,
+  scInstagramHashtag as scInstagram,
+} from "./scrapecreators";
 
 export type Platform = "tiktok" | "instagram" | "youtube" | "sge";
 
@@ -116,12 +122,22 @@ function finalize(item: ResearchItem, keywords: string[]): ResearchItem {
 // --- per-platform adapters (each maps to ResearchItem; never throws) ---
 
 async function fromTikTok(tag: string, topic: string): Promise<ResearchItem[]> {
-  // Prefer the Python sidecar (TikTok-Api, signed JSON API) when available;
-  // otherwise fall back to the Chrome/CDP DOM scraper.
+  // Priority:
+  //  1. Python sidecar (self-hosted, if configured)
+  //  2. ScrapeCreators keyword search — real topic search (opt-in, needs key)
+  //  3. Creative Center trending hashtags — FREE, keyless, no login
+  //  4. Lightpanda/CDP hashtag scrape (needs a browser endpoint)
   if (scraperServiceEnabled()) {
     const svc = await svcTikTokSearch(topic || tag);
     if (svc.length > 0) return svc;
   }
+  if (scrapeCreatorsEnabled()) {
+    const via = await scTikTok(topic || tag);
+    if (via.length > 0) return via;
+  }
+  const trending = await tiktokCreativeCenterHashtags(PER_PLATFORM_LIMIT);
+  if (trending.length > 0) return trending;
+
   const raw = await scrapeTikTokHashtag(tag, PER_PLATFORM_LIMIT);
   return raw.map((it) => ({
     platform: "tiktok" as const,
@@ -133,10 +149,15 @@ async function fromTikTok(tag: string, topic: string): Promise<ResearchItem[]> {
 }
 
 async function fromInstagram(tag: string): Promise<ResearchItem[]> {
-  // Prefer the Python sidecar (instagrapi private API) when available.
+  // Priority: Python sidecar → ScrapeCreators (opt-in, the only for-everyone
+  // path) → Lightpanda/CDP scraper (needs IG_SESSIONID; self-host only).
   if (scraperServiceEnabled()) {
     const svc = await svcInstagramHashtag(tag);
     if (svc.length > 0) return svc;
+  }
+  if (scrapeCreatorsEnabled()) {
+    const via = await scInstagram(tag);
+    if (via.length > 0) return via;
   }
   const raw = await scrapeInstagramHashtag(tag, PER_PLATFORM_LIMIT);
   return raw.map((it) => ({
@@ -162,11 +183,11 @@ async function fromSGE(topic: string): Promise<ResearchItem[]> {
 function emptyReason(platform: Platform): string {
   switch (platform) {
     case "instagram":
-      return "perlu login (no connected session)";
+      return "IG belum aktif — set SCRAPECREATORS_API_KEY (gak ada jalur gratis buat-semua-user)";
     case "sge":
       return "Chrome CDP belum nyala (jalankan START.cmd) / belum ada hasil";
     case "tiktok":
-      return "no public results (or browser session unavailable)";
+      return "TikTok trending kosong/di-rate-limit — set SCRAPECREATORS_API_KEY buat search topik";
     case "youtube":
       return "no results (or YOUTUBE_API_KEY unset)";
   }
