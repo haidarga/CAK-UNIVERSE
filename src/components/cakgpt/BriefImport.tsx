@@ -36,6 +36,9 @@ export function BriefImport({ clients, personas }: {
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<string[]>([])
   const [busy, setBusy] = useState<null | 'commit' | 'generate'>(null)
   const [progress, setProgress] = useState<string | null>(null)
+  // Optional writer steering ("arahan") applied to the whole fan-out on
+  // Import & Generate — empty = plain direct generate (unchanged behavior).
+  const [steering, setSteering] = useState('')
   // Once committed, hold the ids so a later step failing (batch/generate) never
   // re-commits the same briefs on retry.
   const [committedIds, setCommittedIds] = useState<string[] | null>(null)
@@ -103,7 +106,7 @@ export function BriefImport({ clients, personas }: {
   }
   function reset() {
     setBriefs(null); setText(''); setGdoc(''); setHint(''); setFileName(null); setSelectedPersonaIds([])
-    setCommittedIds(null); setCreatedBatchId(null); setError(null); setProgress(null)
+    setCommittedIds(null); setCreatedBatchId(null); setError(null); setProgress(null); setSteering('')
     if (fileRef.current) fileRef.current.value = ''
   }
 
@@ -166,7 +169,8 @@ export function BriefImport({ clients, personas }: {
       }
 
       const personaIds: Array<string | null> = selectedPersonaIds.length > 0 ? selectedPersonaIds : [null]
-      const items = ids.flatMap((briefId) => personaIds.map((personaId) => ({ brief_id: briefId, persona_id: personaId })))
+      const arahan = steering.trim() || undefined
+      const items = ids.flatMap((briefId) => personaIds.map((personaId) => ({ brief_id: briefId, persona_id: personaId, extra_context: arahan })))
 
       setProgress(`Queueing ${items.length} naskah…`)
       const genRes = await fetch(`/api/scriptwriter/batches/${batchId}/generate`, {
@@ -334,6 +338,22 @@ export function BriefImport({ clients, personas }: {
               </div>
             </div>
           )}
+
+          <div>
+            <div className="mb-1 flex items-center gap-2">
+              <span className="text-xs font-medium text-text">Arahan</span>
+              <span className="text-[11px] text-mutedText">opsional — arahin gaya/angle/isi naskah. Kosongin = generate langsung.</span>
+            </div>
+            <textarea
+              value={steering}
+              onChange={(e) => setSteering(e.target.value)}
+              disabled={disabled}
+              maxLength={4000}
+              rows={2}
+              placeholder="mis. Bikin lebih santai & lucu, buka pakai pertanyaan, sisipin CTA follow di akhir, hindari kata 'guys'…"
+              className="w-full resize-y rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-text outline-none placeholder:text-mutedText focus:border-primary disabled:opacity-60"
+            />
+          </div>
 
           <div className="flex gap-2">
             <button onClick={importOnly} disabled={disabled}

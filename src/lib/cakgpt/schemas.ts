@@ -138,3 +138,26 @@ export const NaskahImportCommitSchema = z.object({
   batch_name: z.string().max(120).optional(),
   naskah: z.array(ImportedNaskahSchema).min(1).max(40),
 })
+
+// ── Content Translator (image → creative direction) ──
+// One reference image (a competitor post/thumbnail/screenshot) mapped into a
+// structured creative direction a writer can reuse: what makes it work, and
+// how to steer a NEW naskah toward the same technique for a different brand.
+export const ShotBreakdownItemSchema = z.object({
+  shot_no: z.number().int().min(1),
+  description: z.string().min(1).max(300),
+  camera_angle: z.string().max(100).nullable().optional(),
+})
+export const VisualDirectionSchema = z.object({
+  hook_type: z.string().min(1).max(80),
+  hook_description: z.string().min(1).max(400),
+  visual_style: z.string().min(1).max(400),
+  pacing: z.string().min(1).max(200),
+  mood: z.string().min(1).max(200),
+  target_audience_read: z.string().min(1).max(300),
+  cta_style: z.string().max(300).nullable().optional(),
+  notable_techniques: z.array(z.string().min(1).max(150)).max(10).default([]),
+  shot_breakdown: z.array(ShotBreakdownItemSchema).max(20).default([]),
+  suggested_angle_for_reuse: z.string().min(1).max(500),
+})
+export type VisualDirection = z.infer<typeof VisualDirectionSchema>

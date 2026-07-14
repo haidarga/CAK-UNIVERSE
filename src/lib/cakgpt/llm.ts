@@ -32,3 +32,32 @@ export async function callGeminiJSON(opts: {
     throw new LLMError(e instanceof Error ? e.message : "LLM call failed");
   }
 }
+
+// Vision variant (Content Translator): same contract as callGeminiJSON, plus
+// one or more inline images analyzed alongside the prompt. Separate function
+// (not an optional param on callGeminiJSON) so the existing, proven text-only
+// call sites (brief/naskah extraction, generation, ideas) are never at risk
+// of a regression from this change.
+export async function callGeminiVisionJSON(opts: {
+  apiKey: string;
+  prompt: string;
+  images: { mimeType: string; data: string }[];
+  responseSchema: GeminiSchema;
+  temperature?: number;
+  maxOutputTokens?: number;
+}): Promise<unknown> {
+  try {
+    const res = await runLLM({
+      system: "You are a precise visual analyst. Respond with ONLY valid JSON matching the requested shape — no markdown fences, no commentary.",
+      prompt: opts.prompt,
+      json: true,
+      responseSchema: opts.responseSchema,
+      images: opts.images,
+      temperature: opts.temperature ?? 0.4,
+      maxTokens: opts.maxOutputTokens ?? 8000,
+    });
+    return extractJson(res.text);
+  } catch (e) {
+    throw new LLMError(e instanceof Error ? e.message : "LLM call failed");
+  }
+}

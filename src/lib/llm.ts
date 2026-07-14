@@ -3,7 +3,7 @@
 // One call shape, two providers, configurable per-agent or via env.
 // ============================================================
 import Anthropic from "@anthropic-ai/sdk";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, type Part } from "@google/generative-ai";
 import { CLAUDE_MODEL } from "./constants";
 
 export type LLMProvider = "anthropic" | "gemini";
@@ -28,6 +28,12 @@ export interface LLMRequest {
    * then rejects. Ignored by the Anthropic path (no equivalent param here).
    */
   responseSchema?: object;
+  /**
+   * Gemini-only: inline image parts (base64, no data: prefix) for multimodal
+   * vision calls. Ignored by the Anthropic path — Claude vision uses a
+   * different content-block format and no current caller needs it there.
+   */
+  images?: { mimeType: string; data: string }[];
 }
 
 export interface LLMResult {
@@ -103,7 +109,21 @@ async function runGemini(req: LLMRequest): Promise<LLMResult> {
     },
   });
 
-  const res = await client.generateContent(req.prompt);
+  // Multimodal: when images are present, build a Content with inlineData
+  // parts + the text prompt instead of the plain-string overload.
+  const res = req.images?.length
+    ? await client.generateContent({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              ...req.images.map((img): Part => ({ inlineData: { mimeType: img.mimeType, data: img.data } })),
+              { text: req.prompt },
+            ],
+          },
+        ],
+      })
+    : await client.generateContent(req.prompt);
   const text = res.response.text();
   const usage = res.response.usageMetadata;
 
