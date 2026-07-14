@@ -139,25 +139,28 @@ export const NaskahImportCommitSchema = z.object({
   naskah: z.array(ImportedNaskahSchema).min(1).max(40),
 })
 
-// ── Content Translator (image → creative direction) ──
-// One reference image (a competitor post/thumbnail/screenshot) mapped into a
-// structured creative direction a writer can reuse: what makes it work, and
-// how to steer a NEW naskah toward the same technique for a different brand.
+// ── Content Translator (image/video → creative direction) ──
+// One reference image or video (a competitor post/thumbnail/screenshot/clip)
+// mapped into a structured creative direction a writer can reuse: what makes
+// it work, and how to steer a NEW naskah toward the same technique for a
+// different brand. Caps sized generously — video has genuinely more to
+// describe (motion, cuts, multiple shots) than a single still frame, and
+// these are prose fields for on-screen display, not IDs/keys.
 export const ShotBreakdownItemSchema = z.object({
   shot_no: z.number().int().min(1),
-  description: z.string().min(1).max(300),
-  camera_angle: z.string().max(100).nullable().optional(),
+  description: z.string().min(1).max(500),
+  camera_angle: z.string().max(150).nullable().optional(),
 })
 export const VisualDirectionSchema = z.object({
-  hook_type: z.string().min(1).max(80),
-  hook_description: z.string().min(1).max(400),
-  visual_style: z.string().min(1).max(400),
-  pacing: z.string().min(1).max(200),
-  mood: z.string().min(1).max(200),
-  target_audience_read: z.string().min(1).max(300),
-  cta_style: z.string().max(300).nullable().optional(),
-  notable_techniques: z.array(z.string().min(1).max(150)).max(10).default([]),
-  shot_breakdown: z.array(ShotBreakdownItemSchema).max(20).default([]),
-  suggested_angle_for_reuse: z.string().min(1).max(500),
+  hook_type: z.string().min(1).max(120),
+  hook_description: z.string().min(1).max(800),
+  visual_style: z.string().min(1).max(800),
+  pacing: z.string().min(1).max(400),
+  mood: z.string().min(1).max(300),
+  target_audience_read: z.string().min(1).max(500),
+  cta_style: z.string().max(400).nullable().optional(),
+  notable_techniques: z.array(z.string().min(1).max(250)).max(10).default([]),
+  shot_breakdown: z.array(ShotBreakdownItemSchema).max(30).default([]),
+  suggested_angle_for_reuse: z.string().min(1).max(800),
 })
 export type VisualDirection = z.infer<typeof VisualDirectionSchema>
