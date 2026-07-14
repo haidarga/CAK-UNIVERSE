@@ -4,7 +4,14 @@
 // else (src/lib/llm.ts). Parsing runs server-side only (Node runtime).
 import * as XLSX from 'xlsx'
 import mammoth from 'mammoth'
-import { PDFParse } from 'pdf-parse'
+// unpdf (not pdf-parse): pdf-parse pulls in pdfjs-dist's "legacy" build, which
+// lazily requires the native @napi-rs/canvas binding for optional rendering
+// features we never use (we only need TEXT). That binding's Linux binary
+// doesn't reliably survive Vercel's serverless bundling, which crashed the
+// whole function (FUNCTION_INVOCATION_FAILED) before our try/catch could ever
+// run — no JS error handling can catch a module that fails to load. unpdf
+// bundles its own pdf.js build with zero native/optional dependencies.
+import { extractText, getDocumentProxy } from 'unpdf'
 import { callGeminiJSON, LLMError } from '@/lib/cakgpt/llm'
 import {
   buildBriefExtractionPrompt, BRIEF_EXTRACTION_RESPONSE_SCHEMA,
@@ -50,14 +57,9 @@ export async function parseFileToText(buffer: Buffer, kind: SourceKind): Promise
     case 'spreadsheet':
       return spreadsheetToText(buffer)
     case 'pdf': {
-      const parser = new PDFParse({ data: buffer })
-      try {
-        return (await parser.getText()).text
-      } finally {
-        // Swallow cleanup errors so a destroy() failure can't mask the real
-        // parse error the caller needs to see.
-        await parser.destroy().catch(() => {})
-      }
+      const pdf = await getDocumentProxy(new Uint8Array(buffer))
+      const { text } = await extractText(pdf, { mergePages: true })
+      return text
     }
     case 'docx':
       // NOTE: mammoth decompresses the docx zip with no output-size cap; the
