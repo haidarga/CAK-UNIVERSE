@@ -73,6 +73,12 @@ const POLL_INTERVAL_MS = 3_000
 const POLL_MAX_ATTEMPTS = 40 // ~2 minutes of polling headroom
 
 export async function translateVideoToDirection(opts: {
+  // NOT used for auth — see note below. Kept in the signature to mirror
+  // translateImageToDirection's shape (both take the CAKGPT-shim "apiKey",
+  // which is always the literal string "ecosystem-managed" — see
+  // src/lib/cakgpt/settings.ts — a placeholder that only the runLLM/
+  // callGeminiJSON indirection knows to ignore in favor of the real
+  // process.env.GEMINI_API_KEY read server-side).
   apiKey: string
   videoBuffer: Buffer
   mimeType: string
@@ -82,9 +88,18 @@ export async function translateVideoToDirection(opts: {
     return { ok: false, error: `unsupported video type: ${opts.mimeType}` }
   }
 
+  // The Files API (GoogleAIFileManager/GoogleGenerativeAI) is called DIRECTLY
+  // here, bypassing the runLLM/callGeminiJSON indirection that all other
+  // CAKGPT LLM calls go through — so unlike those, this path actually USES
+  // whatever key it's given. opts.apiKey is the CAKGPT-shim placeholder
+  // ("ecosystem-managed"), not a real key; read the real one straight from
+  // env, matching how the ecosystem's own gemini() singleton does it.
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY is not set' }
+
   const ext = opts.mimeType.split('/')[1]?.replace('quicktime', 'mov') || 'mp4'
   const tempPath = join(tmpdir(), `translator-${randomUUID()}.${ext}`)
-  const fileManager = new GoogleAIFileManager(opts.apiKey)
+  const fileManager = new GoogleAIFileManager(apiKey)
   let geminiFileName: string | null = null
 
   try {
@@ -107,7 +122,7 @@ export async function translateVideoToDirection(opts: {
     }
 
     const prompt = buildVisualTranslationPrompt({ note: opts.note, mediaKind: 'video' })
-    const client = new GoogleGenerativeAI(opts.apiKey).getGenerativeModel({
+    const client = new GoogleGenerativeAI(apiKey).getGenerativeModel({
       model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
       generationConfig: {
         maxOutputTokens: 8000,
