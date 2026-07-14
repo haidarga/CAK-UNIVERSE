@@ -4,11 +4,19 @@ import { requireUser } from '@/lib/cakgpt/auth'
 import { getGeminiApiKey } from '@/lib/cakgpt/settings'
 import { extractNaskahFromText } from '@/lib/cakgpt/brief-extract'
 import { readSourceFromStorage } from '@/lib/cakgpt/import-storage'
+import { withDeadline, DeadlineExceededError } from '@/lib/cakgpt/deadline'
 import { getValidAccessToken } from '@/lib/cakgpt/google-oauth'
 import { getDoc, docToPlainText, parseGoogleDocId } from '@/lib/cakgpt/google-docs'
 
 export const runtime = 'nodejs'
-export const maxDuration = 120
+export const maxDuration = 150
+
+// Vercel kills the function OUTSIDE the JS call stack once maxDuration hits —
+// no try/catch can intercept that, leaving the client with a raw, non-JSON
+// error. These self-imposed budgets (sum 100s) stay well under maxDuration
+// (150s) so our code always returns a clean JSON error first.
+const PARSE_DEADLINE_MS = 40_000
+const EXTRACT_DEADLINE_MS = 60_000
 
 // Aligned with MAX_EXTRACTION_SOURCE_LEN in prompts.ts so accepted text == text
 // actually sent to the model (no silent truncation past this point).
@@ -50,7 +58,7 @@ async function handleImport(req: Request) {
       // Browser uploaded directly to Supabase Storage via a signed URL (see
       // /imports/upload-url) — bypasses Vercel's Serverless Function
       // request-body cap (hard 4.5 MB platform limit) entirely.
-      sourceText = await readSourceFromStorage(service, body.storage_path)
+      sourceText = await withDeadline(readSourceFromStorage(service, body.storage_path), PARSE_DEADLINE_MS, 'parsing the file')
     } else if (typeof body.text === 'string' && body.text.trim()) {
       if (body.text.length > MAX_TEXT_CHARS) return NextResponse.json({ ok: false, error: 'pasted text too large (max 120k chars)' }, { status: 413 })
       sourceText = body.text
@@ -72,7 +80,15 @@ async function handleImport(req: Request) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'failed to read source' }, { status: 400 })
   }
 
-  const result = await extractNaskahFromText({ apiKey, text: sourceText })
+  let result: Awaited<ReturnType<typeof extractNaskahFromText>>
+  try {
+    result = await withDeadline(extractNaskahFromText({ apiKey, text: sourceText }), EXTRACT_DEADLINE_MS, 'extraction')
+  } catch (e) {
+    const msg = e instanceof DeadlineExceededError
+      ? 'this document is taking too long to extract — try a smaller file or split it into parts.'
+      : e instanceof Error ? e.message : 'extraction failed'
+    return NextResponse.json({ ok: false, error: msg }, { status: 504 })
+  }
   if (!result.ok) return NextResponse.json({ ok: false, error: result.error }, { status: 422 })
   return NextResponse.json({ ok: true, naskah: result.naskah, count: result.naskah.length })
 }

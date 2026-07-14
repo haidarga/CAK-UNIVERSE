@@ -6,13 +6,23 @@ import { getValidAccessToken } from '@/lib/cakgpt/google-oauth'
 import { getDoc } from '@/lib/cakgpt/google-docs'
 import { extractBriefsFromText } from '@/lib/cakgpt/brief-extract'
 import { readSourceFromStorage } from '@/lib/cakgpt/import-storage'
+import { withDeadline, DeadlineExceededError } from '@/lib/cakgpt/deadline'
 
 // File parsing (pdf/xlsx/docx) needs the Node runtime, not edge.
 export const runtime = 'nodejs'
 // A large content-plan source can fan out into several chunked LLM calls
 // (see MAX_CHUNKS/mapWithConcurrency in brief-extract.ts) — give it real
 // headroom. Hobby plan allows up to 300s; this stays comfortably under that.
-export const maxDuration = 180
+export const maxDuration = 240
+
+// Vercel kills the function OUTSIDE the JS call stack once maxDuration hits —
+// no try/catch can intercept that, and the client is left with a raw,
+// non-JSON error. These budgets self-impose a shorter deadline on the two
+// slow steps so OUR code always returns a clean, actionable JSON error
+// BEFORE the platform would ever step in. Sum (60+150=210s) stays well under
+// maxDuration (240s), leaving margin for auth/parsing/response overhead.
+const PARSE_DEADLINE_MS = 60_000
+const EXTRACT_DEADLINE_MS = 150_000
 
 const MAX_TEXT_CHARS = 200_000 // paste / Google Doc source (bounds memory before extraction)
 
@@ -87,7 +97,7 @@ async function handleImport(req: Request) {
       // URL (see /imports/upload-url) — this bypasses Vercel's Serverless
       // Function request-body cap (a hard 4.5 MB platform limit) entirely, so
       // much larger files (bucket allows up to 10 MB) work fine.
-      sourceText = await readSourceFromStorage(service, body.storage_path)
+      sourceText = await withDeadline(readSourceFromStorage(service, body.storage_path), PARSE_DEADLINE_MS, 'parsing the file')
     } else if (typeof body.text === 'string' && body.text.trim()) {
       if (body.text.length > MAX_TEXT_CHARS) return NextResponse.json({ ok: false, error: 'pasted text too large (max 200k chars)' }, { status: 413 })
       sourceText = body.text
@@ -109,7 +119,15 @@ async function handleImport(req: Request) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'failed to read source' }, { status: 400 })
   }
 
-  const result = await extractBriefsFromText({ apiKey, text: sourceText, hint })
+  let result: Awaited<ReturnType<typeof extractBriefsFromText>>
+  try {
+    result = await withDeadline(extractBriefsFromText({ apiKey, text: sourceText, hint }), EXTRACT_DEADLINE_MS, 'extraction')
+  } catch (e) {
+    const msg = e instanceof DeadlineExceededError
+      ? 'this plan is taking too long to extract — try a smaller file or split it into parts.'
+      : e instanceof Error ? e.message : 'extraction failed'
+    return NextResponse.json({ ok: false, error: msg }, { status: 504 })
+  }
   if (!result.ok) return NextResponse.json({ ok: false, error: result.error }, { status: 422 })
   return NextResponse.json({ ok: true, briefs: result.briefs, count: result.briefs.length })
 }
