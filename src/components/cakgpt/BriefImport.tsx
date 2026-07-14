@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Upload, ClipboardPaste, FileText, X, Sparkles, Loader2, ExternalLink } from 'lucide-react'
+import { uploadFileForImport, MAX_IMPORT_UPLOAD_BYTES } from '@/lib/cakgpt/upload-client'
 
 type PreviewBrief = {
   _id: string // stable client-side key (extraction time), never sent to the server
@@ -13,12 +14,6 @@ type PreviewBrief = {
 }
 
 type SourceMode = 'file' | 'text' | 'gdoc'
-
-// Mirrors MAX_FILE_BYTES in the API route. Vercel Serverless Functions
-// hard-cap the request body at 4.5 MB regardless of what we set — this stays
-// under that so uploads that would fail get caught here, client-side,
-// instead of hitting an opaque platform-level rejection.
-const MAX_UPLOAD_BYTES = 4 * 1024 * 1024
 
 export function BriefImport({ clients, personas }: {
   clients: Array<{ id: string; name: string }>
@@ -55,18 +50,17 @@ export function BriefImport({ clients, personas }: {
       if (mode === 'file') {
         const file = fileRef.current?.files?.[0]
         if (!file) { setError('pick a file first'); return }
-        // Fail fast, before spending a round trip: Vercel hard-caps request
-        // bodies at 4.5 MB and rejects overage at the platform level (a raw
-        // connection error, not our JSON response) — catching it here gives a
-        // clear message instead of a dead-end "network error".
-        if (file.size > MAX_UPLOAD_BYTES) {
-          setError(`File terlalu besar (${(file.size / 1024 / 1024).toFixed(1)} MB, maks 4 MB) — coba Paste text atau Google Doc.`)
-          return
-        }
-        const form = new FormData()
-        form.append('file', file)
-        if (hint.trim()) form.append('hint', hint)
-        res = await fetch('/api/scriptwriter/briefs/import', { method: 'POST', body: form })
+        // Upload straight to Supabase Storage (browser → Storage, never
+        // through our Vercel function) so large files skip Vercel's hard
+        // 4.5 MB request-body cap entirely.
+        setProgress('Uploading file…')
+        const uploaded = await uploadFileForImport(file)
+        if (!uploaded.ok) { setError(uploaded.error); return }
+        setProgress('Extracting…')
+        res = await fetch('/api/scriptwriter/briefs/import', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ storage_path: uploaded.path, hint }),
+        })
       } else {
         const payload = mode === 'text' ? { text, hint } : { google_doc: gdoc, hint }
         res = await fetch('/api/scriptwriter/briefs/import', {
@@ -78,14 +72,10 @@ export function BriefImport({ clients, personas }: {
       try {
         data = await res.json()
       } catch {
-        // Response wasn't valid JSON — a platform-level rejection (e.g. body
-        // too large, gateway timeout) that never reached our route handler.
-        // Surface the real HTTP status instead of a dead-end message.
-        setError(
-          res.status === 413
-            ? 'File terlalu besar buat server (maks ~4 MB) — coba Paste text atau Google Doc.'
-            : `Server error (status ${res.status}) — coba lagi atau pakai Paste text.`,
-        )
+        // Response wasn't valid JSON — a platform-level rejection (e.g. a
+        // gateway timeout) that never reached our route handler. Surface the
+        // real HTTP status instead of a dead-end message.
+        setError(`Server error (status ${res.status}) — coba lagi.`)
         return
       }
       if (!data.ok) {
@@ -97,6 +87,7 @@ export function BriefImport({ clients, personas }: {
       setBriefs(list) // may be [] — the empty-state branch handles that
       setCommittedIds(null)
       setCreatedBatchId(null)
+      setProgress(null)
     } catch (e) {
       setError(e instanceof Error && e.message ? `Network error: ${e.message}` : 'network error during extraction')
     } finally {
@@ -233,7 +224,7 @@ export function BriefImport({ clients, personas }: {
                 onChange={(e) => setFileName(e.target.files?.[0]?.name || null)}
                 className="block w-full text-xs text-mutedText file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-text hover:file:bg-border" />
               {fileName && <p className="mt-1 truncate text-xs text-mutedText">Selected: {fileName}</p>}
-              <p className="mt-1 text-[11px] text-mutedText">Maks 4 MB. File PDF gede (banyak gambar/screenshot)? Pakai tab Paste atau Google Doc.</p>
+              <p className="mt-1 text-[11px] text-mutedText">Maks {MAX_IMPORT_UPLOAD_BYTES / 1024 / 1024} MB. File PDF gede banget (banyak gambar/screenshot)? Pakai tab Paste atau Google Doc.</p>
             </div>
           )}
           {mode === 'text' && (

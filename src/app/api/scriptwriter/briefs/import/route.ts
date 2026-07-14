@@ -4,19 +4,13 @@ import { requireUser } from '@/lib/cakgpt/auth'
 import { getGeminiApiKey } from '@/lib/cakgpt/settings'
 import { getValidAccessToken } from '@/lib/cakgpt/google-oauth'
 import { getDoc } from '@/lib/cakgpt/google-docs'
-import { detectSourceKind, parseFileToText, extractBriefsFromText } from '@/lib/cakgpt/brief-extract'
+import { extractBriefsFromText } from '@/lib/cakgpt/brief-extract'
+import { readSourceFromStorage } from '@/lib/cakgpt/import-storage'
 
 // File parsing (pdf/xlsx/docx) needs the Node runtime, not edge.
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
-// Vercel Serverless Functions hard-cap the request body at 4.5 MB — anything
-// over that is rejected by the PLATFORM before this route even runs (a raw
-// connection reset / non-JSON error, not our clean JSON response, which is
-// what shows up client-side as an opaque "network error"). Keep our own
-// limit safely under that so OUR check always fires first with a real,
-// actionable error.
-const MAX_FILE_BYTES = 4 * 1024 * 1024 // 4 MB — file uploads
 const MAX_TEXT_CHARS = 200_000 // paste / Google Doc source (bounds memory before extraction)
 
 // Pull readable text out of a Google Doc, including table cells (content plans
@@ -67,56 +61,33 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'Gemini API key not configured' }, { status: 400 })
   }
 
-  const contentType = (req.headers.get('content-type') || '').toLowerCase()
-
-  // Reject oversized bodies up front, using the declared length, before
-  // formData()/json() buffers the whole request into memory. (Spoofable/absent,
-  // so it's a first gate — the per-path file.size / text-length checks below are
-  // the authoritative bounds.)
-  const declaredLen = Number(req.headers.get('content-length') || '0')
-  if (declaredLen > MAX_FILE_BYTES) {
-    return NextResponse.json({ ok: false, error: 'request too large (max 4 MB) — try Paste text or Google Doc instead' }, { status: 413 })
-  }
+  const body = await req.json().catch(() => ({}))
+  const hint = typeof body.hint === 'string' ? body.hint : undefined
 
   let sourceText: string
-  let hint: string | undefined
-
   try {
-    if (contentType.includes('multipart/form-data')) {
-      const form = await req.formData()
-      const file = form.get('file')
-      const hintValue = form.get('hint')
-      hint = typeof hintValue === 'string' ? hintValue : undefined
-      if (!(file instanceof File)) return NextResponse.json({ ok: false, error: 'no file provided' }, { status: 400 })
-      if (file.size === 0) return NextResponse.json({ ok: false, error: 'file is empty' }, { status: 400 })
-      if (file.size > MAX_FILE_BYTES) return NextResponse.json({ ok: false, error: 'file too large (max 4 MB) — try Paste text or Google Doc instead' }, { status: 413 })
-
-      const kind = detectSourceKind(file.name, file.type)
-      if (!kind) return NextResponse.json({ ok: false, error: `unsupported file type: ${file.name}` }, { status: 415 })
-
-      const buffer = Buffer.from(await file.arrayBuffer())
-      sourceText = await parseFileToText(buffer, kind)
-    } else {
-      const body = await req.json().catch(() => ({}))
-      hint = typeof body.hint === 'string' ? body.hint : undefined
-
-      if (typeof body.text === 'string' && body.text.trim()) {
-        if (body.text.length > MAX_TEXT_CHARS) return NextResponse.json({ ok: false, error: 'pasted text too large (max 200k chars)' }, { status: 413 })
-        sourceText = body.text
-      } else if (typeof body.google_doc === 'string' && body.google_doc.trim()) {
-        const docId = parseGoogleDocId(body.google_doc)
-        if (!docId) return NextResponse.json({ ok: false, error: 'could not read a Google Doc id from that input' }, { status: 400 })
-        let accessToken: string
-        try {
-          accessToken = await getValidAccessToken(service, user.id)
-        } catch (e) {
-          return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'Google not connected', connect_url: '/api/scriptwriter/google/oauth/start' }, { status: 428 })
-        }
-        const doc = await getDoc(accessToken, docId)
-        sourceText = docToPlainText(doc).slice(0, MAX_TEXT_CHARS)
-      } else {
-        return NextResponse.json({ ok: false, error: 'provide a file, text, or google_doc' }, { status: 400 })
+    if (typeof body.storage_path === 'string' && body.storage_path.trim()) {
+      // Browser uploaded the file directly to Supabase Storage via a signed
+      // URL (see /imports/upload-url) — this bypasses Vercel's Serverless
+      // Function request-body cap (a hard 4.5 MB platform limit) entirely, so
+      // much larger files (bucket allows up to 10 MB) work fine.
+      sourceText = await readSourceFromStorage(service, body.storage_path)
+    } else if (typeof body.text === 'string' && body.text.trim()) {
+      if (body.text.length > MAX_TEXT_CHARS) return NextResponse.json({ ok: false, error: 'pasted text too large (max 200k chars)' }, { status: 413 })
+      sourceText = body.text
+    } else if (typeof body.google_doc === 'string' && body.google_doc.trim()) {
+      const docId = parseGoogleDocId(body.google_doc)
+      if (!docId) return NextResponse.json({ ok: false, error: 'could not read a Google Doc id from that input' }, { status: 400 })
+      let accessToken: string
+      try {
+        accessToken = await getValidAccessToken(service, user.id)
+      } catch (e) {
+        return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'Google not connected', connect_url: '/api/scriptwriter/google/oauth/start' }, { status: 428 })
       }
+      const doc = await getDoc(accessToken, docId)
+      sourceText = docToPlainText(doc).slice(0, MAX_TEXT_CHARS)
+    } else {
+      return NextResponse.json({ ok: false, error: 'provide a file, text, or google_doc' }, { status: 400 })
     }
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'failed to read source' }, { status: 400 })

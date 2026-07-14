@@ -3,18 +3,13 @@
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Upload, ClipboardPaste, FileText, X, FileInput, Loader2, ChevronDown } from 'lucide-react'
+import { uploadFileForImport, MAX_IMPORT_UPLOAD_BYTES } from '@/lib/cakgpt/upload-client'
 
 type PreviewNaskah = {
   _id: string
   title: string
   body: unknown[] // opaque block list — only its length is shown in the preview
 }
-
-// Mirrors MAX_FILE_BYTES in the API route. Vercel Serverless Functions
-// hard-cap the request body at 4.5 MB regardless of what we set — this stays
-// under that so oversized uploads are caught here, client-side, instead of
-// hitting an opaque platform-level rejection.
-const MAX_UPLOAD_BYTES = 4 * 1024 * 1024
 
 export function NaskahImport({ clients, personas }: {
   clients: Array<{ id: string; name: string }>
@@ -45,14 +40,17 @@ export function NaskahImport({ clients, personas }: {
       if (mode === 'file') {
         const file = fileRef.current?.files?.[0]
         if (!file) { setError('pick a file first'); return }
-        // Fail fast, before spending a round trip — see MAX_UPLOAD_BYTES.
-        if (file.size > MAX_UPLOAD_BYTES) {
-          setError(`File terlalu besar (${(file.size / 1024 / 1024).toFixed(1)} MB, maks 4 MB) — coba Paste text atau Google Doc.`)
-          return
-        }
-        const form = new FormData()
-        form.append('file', file)
-        res = await fetch('/api/scriptwriter/naskah/import', { method: 'POST', body: form })
+        // Upload straight to Supabase Storage (browser → Storage, never
+        // through our Vercel function) so large files skip Vercel's hard
+        // 4.5 MB request-body cap entirely.
+        setProgress('Uploading file…')
+        const uploaded = await uploadFileForImport(file)
+        if (!uploaded.ok) { setError(uploaded.error); return }
+        setProgress('Extracting…')
+        res = await fetch('/api/scriptwriter/naskah/import', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ storage_path: uploaded.path }),
+        })
       } else {
         const payload = mode === 'gdoc' ? { google_doc: gdoc } : { text }
         res = await fetch('/api/scriptwriter/naskah/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
@@ -62,13 +60,9 @@ export function NaskahImport({ clients, personas }: {
       try {
         data = await res.json()
       } catch {
-        // Response wasn't valid JSON — a platform-level rejection that never
-        // reached our route handler. Surface the real HTTP status.
-        setError(
-          res.status === 413
-            ? 'File terlalu besar buat server (maks ~4 MB) — coba Paste text atau Google Doc.'
-            : `Server error (status ${res.status}) — coba lagi atau pakai Paste text.`,
-        )
+        // Response wasn't valid JSON — a platform-level rejection (e.g. a
+        // gateway timeout) that never reached our route handler.
+        setError(`Server error (status ${res.status}) — coba lagi.`)
         return
       }
       if (!data.ok) {
@@ -87,6 +81,7 @@ export function NaskahImport({ clients, personas }: {
         }
       })
       setNaskah(list)
+      setProgress(null)
     } catch (e) {
       setError(e instanceof Error && e.message ? `Network error: ${e.message}` : 'network error during extraction')
     } finally {
@@ -179,7 +174,7 @@ export function NaskahImport({ clients, personas }: {
                 onChange={(e) => setFileName(e.target.files?.[0]?.name || null)}
                 className="block w-full text-xs text-mutedText file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-text hover:file:bg-border" />
               {fileName && <p className="mt-1 truncate text-xs text-mutedText">Selected: {fileName}</p>}
-              <p className="mt-1 text-[11px] text-mutedText">Maks 4 MB. File gede? Pakai tab Paste atau Google Doc.</p>
+              <p className="mt-1 text-[11px] text-mutedText">Maks {MAX_IMPORT_UPLOAD_BYTES / 1024 / 1024} MB. File gede banget? Pakai tab Paste atau Google Doc.</p>
             </div>
           )}
           {mode === 'text' && (
