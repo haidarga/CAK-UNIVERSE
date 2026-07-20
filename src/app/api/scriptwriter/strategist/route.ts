@@ -14,6 +14,8 @@ export const maxDuration = 60
 const BodySchema = z.object({
   url: z.string().min(1).max(500),
   force_refresh: z.boolean().optional(),
+  // How many recent posts to average over. Bounded to what the scraper caches.
+  sample_size: z.number().int().min(3).max(30).optional(),
 })
 
 export async function POST(req: Request) {
@@ -39,6 +41,7 @@ export async function POST(req: Request) {
     userId: user.id,
     url: parsed.data.url,
     forceRefresh: parsed.data.force_refresh,
+    sampleSize: parsed.data.sample_size,
   })
 
   if (!result.ok) {

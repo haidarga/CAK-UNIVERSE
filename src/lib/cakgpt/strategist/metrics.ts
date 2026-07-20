@@ -25,8 +25,8 @@ function round(n: number, dp = 0): number {
 // Posts per week from the spread between the newest and oldest dated post.
 // Returns null unless we have enough dated posts across a wide enough span to
 // avoid a misleading extrapolation from a tiny sample.
-function computePostsPerWeek(account: ScrapedAccount): number | null {
-  const times = account.recentPosts
+function computePostsPerWeek(posts: ScrapedAccount['recentPosts']): number | null {
+  const times = posts
     .map((p) => (p.takenAt ? Date.parse(p.takenAt) : NaN))
     .filter((t) => Number.isFinite(t))
     .sort((a, b) => a - b)
@@ -45,8 +45,11 @@ function avgPresent(values: Array<number | null | undefined>): number | null {
   return present.length > 0 ? round(mean(present)) : null
 }
 
-export function computeMetrics(account: ScrapedAccount): AccountMetrics {
-  const posts = account.recentPosts
+// sampleSize caps how many of the most-recent posts feed the averages (the
+// scraper stores up to ~30, recent-first). Undefined/0 = use all cached posts.
+export function computeMetrics(account: ScrapedAccount, sampleSize?: number): AccountMetrics {
+  const posts =
+    sampleSize && sampleSize > 0 ? account.recentPosts.slice(0, sampleSize) : account.recentPosts
   const followers = Math.max(0, account.followers || 0)
 
   // Every average excludes unparsed/missing samples so a partial provider
@@ -76,6 +79,6 @@ export function computeMetrics(account: ScrapedAccount): AccountMetrics {
     avgShares,
     engagementRatePct,
     engagementBasis: useViews ? 'views' : 'followers',
-    postsPerWeek: computePostsPerWeek(account),
+    postsPerWeek: computePostsPerWeek(posts),
   }
 }

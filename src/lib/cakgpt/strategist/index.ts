@@ -81,19 +81,6 @@ function assembleReport(args: {
   }
 }
 
-function reportFromCache(cached: CacheRow, fallbackUrl: string): StrategistReport {
-  return assembleReport({
-    url: cached.url || fallbackUrl,
-    account: cached.scraped,
-    metrics: cached.metrics,
-    estimate: cached.estimate,
-    provider: cached.provider || cached.scraped.provider,
-    model: cached.model,
-    fetchedAt: cached.fetched_at,
-    cached: true,
-  })
-}
-
 // Reads + VALIDATES the cache row. A DB error or a row written in a stale/
 // corrupt shape (older code, hand-edit) returns null → the caller falls through
 // to a fresh scrape instead of trusting an unvalidated cast and throwing later.
@@ -164,40 +151,44 @@ export async function analyzeAccountUrl(params: {
   userId: string
   url: string
   forceRefresh?: boolean
+  sampleSize?: number
 }): Promise<AnalyzeResult> {
   const parsed = parseAccountUrl(params.url)
   if (!parsed.ok) return { ok: false, error: parsed.error, status: 400 }
   const { platform, handle, normalizedUrl } = parsed
 
-  // 1. Cache gate. Always read the cache — even on force_refresh — so the floor
-  // can veto a too-soon re-scrape.
+  // 1. Reuse the cached SCRAPE when fresh (or within the refresh floor on a
+  // forced refresh). The chosen sample size only affects downstream metrics, so
+  // switching sizes recomputes from this cached scrape — it never re-scrapes.
   const cached = await readCache(params.supabase, params.userId, platform, handle)
-  if (cached) {
-    const ageMs = Date.now() - Date.parse(cached.fetched_at)
-    const withinFloor = ageMs >= 0 && ageMs < MIN_REFRESH_MINUTES * 60 * 1000
-    const serveNormal = !params.forceRefresh && !isStale(cached.fetched_at)
-    const serveFloored = !!params.forceRefresh && withinFloor
-    if (serveNormal || serveFloored) {
-      return { ok: true, report: reportFromCache(cached, normalizedUrl) }
-    }
-  }
+  const useCachedScrape =
+    !!cached &&
+    (!params.forceRefresh
+      ? !isStale(cached.fetched_at)
+      : Date.now() - Date.parse(cached.fetched_at) < MIN_REFRESH_MINUTES * 60 * 1000)
 
-  // 2. Scrape real public data.
   let account: ScrapedAccount
-  try {
-    account = await scrapeAccount(platform, handle)
-  } catch (e) {
-    // ScraperError carries a deliberately generic, user-safe message → 422.
-    if (e instanceof ScraperError) return { ok: false, error: e.message, status: 422 }
-    // Anything else is an unexpected bug/misconfig — log the detail, return generic.
-    console.error('[strategist] unexpected scrape error:', e instanceof Error ? e.message : e)
-    return { ok: false, error: 'Terjadi kesalahan tak terduga. Coba lagi nanti.', status: 500 }
+  let scrapeFromCache = false
+  let fetchedAt: string
+  if (useCachedScrape && cached) {
+    account = cached.scraped
+    scrapeFromCache = true
+    fetchedAt = cached.fetched_at
+  } else {
+    try {
+      account = await scrapeAccount(platform, handle)
+    } catch (e) {
+      if (e instanceof ScraperError) return { ok: false, error: e.message, status: 422 }
+      console.error('[strategist] unexpected scrape error:', e instanceof Error ? e.message : e)
+      return { ok: false, error: 'Terjadi kesalahan tak terduga. Coba lagi nanti.', status: 500 }
+    }
+    fetchedAt = new Date().toISOString()
   }
 
-  // 3. Derive deterministic metrics.
-  const metrics = computeMetrics(account)
+  // 2. Metrics over the chosen sample size, then the AI estimate. Both are cheap
+  // and run every request so the dropdown reflects instantly without a re-scrape.
+  const metrics = computeMetrics(account, params.sampleSize)
 
-  // 4. AI estimate.
   let estimate: StrategistEstimate
   let model: string | null
   try {
@@ -208,17 +199,18 @@ export async function analyzeAccountUrl(params: {
     return { ok: false, error: e instanceof Error ? e.message : 'Analisis gagal.', status: 502 }
   }
 
-  // 5. Cache + return.
-  const fetchedAt = new Date().toISOString()
-  await upsertCache(params.supabase, params.userId, {
-    platform, handle, url: normalizedUrl, account, metrics, estimate, model, fetchedAt,
-  })
+  // 3. Persist the raw scrape only when we actually scraped (1 row per account).
+  if (!scrapeFromCache) {
+    await upsertCache(params.supabase, params.userId, {
+      platform, handle, url: normalizedUrl, account, metrics, estimate, model, fetchedAt,
+    })
+  }
 
   return {
     ok: true,
     report: assembleReport({
       url: normalizedUrl, account, metrics, estimate,
-      provider: account.provider, model, fetchedAt, cached: false,
+      provider: account.provider, model, fetchedAt, cached: scrapeFromCache,
     }),
   }
 }

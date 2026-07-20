@@ -22,8 +22,11 @@ const IG_HOST = process.env.RAPIDAPI_INSTAGRAM_HOST || 'instagram120.p.rapidapi.
 const IG_STATS_HOST = process.env.RAPIDAPI_INSTAGRAM_STATS_HOST || 'instagram-statistics-api.p.rapidapi.com'
 // Which IG source to use: 'statistics' (default) | 'instagram120' (rate-limits fast).
 const IG_PROVIDER = (process.env.RAPIDAPI_INSTAGRAM_PROVIDER || 'statistics').toLowerCase()
-const POST_COUNT = 15 // TikTok: how many recent posts to average over
-const IG_POST_LIMIT = 24 // IG: recent posts to average (Statistics /posts returns up to ~280)
+// Fetch a generous, fixed pool of recent posts and cache it once; the chosen
+// sample size (7/15/30) is applied downstream in computeMetrics, so switching
+// sizes recomputes from cache instead of re-scraping (saves quota).
+const POST_COUNT = 30 // TikTok: recent videos to pull
+const IG_POST_LIMIT = 30 // IG: recent posts to keep (Statistics /posts returns up to ~280)
 
 // ── Defensive field pickers ──────────────────────────────────────────────────
 function pull(obj: unknown, paths: string[]): unknown {

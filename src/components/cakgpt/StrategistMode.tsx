@@ -28,8 +28,9 @@ export function StrategistMode() {
   const [error, setError] = useState<string | null>(null)
   const [report, setReport] = useState<StrategistReport | null>(null)
   const [copied, setCopied] = useState(false)
+  const [sampleSize, setSampleSize] = useState(15)
 
-  async function analyze(forceRefresh = false) {
+  async function analyze(forceRefresh = false, size = sampleSize) {
     // Internal guard — the disabled attribute only applies after re-render, so a
     // fast Enter+click could otherwise fire two calls against a scarce quota.
     if (loading) return
@@ -40,7 +41,7 @@ export function StrategistMode() {
       const res = await fetch('/api/scriptwriter/strategist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim(), force_refresh: forceRefresh }),
+        body: JSON.stringify({ url: url.trim(), force_refresh: forceRefresh, sample_size: size }),
       })
       const data = await res.json()
       if (!data.ok) throw new Error(data.error || 'Gagal menganalisis akun.')
@@ -84,6 +85,20 @@ export function StrategistMode() {
               className="w-full rounded-md border border-border bg-background py-2 pl-9 pr-3 text-sm text-text focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
             />
           </div>
+          <select
+            aria-label="Jumlah konten terakhir yang dianalisis"
+            value={sampleSize}
+            onChange={(e) => {
+              const s = Number(e.target.value)
+              setSampleSize(s)
+              if (report) analyze(false, s) // re-analyze from cache, no re-scrape
+            }}
+            className="rounded-md border border-border bg-background px-2.5 py-2 text-sm text-text focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+          >
+            <option value={7}>7 konten</option>
+            <option value={15}>15 konten</option>
+            <option value={30}>30 konten</option>
+          </select>
           <button
             onClick={() => analyze()}
             disabled={loading}
