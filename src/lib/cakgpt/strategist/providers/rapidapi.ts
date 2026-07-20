@@ -240,7 +240,7 @@ async function scrapeInstagramStatistics(handle: string): Promise<ScrapedAccount
   }
 
   // Prefer the fuller /posts feed; fall back to the 3 posts in /community.
-  const fullList = pull(postsRaw, ['data', 'posts', 'items'])
+  const fullList = pull(postsRaw, ['data.posts', 'data.items', 'posts', 'items'])
   const communityPosts = pull(c, ['lastPosts', 'posts'])
   const source: unknown[] =
     Array.isArray(fullList) && fullList.length > 0 ? fullList : Array.isArray(communityPosts) ? communityPosts : []
