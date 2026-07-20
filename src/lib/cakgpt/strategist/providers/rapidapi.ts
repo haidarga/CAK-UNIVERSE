@@ -190,50 +190,59 @@ async function scrapeInstagram120(handle: string): Promise<ScrapedAccount> {
   return normalizeAccount('instagram', handle, info, posts)
 }
 
-// Instagram Statistics API: aggregate stats in ONE call via /community?url=. It
-// returns averages (avgLikes/avgComments/avgViews), not raw posts, so we
-// synthesize a single representative "post" carrying those averages and let the
-// shared computeMetrics reproduce them downstream. One call = far lighter on the
-// free quota that instagram120 burns through with its two-call profile+posts.
+// Instagram Statistics API: one call via /community?url=. Real response shape
+// (verified by calling it): { meta, data: { usersCount, name, screenName,
+// description, image, verified, tags[], type, country, lastPosts[] } }, where
+// each lastPosts entry has { url, date, type, image, likes, comments, text }.
+// We normalize lastPosts into real posts (so engagement + cadence are measured,
+// not synthesized). One call = far lighter on quota than instagram120's two.
 async function scrapeInstagramStatistics(handle: string): Promise<ScrapedAccount> {
   const profileUrl = `https://www.instagram.com/${handle}/`
   const raw = await rapidFetch(IG_STATS_HOST, `/community?url=${enc(profileUrl)}`)
-  const d = (pull(raw, ['data']) ?? raw) as unknown
+  const d = pull(raw, ['data']) ?? raw
 
-  const followers = num(pull(d, ['usersCount', 'followers', 'followersCount', 'subscribersCount']))
+  const followers = num(pull(d, ['usersCount', 'followers', 'followersCount']))
   if (followers === null) {
-    throw new ScraperError('Data akun IG nggak kebaca dari Statistics API — kemungkinan akun privat/nggak ada, atau format response beda.')
+    throw new ScraperError('Data akun IG nggak kebaca dari Statistics API — kemungkinan akun privat/nggak ada.')
   }
 
-  const avgLikes = num(pull(d, ['avgLikes', 'averageLikes', 'avg_likes']))
-  const avgComments = num(pull(d, ['avgComments', 'averageComments', 'avg_comments']))
-  const avgViews = num(pull(d, ['avgViews', 'averageViews', 'avg_views', 'avgVideoViews']))
+  const rawPosts = pull(d, ['lastPosts', 'posts', 'recentPosts'])
+  const recentPosts: ScrapedPost[] = (Array.isArray(rawPosts) ? rawPosts : [])
+    .map((p): ScrapedPost => ({
+      id: str(pull(p, ['url', 'id', 'postID'])),
+      views: num(pull(p, ['views', 'playCount', 'videoViews'])), // usually absent for IG feed
+      likes: num(pull(p, ['likes', 'likesCount', 'like_count'])),
+      comments: num(pull(p, ['comments', 'commentsCount', 'comment_count'])),
+      shares: null,
+      saves: null,
+      takenAt: toIso(pull(p, ['date', 'created', 'timestamp', 'takenAt'])),
+      caption: str(pull(p, ['text', 'caption', 'description'])),
+    }))
+    .filter((p) => p.likes !== null || p.comments !== null)
 
-  // Feed niche detection with whatever category/tag signal the API exposes.
-  const cats = pull(d, ['categories', 'tags', 'category'])
-  const catText = Array.isArray(cats)
-    ? cats.filter((c) => typeof c === 'string').join(', ')
-    : str(cats)
-
-  // One synthetic post carrying the averages; computeMetrics turns it back into
-  // avgLikes/avgComments/avgViews + engagement. Cadence stays null (no dates).
-  const aggregatePost: ScrapedPost = {
-    id: 'aggregate', views: avgViews, likes: avgLikes, comments: avgComments,
-    shares: null, saves: null, takenAt: null, caption: catText || null,
-  }
-  const hasEngagement = avgLikes !== null || avgComments !== null
+  // Niche/region signal for the AI: bio + tags + business type + country.
+  const rawTags = pull(d, ['tags'])
+  const tags = Array.isArray(rawTags)
+    ? rawTags.map((t) => (typeof t === 'string' ? t : str(pull(t, ['tag', 'name', 'title'])))).filter(Boolean)
+    : []
+  const bio = [
+    str(pull(d, ['description', 'bio'])),
+    tags.length ? `Tags: ${tags.join(', ')}` : null,
+    str(pull(d, ['type'])) ? `Tipe: ${str(pull(d, ['type']))}` : null,
+    str(pull(d, ['country'])) ? `Negara: ${str(pull(d, ['country']))}` : null,
+  ].filter(Boolean).join(' · ')
 
   return {
     platform: 'instagram',
     handle,
-    displayName: str(pull(d, ['name', 'screenName', 'fullName', 'title'])),
-    bio: str(pull(d, ['description', 'bio', 'biography'])),
+    displayName: str(pull(d, ['name', 'screenName', 'fullName'])),
+    bio: bio || null,
     followers,
-    following: num(pull(d, ['followingCount', 'followsCount', 'follows'])),
-    totalPosts: num(pull(d, ['postsCount', 'mediaCount', 'media_count'])),
-    verified: truthy(pull(d, ['verified', 'isVerified', 'is_verified'])),
-    avatarUrl: str(pull(d, ['image', 'avatar', 'profilePicUrl', 'profile_pic_url'])),
-    recentPosts: hasEngagement ? [aggregatePost] : [],
+    following: num(pull(d, ['followingCount', 'follows'])),
+    totalPosts: num(pull(d, ['postsCount', 'mediaCount'])),
+    verified: truthy(pull(d, ['verified', 'isVerified'])),
+    avatarUrl: str(pull(d, ['image', 'avatar', 'profilePicUrl'])),
+    recentPosts,
     scrapedAt: new Date().toISOString(),
     provider: 'rapidapi:ig-statistics',
   }
