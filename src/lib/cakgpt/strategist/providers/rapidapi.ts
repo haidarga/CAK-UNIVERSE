@@ -18,7 +18,10 @@ import { ScraperError } from '@/lib/cakgpt/strategist/errors'
 // paths); if a provider's JSON differs, widen the path lists in normalize*.
 
 const TIKTOK_HOST = process.env.RAPIDAPI_TIKTOK_HOST || 'tiktok-scraper7.p.rapidapi.com'
-const IG_HOST = process.env.RAPIDAPI_INSTAGRAM_HOST || 'instagram120.p.rapidapi.com'
+const IG_HOST = process.env.RAPIDAPI_INSTAGRAM_HOST || 'instagram120.p.rapidapi.com' // legacy post-based fallback
+const IG_STATS_HOST = process.env.RAPIDAPI_INSTAGRAM_STATS_HOST || 'instagram-statistics-api.p.rapidapi.com'
+// Which IG source to use: 'statistics' (aggregate, 1 call — default) | 'instagram120' (raw posts, 2 calls, rate-limits fast).
+const IG_PROVIDER = (process.env.RAPIDAPI_INSTAGRAM_PROVIDER || 'statistics').toLowerCase()
 const POST_COUNT = 15 // how many recent posts to average over
 
 // ── Defensive field pickers ──────────────────────────────────────────────────
@@ -178,12 +181,66 @@ async function scrapeTikTok(handle: string): Promise<ScrapedAccount> {
   return normalizeAccount('tiktok', handle, info, posts)
 }
 
-async function scrapeInstagram(handle: string): Promise<ScrapedAccount> {
+// instagram120: raw posts (2 calls). Kept as a fallback — rate-limits fast on the free tier.
+async function scrapeInstagram120(handle: string): Promise<ScrapedAccount> {
   const [info, posts] = await Promise.all([
     rapidFetch(IG_HOST, '/api/instagram/userInfo', { method: 'POST', body: JSON.stringify({ username: handle }) }),
     rapidFetch(IG_HOST, '/api/instagram/posts', { method: 'POST', body: JSON.stringify({ username: handle, maxId: '' }) }),
   ])
   return normalizeAccount('instagram', handle, info, posts)
+}
+
+// Instagram Statistics API: aggregate stats in ONE call via /community?url=. It
+// returns averages (avgLikes/avgComments/avgViews), not raw posts, so we
+// synthesize a single representative "post" carrying those averages and let the
+// shared computeMetrics reproduce them downstream. One call = far lighter on the
+// free quota that instagram120 burns through with its two-call profile+posts.
+async function scrapeInstagramStatistics(handle: string): Promise<ScrapedAccount> {
+  const profileUrl = `https://www.instagram.com/${handle}/`
+  const raw = await rapidFetch(IG_STATS_HOST, `/community?url=${enc(profileUrl)}`)
+  const d = (pull(raw, ['data']) ?? raw) as unknown
+
+  const followers = num(pull(d, ['usersCount', 'followers', 'followersCount', 'subscribersCount']))
+  if (followers === null) {
+    throw new ScraperError('Data akun IG nggak kebaca dari Statistics API — kemungkinan akun privat/nggak ada, atau format response beda.')
+  }
+
+  const avgLikes = num(pull(d, ['avgLikes', 'averageLikes', 'avg_likes']))
+  const avgComments = num(pull(d, ['avgComments', 'averageComments', 'avg_comments']))
+  const avgViews = num(pull(d, ['avgViews', 'averageViews', 'avg_views', 'avgVideoViews']))
+
+  // Feed niche detection with whatever category/tag signal the API exposes.
+  const cats = pull(d, ['categories', 'tags', 'category'])
+  const catText = Array.isArray(cats)
+    ? cats.filter((c) => typeof c === 'string').join(', ')
+    : str(cats)
+
+  // One synthetic post carrying the averages; computeMetrics turns it back into
+  // avgLikes/avgComments/avgViews + engagement. Cadence stays null (no dates).
+  const aggregatePost: ScrapedPost = {
+    id: 'aggregate', views: avgViews, likes: avgLikes, comments: avgComments,
+    shares: null, saves: null, takenAt: null, caption: catText || null,
+  }
+  const hasEngagement = avgLikes !== null || avgComments !== null
+
+  return {
+    platform: 'instagram',
+    handle,
+    displayName: str(pull(d, ['name', 'screenName', 'fullName', 'title'])),
+    bio: str(pull(d, ['description', 'bio', 'biography'])),
+    followers,
+    following: num(pull(d, ['followingCount', 'followsCount', 'follows'])),
+    totalPosts: num(pull(d, ['postsCount', 'mediaCount', 'media_count'])),
+    verified: truthy(pull(d, ['verified', 'isVerified', 'is_verified'])),
+    avatarUrl: str(pull(d, ['image', 'avatar', 'profilePicUrl', 'profile_pic_url'])),
+    recentPosts: hasEngagement ? [aggregatePost] : [],
+    scrapedAt: new Date().toISOString(),
+    provider: 'rapidapi:ig-statistics',
+  }
+}
+
+async function scrapeInstagram(handle: string): Promise<ScrapedAccount> {
+  return IG_PROVIDER === 'instagram120' ? scrapeInstagram120(handle) : scrapeInstagramStatistics(handle)
 }
 
 export const rapidApiProvider: ScraperProvider = {
