@@ -99,10 +99,10 @@ TASK — return JSON matching the schema:
    estimate them from niche + platform + tier norms and SAY SO in the reasoning.
 6. "confidence": "high" only if data is rich and niche is obvious; "low" if posts are few,
    views are hidden, or the niche is ambiguous.
-7. Each "reasoning" field: 1–2 sentences, plain Bahasa Indonesia, explaining how you got the
-   number and what would change it.
-8. "brief_insight": one short paragraph in Bahasa Indonesia a strategist can paste into a
-   brief — who this account fits, its strength, and a rough rate expectation.
+7. Each "reasoning" field: ONE short sentence (max ~25 words), plain Bahasa Indonesia — how
+   you got the number and what would change it. Be concise.
+8. "brief_insight": 2–3 sentences in Bahasa Indonesia a strategist can paste into a brief —
+   who this account fits, its strength, and a rough rate expectation.
 
 Every number is an ESTIMATE. Be honest about uncertainty.`
 }
@@ -122,7 +122,10 @@ export async function analyzeAccount(
       prompt,
       responseSchema: STRATEGIST_RESPONSE_SCHEMA,
       temperature: 0.4, // analytical task — keep it grounded, not creative
-      maxOutputTokens: 2000,
+      // Generous budget: gemini-2.5-flash spends tokens on hidden reasoning
+      // before the JSON, so a low cap truncates the output mid-object
+      // ("Unterminated JSON"). The full response is well under this.
+      maxOutputTokens: 8000,
     })
     estimate = StrategistEstimateSchema.parse(raw)
   } catch (e) {
