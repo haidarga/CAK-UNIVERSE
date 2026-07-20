@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServerClient, createServiceClient } from '@/lib/cakgpt/supabase/server'
 import { requireUser } from '@/lib/cakgpt/auth'
+import { getActiveClientId } from '@/lib/cakgpt/active-client'
 import { analyzeAccountUrl } from '@/lib/cakgpt/strategist'
 
 // POST /api/strategist — Strategist Mode: paste a TikTok/IG account link, get
@@ -36,10 +37,27 @@ export async function POST(req: Request) {
   }
 
   const service = createServiceClient()
+
+  // Scope the cache to the active workspace so each client's analyses stay
+  // separate. Verify the cookie's client actually belongs to this user (same
+  // guard briefs/batches use) before it flows into the cache key.
+  let clientId = await getActiveClientId()
+  if (clientId) {
+    const { data: owned } = await service
+      .from('sw_clients')
+      .select('id')
+      .eq('id', clientId)
+      .eq('created_by', user.id)
+      .eq('is_active', true)
+      .maybeSingle()
+    if (!owned) clientId = null
+  }
+
   const result = await analyzeAccountUrl({
     supabase: service,
     userId: user.id,
     url: parsed.data.url,
+    clientId,
     forceRefresh: parsed.data.force_refresh,
     sampleSize: parsed.data.sample_size,
   })

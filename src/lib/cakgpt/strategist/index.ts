@@ -87,16 +87,18 @@ function assembleReport(args: {
 async function readCache(
   supabase: SupabaseClient,
   userId: string,
+  clientId: string | null,
   platform: Platform,
   handle: string,
 ): Promise<CacheRow | null> {
-  const { data, error } = await supabase
+  const base = supabase
     .from('strategist_accounts')
     .select('scraped, metrics, estimate, provider, model, fetched_at, url')
     .eq('created_by', userId)
     .eq('platform', platform)
     .eq('handle', handle)
-    .maybeSingle()
+  // Scope to the active workspace; NULL client_id is the "All clients" bucket.
+  const { data, error } = await (clientId ? base.eq('client_id', clientId) : base.is('client_id', null)).maybeSingle()
 
   if (error) {
     console.error('[strategist] cache read failed:', error.message)
@@ -115,6 +117,7 @@ async function readCache(
 async function upsertCache(
   supabase: SupabaseClient,
   userId: string,
+  clientId: string | null,
   row: {
     platform: Platform
     handle: string
@@ -131,6 +134,7 @@ async function upsertCache(
   const { error } = await supabase.from('strategist_accounts').upsert(
     {
       created_by: userId,
+      client_id: clientId,
       platform: row.platform,
       handle: row.handle,
       url: row.url,
@@ -141,7 +145,7 @@ async function upsertCache(
       model: row.model,
       fetched_at: row.fetchedAt,
     },
-    { onConflict: 'created_by,platform,handle' },
+    { onConflict: 'created_by,client_id,platform,handle' },
   )
   if (error) console.error('[strategist] cache upsert failed:', error.message)
 }
@@ -150,9 +154,11 @@ export async function analyzeAccountUrl(params: {
   supabase: SupabaseClient
   userId: string
   url: string
+  clientId?: string | null
   forceRefresh?: boolean
   sampleSize?: number
 }): Promise<AnalyzeResult> {
+  const clientId = params.clientId ?? null
   const parsed = parseAccountUrl(params.url)
   if (!parsed.ok) return { ok: false, error: parsed.error, status: 400 }
   const { platform, handle, normalizedUrl } = parsed
@@ -160,7 +166,7 @@ export async function analyzeAccountUrl(params: {
   // 1. Reuse the cached SCRAPE when fresh (or within the refresh floor on a
   // forced refresh). The chosen sample size only affects downstream metrics, so
   // switching sizes recomputes from this cached scrape — it never re-scrapes.
-  const cached = await readCache(params.supabase, params.userId, platform, handle)
+  const cached = await readCache(params.supabase, params.userId, clientId, platform, handle)
   const useCachedScrape =
     !!cached &&
     (!params.forceRefresh
@@ -201,7 +207,7 @@ export async function analyzeAccountUrl(params: {
 
   // 3. Persist the raw scrape only when we actually scraped (1 row per account).
   if (!scrapeFromCache) {
-    await upsertCache(params.supabase, params.userId, {
+    await upsertCache(params.supabase, params.userId, clientId, {
       platform, handle, url: normalizedUrl, account, metrics, estimate, model, fetchedAt,
     })
   }
