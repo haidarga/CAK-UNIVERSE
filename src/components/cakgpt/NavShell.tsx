@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutGrid, Users, FileText, Lightbulb, Settings, ArrowLeft, Building2, TrendingUp, Wand2 } from 'lucide-react'
+import { LayoutGrid, Users, FileText, Lightbulb, Settings, ArrowLeft, Building2, TrendingUp, Wand2, Radar } from 'lucide-react'
 import { ClientSwitcher } from '@/components/cakgpt/ClientSwitcher'
 
 const ROOT = '/studio/script'
@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: `${ROOT}/personas`, label: 'Personas', icon: Users },
   { href: `${ROOT}/briefs`, label: 'Briefs', icon: FileText },
   { href: `${ROOT}/trends`, label: 'Trend Radar', icon: TrendingUp },
+  { href: `${ROOT}/strategist`, label: 'Strategist', icon: Radar },
   { href: `${ROOT}/translator`, label: 'Content Translator', icon: Wand2 },
   { href: `${ROOT}/ideas`, label: 'Ideas', icon: Lightbulb },
   { href: `${ROOT}/settings`, label: 'Settings', icon: Settings },
