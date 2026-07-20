@@ -20,9 +20,10 @@ import { ScraperError } from '@/lib/cakgpt/strategist/errors'
 const TIKTOK_HOST = process.env.RAPIDAPI_TIKTOK_HOST || 'tiktok-scraper7.p.rapidapi.com'
 const IG_HOST = process.env.RAPIDAPI_INSTAGRAM_HOST || 'instagram120.p.rapidapi.com' // legacy post-based fallback
 const IG_STATS_HOST = process.env.RAPIDAPI_INSTAGRAM_STATS_HOST || 'instagram-statistics-api.p.rapidapi.com'
-// Which IG source to use: 'statistics' (aggregate, 1 call — default) | 'instagram120' (raw posts, 2 calls, rate-limits fast).
+// Which IG source to use: 'statistics' (default) | 'instagram120' (rate-limits fast).
 const IG_PROVIDER = (process.env.RAPIDAPI_INSTAGRAM_PROVIDER || 'statistics').toLowerCase()
-const POST_COUNT = 15 // how many recent posts to average over
+const POST_COUNT = 15 // TikTok: how many recent posts to average over
+const IG_POST_LIMIT = 24 // IG: recent posts to average (Statistics /posts returns up to ~280)
 
 // ── Defensive field pickers ──────────────────────────────────────────────────
 function pull(obj: unknown, paths: string[]): unknown {
@@ -173,6 +174,12 @@ async function rapidFetch(host: string, path: string, init?: RequestInit): Promi
 
 const enc = encodeURIComponent
 
+// Instagram Statistics /posts requires DD.MM.YYYY date bounds.
+function ddmmyyyy(dt: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(dt.getUTCDate())}.${p(dt.getUTCMonth() + 1)}.${dt.getUTCFullYear()}`
+}
+
 async function scrapeTikTok(handle: string): Promise<ScrapedAccount> {
   const [info, posts] = await Promise.all([
     rapidFetch(TIKTOK_HOST, `/user/info?unique_id=${enc(handle)}`),
@@ -190,58 +197,83 @@ async function scrapeInstagram120(handle: string): Promise<ScrapedAccount> {
   return normalizeAccount('instagram', handle, info, posts)
 }
 
-// Instagram Statistics API: one call via /community?url=. Real response shape
-// (verified by calling it): { meta, data: { usersCount, name, screenName,
-// description, image, verified, tags[], type, country, lastPosts[] } }, where
-// each lastPosts entry has { url, date, type, image, likes, comments, text }.
-// We normalize lastPosts into real posts (so engagement + cadence are measured,
-// not synthesized). One call = far lighter on quota than instagram120's two.
+// Instagram Statistics API. Two endpoints, both verified live:
+//   /community?url=  → profile (usersCount, name, description, image, verified,
+//                      tags, type, country) + only the 3 most-recent posts.
+//   /posts?url=&from=DD.MM.YYYY&to=DD.MM.YYYY → up to ~280 posts, each with
+//                      likes/comments/views/videoViews/date/text/hashTags/type.
+// Profile comes from /community; the (far more representative) post sample from
+// /posts — the 3 in /community can all be same-day low-engagement outliers.
+// /posts is best-effort: if it errors (quota), we fall back to the 3.
+function mapIgStatsPost(p: unknown): ScrapedPost {
+  const hashTags = pull(p, ['hashTags'])
+  const tagStr = Array.isArray(hashTags)
+    ? hashTags.filter((t) => typeof t === 'string').map((t) => (t.startsWith('#') ? t : `#${t}`)).join(' ')
+    : ''
+  const text = str(pull(p, ['text', 'caption'])) || ''
+  return {
+    id: str(pull(p, ['postID', 'socialPostID', 'dataId', 'url'])),
+    views: num(pull(p, ['views', 'videoViews', 'playCount'])), // Reels only; feed photos have none
+    likes: num(pull(p, ['likes', 'likesCount'])),
+    comments: num(pull(p, ['comments', 'commentsCount'])),
+    shares: num(pull(p, ['rePosts', 'shares'])),
+    saves: null,
+    takenAt: toIso(pull(p, ['date', 'takenAt', 'timestamp'])),
+    caption: [text, tagStr].filter(Boolean).join(' ').slice(0, 300) || null,
+  }
+}
+
 async function scrapeInstagramStatistics(handle: string): Promise<ScrapedAccount> {
   const profileUrl = `https://www.instagram.com/${handle}/`
-  const raw = await rapidFetch(IG_STATS_HOST, `/community?url=${enc(profileUrl)}`)
-  const d = pull(raw, ['data']) ?? raw
+  const to = new Date()
+  const from = new Date(to.getTime() - 365 * 24 * 60 * 60 * 1000)
 
-  const followers = num(pull(d, ['usersCount', 'followers', 'followersCount']))
+  const [communityRaw, postsRaw] = await Promise.all([
+    rapidFetch(IG_STATS_HOST, `/community?url=${enc(profileUrl)}`),
+    rapidFetch(IG_STATS_HOST, `/posts?url=${enc(profileUrl)}&from=${ddmmyyyy(from)}&to=${ddmmyyyy(to)}`).catch(() => null),
+  ])
+
+  const c = pull(communityRaw, ['data']) ?? communityRaw
+  const followers = num(pull(c, ['usersCount', 'followers', 'followersCount']))
   if (followers === null) {
     throw new ScraperError('Data akun IG nggak kebaca dari Statistics API — kemungkinan akun privat/nggak ada.')
   }
 
-  const rawPosts = pull(d, ['lastPosts', 'posts', 'recentPosts'])
-  const recentPosts: ScrapedPost[] = (Array.isArray(rawPosts) ? rawPosts : [])
-    .map((p): ScrapedPost => ({
-      id: str(pull(p, ['url', 'id', 'postID'])),
-      views: num(pull(p, ['views', 'playCount', 'videoViews'])), // usually absent for IG feed
-      likes: num(pull(p, ['likes', 'likesCount', 'like_count'])),
-      comments: num(pull(p, ['comments', 'commentsCount', 'comment_count'])),
-      shares: null,
-      saves: null,
-      takenAt: toIso(pull(p, ['date', 'created', 'timestamp', 'takenAt'])),
-      caption: str(pull(p, ['text', 'caption', 'description'])),
-    }))
+  // Prefer the fuller /posts feed; fall back to the 3 posts in /community.
+  const fullList = pull(postsRaw, ['data', 'posts', 'items'])
+  const communityPosts = pull(c, ['lastPosts', 'posts'])
+  const source: unknown[] =
+    Array.isArray(fullList) && fullList.length > 0 ? fullList : Array.isArray(communityPosts) ? communityPosts : []
+
+  const recentPosts: ScrapedPost[] = source
+    .filter((p) => !truthy(pull(p, ['isAd'])) && !truthy(pull(p, ['isDeleted'])))
+    .sort((a, b) => (Date.parse(str(pull(b, ['date'])) || '') || 0) - (Date.parse(str(pull(a, ['date'])) || '') || 0))
+    .slice(0, IG_POST_LIMIT)
+    .map(mapIgStatsPost)
     .filter((p) => p.likes !== null || p.comments !== null)
 
   // Niche/region signal for the AI: bio + tags + business type + country.
-  const rawTags = pull(d, ['tags'])
+  const rawTags = pull(c, ['tags'])
   const tags = Array.isArray(rawTags)
     ? rawTags.map((t) => (typeof t === 'string' ? t : str(pull(t, ['tag', 'name', 'title'])))).filter(Boolean)
     : []
   const bio = [
-    str(pull(d, ['description', 'bio'])),
+    str(pull(c, ['description', 'bio'])),
     tags.length ? `Tags: ${tags.join(', ')}` : null,
-    str(pull(d, ['type'])) ? `Tipe: ${str(pull(d, ['type']))}` : null,
-    str(pull(d, ['country'])) ? `Negara: ${str(pull(d, ['country']))}` : null,
+    str(pull(c, ['type'])) ? `Tipe: ${str(pull(c, ['type']))}` : null,
+    str(pull(c, ['country'])) ? `Negara: ${str(pull(c, ['country']))}` : null,
   ].filter(Boolean).join(' · ')
 
   return {
     platform: 'instagram',
     handle,
-    displayName: str(pull(d, ['name', 'screenName', 'fullName'])),
+    displayName: str(pull(c, ['name', 'screenName', 'fullName'])),
     bio: bio || null,
     followers,
-    following: num(pull(d, ['followingCount', 'follows'])),
-    totalPosts: num(pull(d, ['postsCount', 'mediaCount'])),
-    verified: truthy(pull(d, ['verified', 'isVerified'])),
-    avatarUrl: str(pull(d, ['image', 'avatar', 'profilePicUrl'])),
+    following: num(pull(c, ['followingCount', 'follows'])),
+    totalPosts: num(pull(c, ['postsCount', 'mediaCount'])),
+    verified: truthy(pull(c, ['verified', 'isVerified'])),
+    avatarUrl: str(pull(c, ['image', 'avatar', 'profilePicUrl'])),
     recentPosts,
     scrapedAt: new Date().toISOString(),
     provider: 'rapidapi:ig-statistics',

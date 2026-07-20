@@ -59,7 +59,10 @@ export function computeMetrics(account: ScrapedAccount): AccountMetrics {
   // Reach basis: prefer avg views (true reach); fall back to followers when the
   // platform hides views (typical for IG feed). Engagement is meaningless
   // without a positive denominator, so guard against divide-by-zero.
-  const useViews = avgViews !== null && avgViews > 0
+  // Basis by platform convention: TikTok reach ≈ views; Instagram ER is the
+  // industry-standard interactions/followers (feed photos have no public views,
+  // and mixing sparse Reel views with photo likes would skew the ratio).
+  const useViews = account.platform === 'tiktok' && avgViews !== null && avgViews > 0
   const reach = useViews ? (avgViews as number) : followers
   const interactions = (avgLikes ?? 0) + (avgComments ?? 0) + (avgShares ?? 0)
   const engagementRatePct = reach > 0 ? round((interactions / reach) * 100, 2) : 0
