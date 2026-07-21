@@ -6,7 +6,15 @@ import { getGoogleAccessToken } from "@/lib/integrations/google/client";
 
 export async function getValidAccessToken(_supabase: SupabaseClient, _userId: string): Promise<string> {
   const token = await getGoogleAccessToken();
-  if (!token) throw new Error("Google account not connected — connect it under Integrations first");
+  // null covers BOTH "never connected" and "connected but the refresh token was
+  // revoked/expired" (Google expires refresh tokens after 7 days while the OAuth
+  // consent screen is in Testing mode) — the Integrations page still shows
+  // "Connected" in that case, so say both out loud instead of just "not connected".
+  if (!token) {
+    throw new Error(
+      "Google not connected, or the connection expired — reconnect it under Integrations (Disconnect, then Connect)",
+    );
+  }
   return token;
 }
 
