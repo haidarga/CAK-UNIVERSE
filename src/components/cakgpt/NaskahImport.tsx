@@ -66,7 +66,7 @@ export function NaskahImport({ clients, personas }: {
         return
       }
       if (!data.ok) {
-        if (res.status === 428) { setError('Google not connected.'); window.open('/api/scriptwriter/google/oauth/start', '_blank', 'noopener,noreferrer') }
+        if (res.status === 428) { setError('Google not connected.'); window.open('/api/integrations/google/auth', '_blank', 'noopener,noreferrer') }
         else setError(data.error || 'extraction failed')
         return
       }

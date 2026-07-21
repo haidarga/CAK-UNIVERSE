@@ -69,7 +69,7 @@ async function handleImport(req: Request) {
       try {
         accessToken = await getValidAccessToken(service, user.id)
       } catch (e) {
-        return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'Google not connected', connect_url: '/api/scriptwriter/google/oauth/start' }, { status: 428 })
+        return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'Google not connected', connect_url: '/api/integrations/google/auth' }, { status: 428 })
       }
       const doc = await getDoc(accessToken, docId)
       sourceText = docToPlainText(doc).slice(0, MAX_TEXT_CHARS)

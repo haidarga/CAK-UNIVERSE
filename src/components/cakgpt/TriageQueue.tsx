@@ -375,7 +375,7 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
       })
       const data = await res.json()
       if (!data.ok) {
-        if (res.status === 428) { setDocStatus('Google not connected.'); window.open('/api/scriptwriter/google/oauth/start', '_blank', 'noopener,noreferrer') }
+        if (res.status === 428) { setDocStatus('Google not connected.'); window.open('/api/integrations/google/auth', '_blank', 'noopener,noreferrer') }
         else setDocStatus(data.error || 'link failed')
         return
       }
@@ -396,7 +396,7 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
       const res = await fetch(`/api/scriptwriter/batches/${batchId}/google-doc/push`, { method: 'POST' })
       const data = await res.json()
       if (!data.ok) {
-        if (res.status === 428) { setDocStatus('Google not connected.'); window.open('/api/scriptwriter/google/oauth/start', '_blank') }
+        if (res.status === 428) { setDocStatus('Google not connected.'); window.open('/api/integrations/google/auth', '_blank') }
         else setDocStatus(data.error || 'push failed')
         return
       }
@@ -416,7 +416,7 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
       const res = await fetch(`/api/scriptwriter/batches/${batchId}/google-doc/pull`, { method: 'POST' })
       const data = await res.json()
       if (!data.ok) {
-        if (res.status === 428) { setDocStatus('Google not connected.'); window.open('/api/scriptwriter/google/oauth/start', '_blank') }
+        if (res.status === 428) { setDocStatus('Google not connected.'); window.open('/api/integrations/google/auth', '_blank') }
         else setDocStatus(data.error || 'pull failed')
         return
       }
