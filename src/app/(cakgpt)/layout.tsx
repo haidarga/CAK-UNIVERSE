@@ -3,7 +3,7 @@ import { NavShell } from "@/components/cakgpt/NavShell";
 import { getActiveClientId } from "@/lib/cakgpt/active-client";
 
 export const metadata: Metadata = {
-  title: "CAKGPT — Script Studio",
+  title: "CAKETING — Script Studio",
   description: "Scriptwriter throughput platform",
 };
 

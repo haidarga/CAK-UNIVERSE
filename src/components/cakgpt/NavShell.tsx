@@ -26,7 +26,7 @@ export function NavShell({ children, initialClient }: { children: React.ReactNod
       <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-surface">
         <div className="flex items-center gap-2 px-4 py-4">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary font-data text-sm font-bold text-onPrimary">C</span>
-          <span className="font-data text-base font-semibold tracking-tight text-text">CAKGPT</span>
+          <span className="font-data text-base font-semibold tracking-tight text-text">CAKETING</span>
         </div>
 
         <div className="px-3 pb-3">
