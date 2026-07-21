@@ -7,6 +7,7 @@ import { Pencil, Trash2, Check, X } from 'lucide-react'
 type Persona = {
   id: string
   name: string
+  cluster: string | null
   banned_words: string[] | null
   required_words: string[] | null
   tone: Record<string, unknown> | null
@@ -16,12 +17,13 @@ export function PersonasManager({ personas }: { personas: Persona[] }) {
   const router = useRouter()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [name, setName] = useState('')
+  const [cluster, setCluster] = useState('')
   const [banned, setBanned] = useState('')
   const [required, setRequired] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
 
   function startEdit(p: Persona) {
-    setEditingId(p.id); setName(p.name)
+    setEditingId(p.id); setName(p.name); setCluster(p.cluster || '')
     setBanned((p.banned_words || []).join(', '))
     setRequired((p.required_words || []).join(', '))
   }
@@ -34,7 +36,7 @@ export function PersonasManager({ personas }: { personas: Persona[] }) {
     try {
       const res = await fetch(`/api/scriptwriter/personas/${id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), banned_words: csv(banned), required_words: csv(required) }),
+        body: JSON.stringify({ name: name.trim(), cluster: cluster.trim() || null, banned_words: csv(banned), required_words: csv(required) }),
       })
       if ((await res.json()).ok) { setEditingId(null); router.refresh() }
     } finally { setBusyId(null) }
@@ -62,6 +64,11 @@ export function PersonasManager({ personas }: { personas: Persona[] }) {
                 <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Persona name"
                   className="w-full rounded-md border border-primary bg-background px-2.5 py-1.5 text-sm font-medium text-text focus:outline-none focus:ring-1 focus:ring-ring" />
                 <div>
+                  <label className="mb-0.5 block text-[11px] font-medium text-mutedText">Cluster (audience segment)</label>
+                  <input value={cluster} onChange={(e) => setCluster(e.target.value)} placeholder="e.g. Nutrition Mom" aria-label="Persona cluster"
+                    className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-text focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring" />
+                </div>
+                <div>
                   <label className="mb-0.5 block text-[11px] font-medium text-mutedText">Banned words (comma separated)</label>
                   <input value={banned} onChange={(e) => setBanned(e.target.value)}
                     className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-text focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring" />
@@ -81,6 +88,9 @@ export function PersonasManager({ personas }: { personas: Persona[] }) {
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <h2 className="font-medium text-text">{p.name}</h2>
+                    {p.cluster && (
+                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">{p.cluster}</span>
+                    )}
                     <span className="font-data text-xs text-mutedText">{(p.banned_words || []).length} banned · {(p.required_words || []).length} required</span>
                   </div>
                   <div className="flex shrink-0 gap-0.5">

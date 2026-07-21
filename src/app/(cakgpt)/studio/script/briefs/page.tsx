@@ -20,8 +20,8 @@ export default async function BriefsPage() {
   const [{ data: briefs }, { data: personas }, { data: clients }] = await Promise.all([
     briefQuery,
     (activeClient
-      ? supabase.from('sw_personas').select('id, name').eq('created_by', user.id).eq('is_active', true).or(`client_id.eq.${activeClient},client_id.is.null`)
-      : supabase.from('sw_personas').select('id, name').eq('created_by', user.id).eq('is_active', true)),
+      ? supabase.from('sw_personas').select('id, name, cluster').eq('created_by', user.id).eq('is_active', true).or(`client_id.eq.${activeClient},client_id.is.null`)
+      : supabase.from('sw_personas').select('id, name, cluster').eq('created_by', user.id).eq('is_active', true)),
     supabase.from('sw_clients').select('id, name').eq('created_by', user.id).eq('is_active', true),
   ])
 

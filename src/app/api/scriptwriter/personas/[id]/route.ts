@@ -14,7 +14,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   return NextResponse.json({ ok: true, persona: data })
 }
 
-const PATCHABLE_FIELDS = ['name', 'tone', 'diction_quirks', 'banned_words', 'required_words', 'sample_lines', 'red_flags', 'is_active'] as const
+const PATCHABLE_FIELDS = ['name', 'cluster', 'tone', 'diction_quirks', 'banned_words', 'required_words', 'sample_lines', 'red_flags', 'is_active'] as const
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params

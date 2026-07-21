@@ -27,6 +27,7 @@ export async function POST(req: Request) {
   try { body = await req.json() } catch { return NextResponse.json({ ok: false, error: 'invalid json' }, { status: 400 }) }
   const name = String(body.name || '').trim()
   if (!name) return NextResponse.json({ ok: false, error: 'name is required' }, { status: 400 })
+  const cluster = typeof body.cluster === 'string' && body.cluster.trim() ? body.cluster.trim().slice(0, 80) : null
 
   // Created inside a workspace → scoped to that client; created under
   // "All clients" → shared (null, shows in every workspace).
@@ -42,6 +43,7 @@ export async function POST(req: Request) {
     .insert({
       created_by: user.id,
       name,
+      cluster,
       client_id: clientId,
       tone: body.tone ?? {},
       diction_quirks: body.diction_quirks ?? [],

@@ -57,6 +57,7 @@ function RepeatableRows<T extends Record<string, string>>({
 export function PersonaForm() {
   const router = useRouter()
   const [name, setName] = useState('')
+  const [cluster, setCluster] = useState('')
   const [register, setRegister] = useState('')
   const [pacing, setPacing] = useState('')
   const [energy, setEnergy] = useState('')
@@ -81,6 +82,7 @@ export function PersonaForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name,
+          cluster: cluster.trim() || null,
           tone: { register, pacing, energy, adjectives: adjectives.split(',').map((s) => s.trim()).filter(Boolean) },
           diction_quirks: quirks.filter((q) => q.quirk),
           banned_words: bannedWords.split(',').map((s) => s.trim()).filter(Boolean),
@@ -92,7 +94,7 @@ export function PersonaForm() {
       const data = await res.json()
       if (!data.ok) throw new Error(data.error || 'failed to save')
 
-      setName(''); setRegister(''); setPacing(''); setEnergy(''); setAdjectives('')
+      setName(''); setCluster(''); setRegister(''); setPacing(''); setEnergy(''); setAdjectives('')
       setBannedWords(''); setRequiredWords(''); setQuirks([]); setSampleLines([]); setRedFlags([])
       router.refresh()
     } catch (e) {
@@ -110,6 +112,13 @@ export function PersonaForm() {
         <label className="mb-1 block text-xs font-medium text-text">Name</label>
         <input value={name} onChange={(e) => setName(e.target.value)} required
           className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-text focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring" />
+      </div>
+
+      <div>
+        <label className="mb-1 block text-xs font-medium text-text">Cluster <span className="font-normal text-mutedText">(audience segment, e.g. "Working Mom", "Dad Persona" — optional)</span></label>
+        <input value={cluster} onChange={(e) => setCluster(e.target.value)} placeholder="e.g. Nutrition Mom"
+          className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-text focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring" />
+        <p className="mt-1 text-[11px] text-mutedText">Personas with a cluster only get auto-matched to briefs tagged the same cluster during Import & Generate.</p>
       </div>
 
       <div>

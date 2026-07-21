@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient, createServiceClient } from '@/lib/cakgpt/supabase/server'
 import { requireUser } from '@/lib/cakgpt/auth'
+import { getActiveClientId } from '@/lib/cakgpt/active-client'
 import { getGeminiApiKey } from '@/lib/cakgpt/settings'
 import { getValidAccessToken } from '@/lib/cakgpt/google-oauth'
 import { getDoc } from '@/lib/cakgpt/google-docs'
@@ -119,9 +120,19 @@ async function handleImport(req: Request) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'failed to read source' }, { status: 400 })
   }
 
+  // Steer the extraction's "cluster" guess toward vocabulary that already
+  // matches sw_personas.cluster (same shared-or-scoped visibility as the
+  // personas list elsewhere) — otherwise a free-guessed "Dad" vs. an existing
+  // "Dad Persona" tag would silently fail to match at generation time.
+  const activeClient = await getActiveClientId()
+  let clusterQuery = service.from('sw_personas').select('cluster').eq('created_by', user.id).eq('is_active', true).not('cluster', 'is', null)
+  if (activeClient) clusterQuery = clusterQuery.or(`client_id.eq.${activeClient},client_id.is.null`)
+  const { data: clusterRows } = await clusterQuery
+  const knownClusters = [...new Set((clusterRows || []).map((r) => r.cluster).filter((c): c is string => !!c))].slice(0, 20)
+
   let result: Awaited<ReturnType<typeof extractBriefsFromText>>
   try {
-    result = await withDeadline(extractBriefsFromText({ apiKey, text: sourceText, hint }), EXTRACT_DEADLINE_MS, 'extraction')
+    result = await withDeadline(extractBriefsFromText({ apiKey, text: sourceText, hint, knownClusters }), EXTRACT_DEADLINE_MS, 'extraction')
   } catch (e) {
     const msg = e instanceof DeadlineExceededError
       ? 'this plan is taking too long to extract — try a smaller file or split it into parts.'

@@ -62,6 +62,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ ok: false, error: msg }, { status: 500 })
   }
 
+  // ── Persona scoping ────────────────────────────────────────────────────────
+  // Mirror the brief check above: every requested persona_id must belong to
+  // this user AND be visible in this batch's client workspace (its own
+  // client_id, or shared/null). Without this, a persona_id from a request the
+  // client never should have been able to construct (e.g. a stale/crafted
+  // value) would silently enqueue jobs voiced by a persona outside this scope.
+  const personaIds = [...new Set(items.map((i) => i.persona_id).filter((id): id is string => Boolean(id)))]
+  if (personaIds.length > 0) {
+    const { data: personaRows, error: personaErr } = await authClient
+      .from('sw_personas').select('id, client_id').eq('created_by', userId).eq('is_active', true).in('id', personaIds)
+    if (personaErr) return NextResponse.json({ ok: false, error: personaErr.message }, { status: 500 })
+    const validIds = new Set(
+      (personaRows || []).filter((p) => !p.client_id || p.client_id === candidateClientId).map((p) => p.id),
+    )
+    const invalid = personaIds.filter((id) => !validIds.has(id))
+    if (invalid.length > 0) {
+      return NextResponse.json({ ok: false, error: `persona(s) not found or outside this batch's client: ${invalid.join(', ')}` }, { status: 400 })
+    }
+  }
+
   // ── Enqueue one job per (brief × persona) item ────────────────────────────
   // Dedupe against jobs already enqueued for this batch so a retry (after a
   // partial insert, a double-click, or a transient error) is idempotent — no

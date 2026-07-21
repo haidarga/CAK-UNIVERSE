@@ -10,6 +10,7 @@ type PreviewBrief = {
   title: string
   product?: string | null
   platform?: string | null
+  cluster?: string | null
   fields: Record<string, string>
 }
 
@@ -17,7 +18,7 @@ type SourceMode = 'file' | 'text' | 'gdoc'
 
 export function BriefImport({ clients, personas }: {
   clients: Array<{ id: string; name: string }>
-  personas: Array<{ id: string; name: string }>
+  personas: Array<{ id: string; name: string; cluster: string | null }>
 }) {
   const router = useRouter()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -39,9 +40,11 @@ export function BriefImport({ clients, personas }: {
   // Optional writer steering ("arahan") applied to the whole fan-out on
   // Import & Generate — empty = plain direct generate (unchanged behavior).
   const [steering, setSteering] = useState('')
-  // Once committed, hold the ids so a later step failing (batch/generate) never
-  // re-commits the same briefs on retry.
-  const [committedIds, setCommittedIds] = useState<string[] | null>(null)
+  // Once committed, hold {id, cluster} PAIRS from the commit response — not
+  // re-derived by re-indexing into local `briefs` state — so a later step
+  // failing (batch/generate) and the writer editing/removing rows before
+  // "Retry generate" can never desync an id from the wrong brief's cluster.
+  const [committedBriefs, setCommittedBriefs] = useState<Array<{ id: string; cluster: string | null }> | null>(null)
   const [createdBatchId, setCreatedBatchId] = useState<string | null>(null)
 
   async function extract() {
@@ -88,7 +91,7 @@ export function BriefImport({ clients, personas }: {
       }
       const list: PreviewBrief[] = (data.briefs || []).map((b) => ({ ...b, _id: crypto.randomUUID() }))
       setBriefs(list) // may be [] — the empty-state branch handles that
-      setCommittedIds(null)
+      setCommittedBriefs(null)
       setCreatedBatchId(null)
       setProgress(null)
     } catch (e) {
@@ -101,17 +104,22 @@ export function BriefImport({ clients, personas }: {
   function updateTitle(id: string, title: string) {
     setBriefs((prev) => prev && prev.map((b) => (b._id === id ? { ...b, title } : b)))
   }
+  function updateCluster(id: string, cluster: string) {
+    setBriefs((prev) => prev && prev.map((b) => (b._id === id ? { ...b, cluster: cluster || null } : b)))
+  }
   function removeBrief(id: string) {
     setBriefs((prev) => prev && prev.filter((b) => b._id !== id))
   }
   function reset() {
     setBriefs(null); setText(''); setGdoc(''); setHint(''); setFileName(null); setSelectedPersonaIds([])
-    setCommittedIds(null); setCreatedBatchId(null); setError(null); setProgress(null); setSteering('')
+    setCommittedBriefs(null); setCreatedBatchId(null); setError(null); setProgress(null); setSteering('')
     if (fileRef.current) fileRef.current.value = ''
   }
 
-  // POST the reviewed briefs (stripping the client-only _id). Returns ids or null.
-  async function commitBriefs(list: PreviewBrief[]): Promise<string[] | null> {
+  // POST the reviewed briefs (stripping the client-only _id). Returns each
+  // committed row's {id, cluster} (from the SAME insert response row — never
+  // re-derived by re-indexing local state) or null on failure.
+  async function commitBriefs(list: PreviewBrief[]): Promise<Array<{ id: string; cluster: string | null }> | null> {
     const payloadBriefs = list.map(({ _id, ...b }) => { void _id; return b })
     const importLabel = fileName || `Content plan ${new Date().toLocaleDateString('id-ID')}`
     const res = await fetch('/api/scriptwriter/briefs/import/commit', {
@@ -120,24 +128,26 @@ export function BriefImport({ clients, personas }: {
     })
     const data = await res.json()
     if (!data.ok) { setError(data.error || 'failed to save briefs'); return null }
-    return data.brief_ids as string[]
+    return data.briefs as Array<{ id: string; cluster: string | null }>
   }
 
-  // Commit once; reuse the ids if a prior attempt already committed them.
-  async function ensureCommitted(list: PreviewBrief[]): Promise<string[] | null> {
-    if (committedIds) return committedIds
-    const ids = await commitBriefs(list)
-    if (ids) setCommittedIds(ids)
-    return ids
+  // Commit once; reuse the result if a prior attempt already committed it —
+  // so editing/removing rows afterward (e.g. before a "Retry generate") can
+  // never desync from what was actually persisted.
+  async function ensureCommitted(list: PreviewBrief[]): Promise<Array<{ id: string; cluster: string | null }> | null> {
+    if (committedBriefs) return committedBriefs
+    const committed = await commitBriefs(list)
+    if (committed) setCommittedBriefs(committed)
+    return committed
   }
 
   async function importOnly() {
     if (!briefs || briefs.length === 0) return
     setBusy('commit'); setError(null); setProgress(null)
     try {
-      const ids = await ensureCommitted(briefs)
-      if (!ids) return
-      setProgress(`Imported ${ids.length} briefs.`)
+      const committed = await ensureCommitted(briefs)
+      if (!committed) return
+      setProgress(`Imported ${committed.length} briefs.`)
       reset()
       router.refresh()
     } finally {
@@ -151,8 +161,8 @@ export function BriefImport({ clients, personas }: {
     if (!briefs || briefs.length === 0) return
     setBusy('generate'); setError(null); setProgress(null)
     try {
-      const ids = await ensureCommitted(briefs)
-      if (!ids) return
+      const committed = await ensureCommitted(briefs)
+      if (!committed) return
 
       // Reuse an already-created batch on retry rather than making a second one.
       let batchId = createdBatchId
@@ -168,9 +178,45 @@ export function BriefImport({ clients, personas }: {
         setCreatedBatchId(batchId)
       }
 
-      const personaIds: Array<string | null> = selectedPersonaIds.length > 0 ? selectedPersonaIds : [null]
+      // Cluster-aware fan-out — the bug this replaces: naively crossing every
+      // brief against every checked persona regardless of audience fit (a Dad
+      // persona voicing a "Nutrition Mom Hook" brief). Reads cluster from
+      // `committed` (each {id, cluster} pair came back from the SAME commit
+      // response row) — NEVER by re-indexing local `briefs` state, which can
+      // have been edited/reordered/had rows removed by the writer between a
+      // failed step and clicking "Retry generate" (busy re-enables the review
+      // list's edit controls on failure; committed stays cached from the
+      // original successful commit either way). Resolution per brief, most
+      // specific first:
+      //   1. checked personas whose cluster matches this brief's cluster
+      //   2. no cluster info to filter by -> whatever was checked (unchanged
+      //      behavior, so briefs without a cluster tag never get silently skipped)
+      //   3. nothing checked, but the cluster resolves to known persona(s) ->
+      //      auto-use them (this is what "no persona specified (brief has no
+      //      default persona)" used to hard-fail on)
+      //   4. null -> server falls back to the brief's own persona_id (commit
+      //      already tried to resolve that from cluster too; may still be empty)
+      const personasByCluster = new Map<string, string[]>()
+      for (const p of personas) {
+        if (!p.cluster) continue
+        const key = p.cluster.trim().toLowerCase()
+        const list = personasByCluster.get(key) || []
+        list.push(p.id)
+        personasByCluster.set(key, list)
+      }
       const arahan = steering.trim() || undefined
-      const items = ids.flatMap((briefId) => personaIds.map((personaId) => ({ brief_id: briefId, persona_id: personaId, extra_context: arahan })))
+      const items: Array<{ brief_id: string; persona_id: string | null; extra_context?: string }> = []
+      for (const { id: briefId, cluster } of committed) {
+        const clusterKey = cluster?.trim().toLowerCase()
+        const clusterMatches = clusterKey ? personasByCluster.get(clusterKey) || [] : []
+        const checkedMatches = selectedPersonaIds.filter((id) => clusterMatches.includes(id))
+        const resolved: Array<string | null> =
+          checkedMatches.length > 0 ? checkedMatches
+          : selectedPersonaIds.length > 0 ? selectedPersonaIds
+          : clusterMatches.length > 0 ? clusterMatches
+          : [null]
+        for (const personaId of resolved) items.push({ brief_id: briefId, persona_id: personaId, extra_context: arahan })
+      }
 
       setProgress(`Queueing ${items.length} naskah…`)
       const genRes = await fetch(`/api/scriptwriter/batches/${batchId}/generate`, {
@@ -292,6 +338,13 @@ export function BriefImport({ clients, personas }: {
                 {(b.platform || b.product) && (
                   <p className="px-1 text-[11px] text-mutedText">{[b.platform, b.product].filter(Boolean).join(' · ')}</p>
                 )}
+                <div className="mt-1 flex items-center gap-1 px-1">
+                  <span className="text-[10px] text-mutedText">Cluster:</span>
+                  <input value={b.cluster || ''} onChange={(e) => updateCluster(b._id, e.target.value)} disabled={disabled}
+                    placeholder="— (nggak ke-detect, isi manual biar generate ke persona yang cocok)"
+                    aria-label="Brief cluster"
+                    className="w-full min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 text-[11px] text-text hover:border-border focus:border-primary focus:bg-surface focus:outline-none disabled:opacity-60" />
+                </div>
                 {Object.keys(b.fields).length > 0 && (
                   <div className="mt-1 flex flex-wrap gap-1 px-1">
                     {Object.entries(b.fields).slice(0, 5).map(([k, v]) => (
@@ -333,6 +386,7 @@ export function BriefImport({ clients, personas }: {
                     <input type="checkbox" checked={selectedPersonaIds.includes(p.id)} disabled={disabled}
                       onChange={(e) => setSelectedPersonaIds(e.target.checked ? [...selectedPersonaIds, p.id] : selectedPersonaIds.filter((id) => id !== p.id))} />
                     {p.name}
+                    {p.cluster && <span className="text-[10px] text-mutedText">({p.cluster})</span>}
                   </label>
                 ))}
               </div>
@@ -358,18 +412,18 @@ export function BriefImport({ clients, personas }: {
           <div className="flex gap-2">
             <button onClick={importOnly} disabled={disabled}
               className="flex-1 rounded-md border border-border py-2 text-sm font-medium text-text hover:bg-muted disabled:opacity-50 cursor-pointer">
-              {busy === 'commit' ? 'Importing…' : committedIds ? `Imported ✓` : `Import ${briefs.length} briefs`}
+              {busy === 'commit' ? 'Importing…' : committedBriefs ? `Imported ✓` : `Import ${briefs.length} briefs`}
             </button>
             <button onClick={importAndGenerate} disabled={disabled}
               title="Create the briefs, then fan out into naskah (brief × persona) in one batch"
               className="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-accent py-2 text-sm font-medium text-onPrimary hover:opacity-90 disabled:opacity-50 cursor-pointer">
-              {busy === 'generate' ? <><Loader2 size={15} className="animate-spin" aria-hidden /> Working…</> : committedIds ? 'Retry generate' : 'Import & Generate'}
+              {busy === 'generate' ? <><Loader2 size={15} className="animate-spin" aria-hidden /> Working…</> : committedBriefs ? 'Retry generate' : 'Import & Generate'}
             </button>
           </div>
           <p className="text-[11px] text-mutedText">
             {selectedPersonaIds.length > 0
-              ? `Import & Generate → ${briefs.length} briefs × ${selectedPersonaIds.length} personas = ${briefs.length * selectedPersonaIds.length} naskah`
-              : 'Import & Generate uses each brief\'s default persona (pick personas above to fan out).'}
+              ? `Import & Generate → tiap brief dipasangin persona yang lu centang DAN cluster-nya cocok (kalau ada cluster match). Brief tanpa cluster match tetap dapet semua ${selectedPersonaIds.length} persona yang dicentang.`
+              : 'Import & Generate → pakai persona yang cluster-nya cocok sama brief (kalau ke-detect), atau default persona brief (pick personas above buat override manual).'}
           </p>
         </div>
       )}

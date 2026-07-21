@@ -130,8 +130,8 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
   return results
 }
 
-async function extractBriefsChunk(apiKey: string, text: string, hint?: string): Promise<ImportBrief[]> {
-  const prompt = buildBriefExtractionPrompt({ sourceText: text, hint })
+async function extractBriefsChunk(apiKey: string, text: string, hint?: string, knownClusters?: string[]): Promise<ImportBrief[]> {
+  const prompt = buildBriefExtractionPrompt({ sourceText: text, hint, knownClusters })
   // gemini-2.5-flash's real ceiling is 65,535 — pushed close to that (not just
   // "enough for the JSON") because "thinking" tokens (on by default, not
   // disableable on the installed SDK version) are deducted from this same
@@ -148,11 +148,11 @@ async function extractBriefsChunk(apiKey: string, text: string, hint?: string): 
       const k = key.trim(); const v = value.trim()
       if (k && v) fields[k] = v
     }
-    return { title: b.title.trim(), product: b.product?.trim() || null, platform: b.platform?.trim() || null, fields }
+    return { title: b.title.trim(), product: b.product?.trim() || null, platform: b.platform?.trim() || null, cluster: b.cluster?.trim() || null, fields }
   }).filter((b) => b.title.length > 0)
 }
 
-export async function extractBriefsFromText(opts: { apiKey: string; text: string; hint?: string }): Promise<ExtractBriefsResult> {
+export async function extractBriefsFromText(opts: { apiKey: string; text: string; hint?: string; knownClusters?: string[] }): Promise<ExtractBriefsResult> {
   const trimmed = opts.text.trim()
   if (!trimmed) return { ok: false, error: 'the source is empty — nothing to extract' }
 
@@ -164,7 +164,7 @@ export async function extractBriefsFromText(opts: { apiKey: string; text: string
     // Extract chunks with bounded concurrency — a handful in flight at once
     // cuts wall-time vs. one-at-a-time, without firing dozens of large-output
     // LLM calls simultaneously (rate limits, memory, time budget).
-    const perChunk = await mapWithConcurrency(chunks, 4, (c) => extractBriefsChunk(opts.apiKey, c, opts.hint))
+    const perChunk = await mapWithConcurrency(chunks, 4, (c) => extractBriefsChunk(opts.apiKey, c, opts.hint, opts.knownClusters))
 
     // Merge; dedupe only EXACT duplicates (same title AND fields) — collapses the
     // repeated header row / any boundary artifact without dropping two real briefs

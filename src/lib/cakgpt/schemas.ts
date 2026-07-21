@@ -90,6 +90,11 @@ export const ExtractedBriefRawSchema = z.object({
   title: z.string().min(1).max(200),
   product: z.string().max(200).nullable().optional(),
   platform: z.string().max(40).nullable().optional(),
+  // Best-effort audience-segment tag (e.g. "Nutrition Mom", "Dad Persona") —
+  // null when the source gives no clear signal. Steered toward the caller's
+  // EXISTING persona cluster names (see buildBriefExtractionPrompt) so this
+  // lines up with sw_personas.cluster instead of inventing new vocabulary.
+  cluster: z.string().max(80).nullable().optional(),
   fields: z.array(z.object({ key: z.string().min(1).max(80), value: z.string().max(2000) })).max(30).default([]),
 })
 export const BriefExtractionOutputSchema = z.object({
@@ -102,6 +107,7 @@ export const ImportBriefSchema = z.object({
   title: z.string().min(1).max(200),
   product: z.string().max(200).nullable().optional(),
   platform: z.string().max(40).nullable().optional(),
+  cluster: z.string().max(80).nullable().optional(),
   // Key schema constrained (non-empty, ≤80) + key-count capped so /commit — a
   // standalone write path — can't smuggle a huge fields object past the caps the
   // extraction schema (ExtractedBriefRawSchema) enforces.

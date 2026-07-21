@@ -200,7 +200,8 @@ export function buildIdeaPrompt(opts: {
 // Extract many discrete briefs out of one content-plan document (spreadsheet
 // rows, a PDF plan, a Doc, pasted text). The whole document is UNTRUSTED data —
 // it comes from a file, so the same "data not instructions" guard applies.
-export function buildBriefExtractionPrompt(opts: { sourceText: string; hint?: string }): string {
+export function buildBriefExtractionPrompt(opts: { sourceText: string; hint?: string; knownClusters?: string[] }): string {
+  const clusters = (opts.knownClusters || []).filter(Boolean)
   return [
     'You are extracting a strategist content plan into a list of discrete short-form video briefs.',
     'The source below is one content plan for a single brand — it may be a spreadsheet (one row per',
@@ -211,6 +212,12 @@ export function buildBriefExtractionPrompt(opts: { sourceText: string; hint?: st
     '- title: a short, specific title for that content idea (required).',
     '- platform: the target platform if the source states one (tiktok/reels/shorts/etc.), else null.',
     '- product: the product/subject if stated, else null.',
+    '- cluster: which audience segment / persona this brief is FOR (often literally stated or implied',
+    '  in the title, e.g. "Nutrition Mom Hook" -> "Nutrition Mom", "Dad Hook" -> "Dad Persona"). This is',
+    '  used to auto-match the right voice/persona later, so precision matters more than creativity here.',
+    clusters.length > 0
+      ? `  Known clusters already in use for this project: ${clusters.map((c) => `"${c}"`).join(', ')}. If a brief clearly matches one of these, output that EXACT string (same spelling/casing). Only invent a new short tag if none of these fit; leave null if genuinely unclear.`
+      : '  No known clusters yet — infer a short, consistent segment tag per brief if the source implies one; leave null if unclear.',
     '- fields: every other meaningful attribute present for that idea, as key/value pairs — e.g.',
     '  week, day, topic, angle, target_audience, key_message, cta, hook, references, tone, notes.',
     '  IMPORTANT: if the plan is organized by schedule, always capture "week" and "day" (and "topic")',
@@ -297,6 +304,7 @@ export const BRIEF_EXTRACTION_RESPONSE_SCHEMA = {
           title: { type: 'STRING' },
           product: { type: 'STRING', nullable: true },
           platform: { type: 'STRING', nullable: true },
+          cluster: { type: 'STRING', nullable: true },
           fields: {
             type: 'ARRAY',
             items: {
