@@ -78,16 +78,56 @@ export function docToPlainText(doc: { body?: { content?: unknown[] } }): string 
 
 type NaskahForDoc = { naskah_id: string; title: string | null; body: Block[] }
 
-function renderNaskahText(n: NaskahForDoc): string {
-  let text = `${n.title || 'Untitled naskah'} [[id:${n.naskah_id}]]\n`
-  for (const block of n.body) {
-    const speaker = block.speaker ? `${block.speaker}: ` : ''
-    const ts = block.timestamp_range ? ` ${block.timestamp_range}` : ''
-    text += `${block.shot_no}.${block.line_no} (${block.section_key}${ts}): ${speaker}${block.text}\n`
-    if (block.visual_note) text += `   [${block.visual_note}]\n`
-  }
-  return text + '\n'
+// Offsets are relative to this naskah's own rendered text (caller shifts by
+// its running total to get absolute Doc indices). The PLAIN TEXT this produces
+// is byte-identical to the original renderer — pull's HEADING_ID_RE /
+// STRUCTURED_LINE_RE regex both match raw text content only, never style, so
+// every styling range added below is purely cosmetic and can't affect the
+// Doc -> naskah round-trip (parseDocIntoSections / reconstructBlocksFromLines).
+type RenderedNaskah = {
+  text: string
+  headingEnd: number
+  idTagStart: number // where " [[id:...]]" begins within the heading line, so it can be de-emphasized separately from the human-facing title
+  prefixRanges: Array<{ start: number; end: number }> // "N.N (section...): "
+  speakerRanges: Array<{ start: number; end: number }> // "Speaker: "
+  noteRanges: Array<{ start: number; end: number }> // "   [visual note]"
 }
+
+function renderNaskah(n: NaskahForDoc): RenderedNaskah {
+  const prefixRanges: RenderedNaskah['prefixRanges'] = []
+  const speakerRanges: RenderedNaskah['speakerRanges'] = []
+  const noteRanges: RenderedNaskah['noteRanges'] = []
+
+  const title = n.title || 'Untitled naskah'
+  const idTagStart = title.length
+  let text = `${title} [[id:${n.naskah_id}]]\n`
+  const headingEnd = text.indexOf('\n')
+
+  for (const block of n.body) {
+    const ts = block.timestamp_range ? ` ${block.timestamp_range}` : ''
+    const prefixStart = text.length
+    text += `${block.shot_no}.${block.line_no} (${block.section_key}${ts}): `
+    prefixRanges.push({ start: prefixStart, end: text.length })
+
+    if (block.speaker) {
+      const speakerStart = text.length
+      text += `${block.speaker}: `
+      speakerRanges.push({ start: speakerStart, end: text.length })
+    }
+
+    text += `${block.text}\n`
+
+    if (block.visual_note) {
+      const noteStart = text.length
+      text += `   [${block.visual_note}]\n`
+      noteRanges.push({ start: noteStart, end: text.length - 1 }) // exclude the trailing \n
+    }
+  }
+  return { text: text + '\n', headingEnd, idTagStart, prefixRanges, speakerRanges, noteRanges }
+}
+
+const MUTED = { red: 0.45, green: 0.45, blue: 0.45 }
+const FAINT = { red: 0.62, green: 0.62, blue: 0.62 }
 
 // Clears the doc's current body and rewrites it from the given naskah list.
 export async function pushNaskahToDoc(accessToken: string, documentId: string, naskahList: NaskahForDoc[]): Promise<void> {
@@ -101,22 +141,72 @@ export async function pushNaskahToDoc(accessToken: string, documentId: string, n
 
   let fullText = ''
   const headingRanges: Array<{ start: number; end: number }> = []
+  const idTagRanges: Array<{ start: number; end: number }> = []
+  const prefixRanges: Array<{ start: number; end: number }> = []
+  const speakerRanges: Array<{ start: number; end: number }> = []
+  const noteRanges: Array<{ start: number; end: number }> = []
+
   for (const n of naskahList) {
     const start = fullText.length
-    const rendered = renderNaskahText(n)
-    fullText += rendered
-    const headingEnd = start + rendered.indexOf('\n')
-    headingRanges.push({ start, end: headingEnd })
+    const r = renderNaskah(n)
+    fullText += r.text
+    headingRanges.push({ start, end: start + r.headingEnd })
+    idTagRanges.push({ start: start + r.idTagStart, end: start + r.headingEnd })
+    for (const x of r.prefixRanges) prefixRanges.push({ start: start + x.start, end: start + x.end })
+    for (const x of r.speakerRanges) speakerRanges.push({ start: start + x.start, end: start + x.end })
+    for (const x of r.noteRanges) noteRanges.push({ start: start + x.start, end: start + x.end })
   }
   if (fullText.length === 0) fullText = '(no naskah in this batch yet)\n'
 
   requests.push({ insertText: { location: { index: 1 }, text: fullText } })
+
   for (const r of headingRanges) {
     requests.push({
       updateParagraphStyle: {
         range: { startIndex: 1 + r.start, endIndex: 1 + r.end },
-        paragraphStyle: { namedStyleType: 'HEADING_1' },
-        fields: 'namedStyleType',
+        paragraphStyle: { namedStyleType: 'HEADING_1', spaceAbove: { magnitude: 24, unit: 'PT' } },
+        fields: 'namedStyleType,spaceAbove',
+      },
+    })
+  }
+  // De-emphasize the sync marker so the heading reads as a title, not a broken tag.
+  for (const r of idTagRanges) {
+    if (r.end <= r.start) continue
+    requests.push({
+      updateTextStyle: {
+        range: { startIndex: 1 + r.start, endIndex: 1 + r.end },
+        textStyle: { bold: false, fontSize: { magnitude: 8, unit: 'PT' }, foregroundColor: { color: { rgbColor: FAINT } } },
+        fields: 'bold,fontSize,foregroundColor',
+      },
+    })
+  }
+  // Shot/section prefix — small and muted, out of the way of the actual line.
+  for (const r of prefixRanges) {
+    requests.push({
+      updateTextStyle: {
+        range: { startIndex: 1 + r.start, endIndex: 1 + r.end },
+        textStyle: { fontSize: { magnitude: 9, unit: 'PT' }, foregroundColor: { color: { rgbColor: MUTED } } },
+        fields: 'fontSize,foregroundColor',
+      },
+    })
+  }
+  // Speaker name — bold, so dialogue attribution reads at a glance.
+  for (const r of speakerRanges) {
+    requests.push({
+      updateTextStyle: {
+        range: { startIndex: 1 + r.start, endIndex: 1 + r.end },
+        textStyle: { bold: true },
+        fields: 'bold',
+      },
+    })
+  }
+  // Stage direction — italic + muted, reads as a note rather than dialogue.
+  for (const r of noteRanges) {
+    requests.push({
+      updateTextStyle: {
+        range: { startIndex: 1 + r.start, endIndex: 1 + r.end },
+        textStyle: { italic: true, foregroundColor: { color: { rgbColor: MUTED } } },
+        fields: 'italic,foregroundColor',
       },
     })
   }
