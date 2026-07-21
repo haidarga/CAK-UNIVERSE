@@ -10,8 +10,16 @@ import { createBrowserSupabaseClient } from './supabase/client'
 export const MAX_IMPORT_UPLOAD_BYTES = 10 * 1024 * 1024 // 10 MB
 
 // Video (Content Translator) needs a much higher ceiling than documents/
-// images — mirrors the bucket's raised limit, see migration 012.
-export const MAX_VIDEO_UPLOAD_BYTES = 200 * 1024 * 1024 // 200 MB
+// images. The sw-imports BUCKET allows up to 200 MB (migration 012), but
+// Supabase enforces its own PROJECT-WIDE upload cap independent of any
+// bucket's file_size_limit — empirically confirmed at exactly 50 MB on this
+// project (Dashboard: Project Settings -> Storage -> "Upload file size
+// limit"; Free-tier default, raisable on paid plans). Capping here to the
+// REAL ceiling so the browser rejects an oversized file with the friendly
+// Indonesian message below instead of Supabase's raw, confusing "The object
+// exceeded the maximum allowed size" after a failed upload attempt. Raise
+// this back toward 200 MB once the project's global limit is actually raised.
+export const MAX_VIDEO_UPLOAD_BYTES = 45 * 1024 * 1024 // 45 MB (5 MB safety margin under the confirmed 50 MB project cap)
 
 type UploadResult = { ok: true; path: string } | { ok: false; error: string }
 
