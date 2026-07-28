@@ -48,6 +48,29 @@ function fieldLookup(fields: Record<string, unknown> | null | undefined, re: Reg
   return null
 }
 
+// How long the script should run. This used to be hardcoded to 30s for EVERY
+// naskah, which silently capped how much the model would ever write — a 30s
+// script is ~8-12 blocks no matter how much output budget it has, so briefs
+// that wanted a longer video always came back looking "cut short". Now the
+// content plan gets to say: any brief field whose key looks like a duration
+// ("duration", "durasi", "length", "video_length") is parsed for its first
+// number. A bare number is read as seconds; an explicit "m"/"menit"/"minute"
+// unit converts. Clamped to the range FormatMetaSchema already enforces
+// (3-600s) so a typo like "3000" can't produce an absurd target, and falls
+// back to the previous 30s default when the plan says nothing.
+const DEFAULT_DURATION_S = 30
+export function resolveTargetDurationS(fields: Record<string, unknown> | null | undefined): number {
+  const raw = fieldLookup(fields, /\b(duration|durasi|length|panjang|video_?length)\b/i)
+  if (!raw) return DEFAULT_DURATION_S
+  const num = raw.match(/\d+(?:[.,]\d+)?/)?.[0]?.replace(',', '.')
+  if (!num) return DEFAULT_DURATION_S
+  const value = Number(num)
+  if (!Number.isFinite(value) || value <= 0) return DEFAULT_DURATION_S
+  const isMinutes = /\b(m|min|mins|menit|minute|minutes)\b/i.test(raw) || /\d\s*m\b/i.test(raw)
+  const seconds = Math.round(isMinutes ? value * 60 : value)
+  return Math.min(600, Math.max(3, seconds))
+}
+
 // Human-scannable naskah title: "W3·D2 · Jepang · AFGHAN" (week/day only shown
 // if the brief carries them). Falls back to the brief title when there's no
 // explicit topic. Keeps the queue readable instead of a wall of "Untitled".
@@ -99,7 +122,7 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
   }
 
   const platform = brief.platform || 'tiktok'
-  const targetDurationS = 30
+  const targetDurationS = resolveTargetDurationS(brief.fields)
   const aspectRatio = '9:16'
 
   let generation
@@ -113,7 +136,16 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
       aspectRatio,
       extraContext: params.extraContext,
     })
-    const raw = await callGeminiJSON({ apiKey, prompt, responseSchema: GENERATION_RESPONSE_SCHEMA, temperature: 0.8 })
+    // Generous output budget. This call used to pass none, falling back to the
+    // shim's 8000 — and gemini-2.5-flash spends part of THAT SAME budget on
+    // hidden "thinking" tokens before it writes a single character of JSON, so
+    // the room actually left for the naskah was much smaller than 8000. The
+    // model responds by wrapping the script up early (short bodies, the
+    // occasional line cut mid-sentence) rather than erroring, which is why the
+    // truncation was silent. The full JSON for even a 60-block naskah is far
+    // under this ceiling; raising it only removes the squeeze (billing is on
+    // tokens actually produced, not the ceiling).
+    const raw = await callGeminiJSON({ apiKey, prompt, responseSchema: GENERATION_RESPONSE_SCHEMA, temperature: 0.8, maxOutputTokens: 32000 })
     generation = GenerationOutputSchema.parse(raw)
   } catch (e) {
     const msg = e instanceof LLMError ? e.message : e instanceof Error ? e.message : 'generation failed'
@@ -222,7 +254,9 @@ export async function runAutoQc(opts: {
   // the writer can trigger the full critic per naskah via /qc/rerun.
   if (!opts.skipCritic) try {
     const prompt = buildCriticPrompt({ persona, brief, blocks: blocks.map((b) => ({ block_id: b.block_id, section_key: b.section_key, shot_no: b.shot_no, line_no: b.line_no, text: b.text })) })
-    const raw = await callGeminiJSON({ apiKey, prompt, responseSchema: CRITIC_RESPONSE_SCHEMA, temperature: 0.4 })
+    // Same thinking-token squeeze as the generation call above: a critic pass
+    // over a long naskah has to reason about every block before emitting flags.
+    const raw = await callGeminiJSON({ apiKey, prompt, responseSchema: CRITIC_RESPONSE_SCHEMA, temperature: 0.4, maxOutputTokens: 16000 })
     const critic = CriticOutputSchema.parse(raw)
     for (const f of critic.flags) {
       const block = blockById.get(f.block_id)
