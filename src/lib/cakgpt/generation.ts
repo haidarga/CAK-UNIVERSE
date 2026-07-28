@@ -20,6 +20,10 @@ export type GenerateNaskahParams = {
   personaIdOverride?: string
   hookRubricIdOverride?: string
   extraContext?: string
+  // Multi-day fan-out: which day of how many this naskah covers for the topic.
+  // Omitted = single-day (unchanged behavior).
+  dayNo?: number
+  dayTotal?: number
   sourceIdeaSessionId?: string
   sourceIdeaAngleNo?: number
   skipCritic?: boolean // bulk fast-path — see runAutoQc
@@ -74,13 +78,23 @@ export function resolveTargetDurationS(fields: Record<string, unknown> | null | 
 // Human-scannable naskah title: "W3·D2 · Jepang · AFGHAN" (week/day only shown
 // if the brief carries them). Falls back to the brief title when there's no
 // explicit topic. Keeps the queue readable instead of a wall of "Untitled".
-export function composeNaskahTitle(brief: { title: string; fields?: Record<string, unknown> | null }, personaName: string): string {
+export function composeNaskahTitle(
+  brief: { title: string; fields?: Record<string, unknown> | null },
+  personaName: string,
+  // Multi-day fan-out only: distinguishes the N naskah generated from the SAME
+  // topic × persona. Without it they'd all share one title and be impossible to
+  // tell apart in the triage queue.
+  day?: { no?: number; total?: number },
+): string {
   const fields = brief.fields || {}
   const topic = fieldLookup(fields, /\b(topic|topik|tema|subject)\b/i) || brief.title
   const week = fieldLookup(fields, /\b(week|minggu|pekan)\b/i)?.match(/\d+/)?.[0]
-  const day = fieldLookup(fields, /\b(day|hari)\b/i)?.match(/\d+/)?.[0]
-  const prefix = [week ? `W${week}` : '', day ? `D${day}` : ''].filter(Boolean).join('·')
-  return [prefix, topic, personaName].filter(Boolean).join(' · ')
+  const planDay = fieldLookup(fields, /\b(day|hari)\b/i)?.match(/\d+/)?.[0]
+  const prefix = [week ? `W${week}` : '', planDay ? `D${planDay}` : ''].filter(Boolean).join('·')
+  // Only shown when the run actually spans multiple days — a 1-day run keeps
+  // the exact title format it had before this feature existed.
+  const daySuffix = day?.no && (day.total ?? 1) > 1 ? `Hari ${day.no}${day.total ? `/${day.total}` : ''}` : ''
+  return [prefix, topic, personaName, daySuffix].filter(Boolean).join(' · ')
 }
 
 export async function generateNaskah(params: GenerateNaskahParams): Promise<GenerateNaskahResult> {
@@ -135,6 +149,8 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
       targetDurationS,
       aspectRatio,
       extraContext: params.extraContext,
+      dayNo: params.dayNo,
+      dayTotal: params.dayTotal,
     })
     // Generous output budget. This call used to pass none, falling back to the
     // shim's 8000 — and gemini-2.5-flash spends part of THAT SAME budget on
@@ -176,7 +192,7 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
       persona_id: personaId,
       // Readable, scannable title (week · day · topic · persona) so the fan-out
       // doesn't produce a queue full of "Untitled naskah".
-      title: composeNaskahTitle(brief, persona.name),
+      title: composeNaskahTitle(brief, persona.name, { no: params.dayNo, total: params.dayTotal }),
       status: 'draft',
       source: params.sourceIdeaSessionId ? 'promoted_from_idea' : 'generated',
       source_idea_session_id: params.sourceIdeaSessionId || null,

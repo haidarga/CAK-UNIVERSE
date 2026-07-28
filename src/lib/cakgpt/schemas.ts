@@ -66,20 +66,41 @@ export const IdeaOutputSchema = z.object({
 // Bulk fan-out request (decision #2): one item = one (brief × persona) pair to
 // generate. persona_id omitted/null falls back to the brief's default persona
 // inside generateNaskah(). The client multiplies briefs × personas client-side.
+// Shared so the UI's clamp and the server's validation can never drift apart —
+// these were previously duplicated as bare literals in both components.
+export const MAX_DAY_TOTAL = 30
+export const MAX_FANOUT_ITEMS = 4000
+
 export const GenerateBatchItemSchema = z.object({
   brief_id: z.string().uuid(),
   persona_id: z.string().uuid().nullable().optional(),
   // Optional writer steering ("arahan") applied to this fan-out item — shapes
   // how the naskah turns out. Empty/omitted = plain direct generate.
   extra_context: z.string().max(4000).nullable().optional(),
+  // Multi-day fan-out: which day of how many this naskah is for. Both null
+  // (the default) = the original one-naskah-per-(brief x persona) behavior.
+  // Capped so one click can't quietly enqueue a month-per-topic run.
+  day_no: z.number().int().min(1).max(MAX_DAY_TOTAL).nullable().optional(),
+  day_total: z.number().int().min(1).max(MAX_DAY_TOTAL).nullable().optional(),
 })
+  // This route is a trust boundary, not just a UI callee: validate the pair is
+  // coherent instead of assuming a well-behaved client. Half a pair (or
+  // day_no > day_total) would otherwise persist a row that the title/prompt
+  // guards silently treat as single-day — the day would be stored but never
+  // rendered, so the naskah looks mislabeled everywhere downstream.
+  .refine((it) => (it.day_no == null) === (it.day_total == null), {
+    message: 'day_no and day_total must be set together',
+  })
+  .refine((it) => it.day_no == null || it.day_total == null || it.day_no <= it.day_total, {
+    message: 'day_no must not exceed day_total',
+  })
 export type GenerateBatchItem = z.infer<typeof GenerateBatchItemSchema>
 
 export const GenerateBatchBodySchema = z.object({
   // Generation is now background jobs (enqueue → drain in chunks), so a big
   // fan-out (e.g. 100 briefs × 9 personas = 900) is fine — the old max:200 was a
   // leftover from the synchronous design and rejected large Import & Generate runs.
-  items: z.array(GenerateBatchItemSchema).min(1).max(4000),
+  items: z.array(GenerateBatchItemSchema).min(1).max(MAX_FANOUT_ITEMS),
 })
 
 // ── Brief import / extraction (content plan file → many briefs) ─────────────

@@ -110,7 +110,29 @@ export function buildGenerationPrompt(opts: {
   targetDurationS: number
   aspectRatio: string
   extraContext?: string
+  dayNo?: number
+  dayTotal?: number
 }): string {
+  // Multi-day fan-out. Deliberately does NOT prescribe what makes each day
+  // different (no forced hook rotation, no fixed awareness->CTA funnel): the
+  // writer drives that from the brief's own content and their steering, so the
+  // model is told which day it's on and pointed back at those two sources.
+  const multiDay = !!opts.dayNo && (opts.dayTotal ?? 1) > 1
+  const daySection = multiDay
+    ? [
+        '',
+        '## MULTI-DAY SERIES',
+        `This topic runs across ${opts.dayTotal} days and you are writing DAY ${opts.dayNo} of ${opts.dayTotal}.`,
+        'All days share this same brief and persona, so the ONLY thing that should change is the',
+        'treatment of this specific day. Derive that from the brief above (and the writer steering',
+        'below, if present) — if either lays out what each day should cover, follow it exactly for',
+        `day ${opts.dayNo}. If they do not, choose a distinct angle/entry point for this day that`,
+        'still serves the same brief.',
+        `Write ONLY day ${opts.dayNo} — do not summarize the other days, and do not open with a`,
+        'recap unless the brief asks for one. This must read as a standalone video that happens to',
+        'be part of a series, not a fragment.',
+      ].join('\n')
+    : ''
   return [
     'You are writing a short-form video naskah (script) in Indonesian, in the exact voice of the',
     'persona below, strictly serving the brief below. Output a shot-by-shot breakdown as blocks.',
@@ -126,6 +148,7 @@ export function buildGenerationPrompt(opts: {
     'Break the naskah into shots; each shot may have multiple lines/blocks. Number shot_no and',
     'line_no sequentially starting at 1. Use section_key to label structural parts (e.g. "hook",',
     '"body", "cta").',
+    daySection,
     // Writer steering ("arahan"): unlike persona/brief data, this is a
     // directive the writer typed to shape THIS generation — present it as an
     // instruction to follow (still sanitized: control/hidden chars stripped,

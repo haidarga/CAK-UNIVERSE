@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Upload, ClipboardPaste, FileText, X, Sparkles, Loader2, ExternalLink } from 'lucide-react'
 import { uploadFileForImport, MAX_IMPORT_UPLOAD_BYTES } from '@/lib/cakgpt/upload-client'
+import { MAX_DAY_TOTAL, MAX_FANOUT_ITEMS } from '@/lib/cakgpt/schemas'
 
 type PreviewBrief = {
   _id: string // stable client-side key (extraction time), never sent to the server
@@ -40,6 +41,9 @@ export function BriefImport({ clients, personas }: {
   // Optional writer steering ("arahan") applied to the whole fan-out on
   // Import & Generate — empty = plain direct generate (unchanged behavior).
   const [steering, setSteering] = useState('')
+  // Multi-day fan-out: how many naskah to generate per (brief × persona).
+  // 1 = the original behavior.
+  const [days, setDays] = useState(1)
   // Once committed, hold {id, cluster} PAIRS from the commit response — not
   // re-derived by re-indexing into local `briefs` state — so a later step
   // failing (batch/generate) and the writer editing/removing rows before
@@ -107,12 +111,52 @@ export function BriefImport({ clients, personas }: {
   function updateCluster(id: string, cluster: string) {
     setBriefs((prev) => prev && prev.map((b) => (b._id === id ? { ...b, cluster: cluster || null } : b)))
   }
+
+  const clampDays = (d: number) => Math.max(1, Math.min(MAX_DAY_TOTAL, d))
+
+  // Personas grouped by cluster — needed both to project the fan-out size
+  // BEFORE committing and to resolve the real items after.
+  function buildPersonasByCluster(): Map<string, string[]> {
+    const map = new Map<string, string[]>()
+    for (const p of personas) {
+      if (!p.cluster) continue
+      const key = p.cluster.trim().toLowerCase()
+      const list = map.get(key) || []
+      list.push(p.id)
+      map.set(key, list)
+    }
+    return map
+  }
+
+  // How many personas a brief with this cluster will actually fan out to —
+  // mirrors the resolution order used when building the real items.
+  function personasForCluster(cluster: string | null | undefined, byCluster: Map<string, string[]>): number {
+    const key = cluster?.trim().toLowerCase()
+    const clusterMatches = key ? byCluster.get(key) || [] : []
+    const checkedMatches = selectedPersonaIds.filter((id) => clusterMatches.includes(id))
+    if (checkedMatches.length > 0) return checkedMatches.length
+    if (selectedPersonaIds.length > 0) return selectedPersonaIds.length
+    if (clusterMatches.length > 0) return clusterMatches.length
+    return 1
+  }
+
+  // Exact projected naskah count. Computed from the PREVIEW briefs so an
+  // over-cap run is refused BEFORE anything is committed — otherwise the
+  // briefs and batch are already persisted when the server rejects the
+  // oversized payload, leaving the writer with orphaned rows and a vague
+  // "network error" (a payload this large can exceed the request body limit
+  // before the route's own friendly cap message can even run).
+  function projectedNaskahCount(list: PreviewBrief[]): number {
+    const byCluster = buildPersonasByCluster()
+    const dayTotal = clampDays(days)
+    return list.reduce((sum, b) => sum + personasForCluster(b.cluster, byCluster) * dayTotal, 0)
+  }
   function removeBrief(id: string) {
     setBriefs((prev) => prev && prev.filter((b) => b._id !== id))
   }
   function reset() {
     setBriefs(null); setText(''); setGdoc(''); setHint(''); setFileName(null); setSelectedPersonaIds([])
-    setCommittedBriefs(null); setCreatedBatchId(null); setError(null); setProgress(null); setSteering('')
+    setCommittedBriefs(null); setCreatedBatchId(null); setError(null); setProgress(null); setSteering(''); setDays(1)
     if (fileRef.current) fileRef.current.value = ''
   }
 
@@ -159,6 +203,17 @@ export function BriefImport({ clients, personas }: {
   // (brief × persona) into naskah → land in the triage queue.
   async function importAndGenerate() {
     if (!briefs || briefs.length === 0) return
+
+    // Pre-flight, BEFORE anything is persisted (see projectedNaskahCount).
+    const projected = projectedNaskahCount(briefs)
+    if (projected > MAX_FANOUT_ITEMS) {
+      setError(
+        `Kebanyakan: ${projected.toLocaleString('id-ID')} naskah sekali jalan (maks ${MAX_FANOUT_ITEMS.toLocaleString('id-ID')}). ` +
+        `Kurangi jumlah hari (sekarang ${clampDays(days)}), persona yang dicentang, atau brief-nya — atau import bertahap.`,
+      )
+      return
+    }
+
     setBusy('generate'); setError(null); setProgress(null)
     try {
       const committed = await ensureCommitted(briefs)
@@ -196,16 +251,10 @@ export function BriefImport({ clients, personas }: {
       //      default persona)" used to hard-fail on)
       //   4. null -> server falls back to the brief's own persona_id (commit
       //      already tried to resolve that from cluster too; may still be empty)
-      const personasByCluster = new Map<string, string[]>()
-      for (const p of personas) {
-        if (!p.cluster) continue
-        const key = p.cluster.trim().toLowerCase()
-        const list = personasByCluster.get(key) || []
-        list.push(p.id)
-        personasByCluster.set(key, list)
-      }
+      const personasByCluster = buildPersonasByCluster()
       const arahan = steering.trim() || undefined
-      const items: Array<{ brief_id: string; persona_id: string | null; extra_context?: string }> = []
+      const dayTotal = clampDays(days)
+      const items: Array<{ brief_id: string; persona_id: string | null; extra_context?: string; day_no?: number; day_total?: number }> = []
       for (const { id: briefId, cluster } of committed) {
         const clusterKey = cluster?.trim().toLowerCase()
         const clusterMatches = clusterKey ? personasByCluster.get(clusterKey) || [] : []
@@ -215,7 +264,18 @@ export function BriefImport({ clients, personas }: {
           : selectedPersonaIds.length > 0 ? selectedPersonaIds
           : clusterMatches.length > 0 ? clusterMatches
           : [null]
-        for (const personaId of resolved) items.push({ brief_id: briefId, persona_id: personaId, extra_context: arahan })
+        for (const personaId of resolved) {
+          // Third dimension: one naskah per day for this (brief × persona).
+          // dayTotal === 1 sends no day fields at all, so a single-day run is
+          // byte-identical to the pre-feature payload.
+          if (dayTotal === 1) {
+            items.push({ brief_id: briefId, persona_id: personaId, extra_context: arahan })
+          } else {
+            for (let d = 1; d <= dayTotal; d++) {
+              items.push({ brief_id: briefId, persona_id: personaId, extra_context: arahan, day_no: d, day_total: dayTotal })
+            }
+          }
+        }
       }
 
       setProgress(`Queueing ${items.length} naskah…`)
@@ -394,6 +454,20 @@ export function BriefImport({ clients, personas }: {
           )}
 
           <div>
+            <label htmlFor="import-days" className="mb-1 block text-xs font-medium text-text">
+              Hari per topik <span className="font-normal text-mutedText">(1 = satu naskah per persona)</span>
+            </label>
+            <input
+              id="import-days" type="number" min={1} max={MAX_DAY_TOTAL} value={days} disabled={disabled}
+              onChange={(e) => setDays(clampDays(parseInt(e.target.value, 10) || 1))}
+              className="w-24 rounded-md border border-border bg-background px-2 py-1.5 text-sm text-text focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-60"
+            />
+            <p className="mt-1 text-[11px] text-mutedText">
+              Isi &gt;1 buat garap satu topik selama beberapa hari. Yang bikin tiap hari beda diambil dari isi brief + Arahan di bawah — tulis aja rencana per-harinya di situ.
+            </p>
+          </div>
+
+          <div>
             <div className="mb-1 flex items-center gap-2">
               <span className="text-xs font-medium text-text">Arahan</span>
               <span className="text-[11px] text-mutedText">opsional — arahin gaya/angle/isi naskah. Kosongin = generate langsung.</span>
@@ -424,7 +498,18 @@ export function BriefImport({ clients, personas }: {
             {selectedPersonaIds.length > 0
               ? `Import & Generate → tiap brief dipasangin persona yang lu centang DAN cluster-nya cocok (kalau ada cluster match). Brief tanpa cluster match tetap dapet semua ${selectedPersonaIds.length} persona yang dicentang.`
               : 'Import & Generate → pakai persona yang cluster-nya cocok sama brief (kalau ke-detect), atau default persona brief (pick personas above buat override manual).'}
+            {days > 1 && ` Tiap pasangan digenerate ${days} kali (hari 1–${days}).`}
           </p>
+          {(() => {
+            const projected = projectedNaskahCount(briefs)
+            const over = projected > MAX_FANOUT_ITEMS
+            return (
+              <p className={`text-[11px] font-medium ${over ? 'text-destructive' : 'text-mutedText'}`}>
+                Perkiraan hasil: {projected.toLocaleString('id-ID')} naskah
+                {over && ` — lewat batas ${MAX_FANOUT_ITEMS.toLocaleString('id-ID')}/run, kurangi hari/persona/brief dulu`}
+              </p>
+            )
+          })()}
         </div>
       )}
     </div>

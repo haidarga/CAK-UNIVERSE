@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Check, X, Sparkles, RefreshCw, FileUp, FileDown, ExternalLink, Pencil, Save, RotateCcw, ShieldCheck, ChevronDown, Link2 } from 'lucide-react'
+import { MAX_DAY_TOTAL, MAX_FANOUT_ITEMS } from '@/lib/cakgpt/schemas'
 
 type QueueItem = {
   naskah_id: string
@@ -67,6 +68,9 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
   // Optional writer steering ("arahan") applied to this fan-out — empty = plain
   // direct generate (decision #2 + steering feature).
   const [steering, setSteering] = useState('')
+  // Multi-day fan-out: naskah per (brief × persona). 1 = original behavior.
+  const [days, setDays] = useState(1)
+  const clampDays = (d: number) => Math.max(1, Math.min(MAX_DAY_TOTAL, d))
   const [generating, setGenerating] = useState(false)
   const [genProgress, setGenProgress] = useState<string | null>(null)
   const [fanoutOpen, setFanoutOpen] = useState(false)
@@ -273,8 +277,24 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
     if (selectedBriefIds.length === 0) return
     const personaIds = selectedPersonaIds.length > 0 ? selectedPersonaIds : [null]
     const arahan = steering.trim() || undefined
+    // Multi-day fan-out: dayTotal === 1 sends no day fields at all, keeping a
+    // single-day run byte-identical to the pre-feature payload.
+    const dayTotal = clampDays(days)
+    // Refuse an over-cap run here rather than letting the server reject the
+    // whole payload — at this size the request can also exceed the body limit
+    // before the route's own friendly message gets a chance to fire.
+    if (fanoutCount > MAX_FANOUT_ITEMS) {
+      setGenProgress(`Kebanyakan: ${fanoutCount.toLocaleString('id-ID')} naskah (maks ${MAX_FANOUT_ITEMS.toLocaleString('id-ID')}/run) — kurangi hari/persona/brief.`)
+      return
+    }
     const genItems = selectedBriefIds.flatMap((briefId) =>
-      personaIds.map((personaId) => ({ brief_id: briefId, persona_id: personaId, extra_context: arahan })),
+      personaIds.flatMap((personaId) =>
+        dayTotal === 1
+          ? [{ brief_id: briefId, persona_id: personaId, extra_context: arahan }]
+          : Array.from({ length: dayTotal }, (_, i) => ({
+              brief_id: briefId, persona_id: personaId, extra_context: arahan, day_no: i + 1, day_total: dayTotal,
+            })),
+      ),
     )
     setGenerating(true)
     setGenProgress(`Queueing ${genItems.length} naskah…`)
@@ -285,7 +305,9 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
       })
       const data = await res.json()
       if (!data.ok) { setGenProgress(data.error || 'failed to queue generation'); return }
-      setSelectedBriefIds([]); setSelectedPersonaIds([]); setSteering('')
+      // Reset days too: a 7-day series left set would silently carry into the
+      // next, unrelated fan-out from this same panel and multiply it.
+      setSelectedBriefIds([]); setSelectedPersonaIds([]); setSteering(''); setDays(1)
       setGenProgress(`Queued ${data.enqueued} naskah — generating in the background…`)
       pump() // drain the queue; naskah stream into the list as they finish
     } catch {
@@ -449,7 +471,9 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
     flagsByBlock.set(f.target_ref.block_id, list)
   }
 
-  const fanoutCount = selectedBriefIds.length * (selectedPersonaIds.length || 1)
+  // Same clamp the request uses, so the button label can never disagree with
+  // what actually gets enqueued.
+  const fanoutCount = selectedBriefIds.length * (selectedPersonaIds.length || 1) * clampDays(days)
   const displayBlocks = editing ? (editedBlocks || []) : (detail?.naskah.current_version?.body || [])
 
   return (
@@ -596,12 +620,21 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
               </div>
 
               <div className="flex items-center gap-2 pt-0.5">
+                <label htmlFor="triage-days" className="text-[11px] font-medium text-text">Hari/topik</label>
+                <input
+                  id="triage-days" type="number" min={1} max={MAX_DAY_TOTAL} value={days} disabled={generating}
+                  onChange={(e) => setDays(clampDays(parseInt(e.target.value, 10) || 1))}
+                  title="Berapa naskah per (brief × persona). >1 = satu topik digarap beberapa hari; pembedanya diambil dari brief + Arahan."
+                  className="w-16 rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-text outline-none focus:border-primary disabled:opacity-60"
+                />
                 <button onClick={generateBatch} disabled={generating || selectedBriefIds.length === 0 || (genStatus?.active ?? 0) > 0}
                   className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-onPrimary hover:opacity-90 disabled:opacity-50 cursor-pointer">
                   {(genStatus?.active ?? 0) > 0 ? 'Generating…' : generating ? 'Queueing…' : `Generate ${fanoutCount} naskah`}
                 </button>
                 {selectedBriefIds.length > 0 && (
-                  <span className="text-[11px] text-mutedText">{selectedBriefIds.length} briefs × {selectedPersonaIds.length || 1} personas</span>
+                  <span className="text-[11px] text-mutedText">
+                    {selectedBriefIds.length} briefs × {selectedPersonaIds.length || 1} personas{days > 1 ? ` × ${days} hari` : ''}
+                  </span>
                 )}
                 {genProgress && <span className="text-xs text-mutedText">{genProgress}</span>}
               </div>
