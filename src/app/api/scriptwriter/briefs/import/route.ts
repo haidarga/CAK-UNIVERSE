@@ -5,7 +5,7 @@ import { getActiveClientId } from '@/lib/cakgpt/active-client'
 import { getGeminiApiKey } from '@/lib/cakgpt/settings'
 import { getValidAccessToken } from '@/lib/cakgpt/google-oauth'
 import { getDoc } from '@/lib/cakgpt/google-docs'
-import { extractBriefsFromText, extractHooksFromText, detectFileRole, type FileRole } from '@/lib/cakgpt/brief-extract'
+import { extractBriefsFromText, extractBriefsFromInstruction, extractHooksFromText, detectFileRole, type FileRole } from '@/lib/cakgpt/brief-extract'
 import { readSourceFromStorage } from '@/lib/cakgpt/import-storage'
 import { MAX_SOURCES, type HookBankItem } from '@/lib/cakgpt/schemas'
 import { withDeadline, DeadlineExceededError } from '@/lib/cakgpt/deadline'
@@ -179,26 +179,25 @@ async function handleImport(req: Request) {
     sources.forEach((s) => { s.role = s.role || 'topics' })
   }
 
-  // A lone DETECTED hook bank is almost certainly a misread — with nothing else
-  // to extract briefs from, the import would "succeed" with an empty preview.
-  // Only override our own guess: an explicit role from the caller is honored,
-  // and the zero-topics guard below reports it properly instead.
-  if (sources.length === 1 && sources[0].role === 'hooks' && !sources[0].roleFromClient) {
-    sources[0].role = 'topics'
-  }
+  // NOTE: a lone file used to be forced to 'topics' here, on the assumption
+  // that without a plan file there was nothing to build briefs from. That was
+  // wrong — uploading ONLY a hook bank and typing the topic in the instruction
+  // is a first-class flow, and the coercion silently turned every hook line
+  // into its own "brief" (12 hooks -> 12 topics). The topic can come from a
+  // plan file OR from what the writer typed; see the fallback below.
 
   const topicText = sources.filter((s) => s.role === 'topics').map((s) => s.text).join('\n\n')
   const hookText = sources.filter((s) => s.role === 'hooks').map((s) => s.text).join('\n\n')
   const sourceText = topicText
   const detectedSources = sources.map((s) => ({ filename: s.label, role: s.role }))
 
-  // Nothing was read as a content plan. Say WHICH file became what instead of
-  // letting the generic "source is empty" bubble up — the writer can't tell
-  // "I forgot the plan" from "the detector got it wrong" without this.
-  if (!topicText.trim()) {
+  // Nothing to build briefs from at all: no plan file AND nothing typed.
+  if (!topicText.trim() && !hint?.trim()) {
     return NextResponse.json({
       ok: false,
-      error: `Nggak ada file yang kebaca sebagai content plan — semuanya kedeteksi hook bank (${detectedSources.map((s) => s.filename).join(', ')}). Upload file content plan-nya juga, atau rename file-nya biar nggak keliatan kayak hook bank.`,
+      error: detectedSources.length > 0
+        ? `Nggak ada topik: file yang lu upload kebaca sebagai hook bank (${detectedSources.map((s) => s.filename).join(', ')}), dan kolom arahan kosong. Tulis topiknya di kolom arahan, atau upload file content plan-nya juga.`
+        : 'Nggak ada topik — tulis topiknya di kolom arahan, atau upload file content plan.',
       sources: detectedSources,
     }, { status: 422 })
   }
@@ -213,9 +212,15 @@ async function handleImport(req: Request) {
   const { data: clusterRows } = await clusterQuery
   const knownClusters = [...new Set((clusterRows || []).map((r) => r.cluster).filter((c): c is string => !!c))].slice(0, 20)
 
+  // Topic source: a plan file when there is one, otherwise what the writer
+  // typed. The two use DIFFERENT prompts on purpose — the plan extractor is
+  // built to split rows of a spreadsheet and would misread a one-line
+  // assignment (that mismatch is what turned a 12-hook bank into 12 "briefs").
   let result: Awaited<ReturnType<typeof extractBriefsFromText>>
   try {
-    result = await withDeadline(extractBriefsFromText({ apiKey, text: sourceText, hint, knownClusters }), EXTRACT_DEADLINE_MS, 'extraction')
+    result = topicText.trim()
+      ? await withDeadline(extractBriefsFromText({ apiKey, text: sourceText, hint, knownClusters }), EXTRACT_DEADLINE_MS, 'extraction')
+      : await withDeadline(extractBriefsFromInstruction({ apiKey, instruction: hint as string, knownClusters }), EXTRACT_DEADLINE_MS, 'extraction')
   } catch (e) {
     const msg = e instanceof DeadlineExceededError
       ? 'this plan is taking too long to extract — try a smaller file or split it into parts.'

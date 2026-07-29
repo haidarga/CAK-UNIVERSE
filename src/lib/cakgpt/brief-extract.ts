@@ -18,6 +18,7 @@ import {
   buildNaskahExtractionPrompt, NASKAH_EXTRACTION_RESPONSE_SCHEMA,
   buildHookExtractionPrompt, HOOK_EXTRACTION_RESPONSE_SCHEMA,
   buildFileRolePrompt, FILE_ROLE_RESPONSE_SCHEMA,
+  buildTopicFromInstructionPrompt,
 } from '@/lib/cakgpt/prompts'
 import {
   BriefExtractionOutputSchema, ImportedNaskahSchema, HookBankOutputSchema, MAX_HOOK_BANK,
@@ -195,6 +196,40 @@ export async function extractBriefsFromText(opts: { apiKey: string; text: string
       return { ok: false, error: 'a section of this plan is too large to extract in one go — try a smaller file or split it into parts.' }
     }
     return { ok: false, error: `extraction failed: ${msg}` }
+  }
+}
+
+// Build the brief(s) from what the writer TYPED, for the hook-bank-only flow
+// (no content plan uploaded — the topic lives in the instruction). Same output
+// shape as extractBriefsFromText so the rest of the route is unchanged.
+export async function extractBriefsFromInstruction(opts: { apiKey: string; instruction: string; knownClusters?: string[] }): Promise<ExtractBriefsResult> {
+  const trimmed = opts.instruction.trim()
+  if (!trimmed) return { ok: false, error: 'no topic given' }
+
+  try {
+    const raw = await callGeminiJSON({
+      apiKey: opts.apiKey,
+      prompt: buildTopicFromInstructionPrompt({ instruction: trimmed.slice(0, 4000), knownClusters: opts.knownClusters }),
+      responseSchema: BRIEF_EXTRACTION_RESPONSE_SCHEMA,
+      temperature: 0.2, // reading an assignment, not inventing one
+      maxOutputTokens: 8000,
+    })
+    const parsed = BriefExtractionOutputSchema.parse(Array.isArray(raw) ? { briefs: raw } : raw)
+    const briefs: ImportBrief[] = parsed.briefs
+      .map((b) => {
+        const fields: Record<string, string> = {}
+        for (const { key, value } of b.fields) {
+          const k = key.trim(); const v = value.trim()
+          if (k && v) fields[k] = v
+        }
+        return { title: b.title.trim(), product: b.product?.trim() || null, platform: b.platform?.trim() || null, cluster: b.cluster?.trim() || null, fields }
+      })
+      .filter((b) => b.title.length > 0)
+    if (briefs.length === 0) return { ok: false, error: 'nggak nemu topik dari arahan yang lu tulis — sebutin topiknya lebih jelas, atau upload file content plan' }
+    return { ok: true, briefs: briefs.slice(0, 20) }
+  } catch (e) {
+    const msg = e instanceof LLMError ? e.message : e instanceof Error ? e.message : 'failed'
+    return { ok: false, error: `gagal baca topik dari arahan: ${msg}` }
   }
 }
 

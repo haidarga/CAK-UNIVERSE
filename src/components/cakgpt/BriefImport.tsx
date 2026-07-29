@@ -391,8 +391,17 @@ export function BriefImport({ clients, personas }: {
             </div>
           )}
 
-          <input value={hint} onChange={(e) => setHint(e.target.value)} placeholder="Optional hint for the AI (e.g. 'each row is one TikTok idea')" disabled={extracting}
-            className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-text focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring" />
+          <div>
+            <label htmlFor="import-hint" className="mb-1 block text-xs font-medium text-text">
+              Topik / arahan <span className="font-normal text-mutedText">(wajib kalau lu cuma upload hook bank)</span>
+            </label>
+            <textarea id="import-hint" value={hint} onChange={(e) => setHint(e.target.value)} rows={2} disabled={extracting}
+              placeholder="mis. Bikin script dengan topik PURE NUTRITION — pakai hook dari hook bank yang gua upload"
+              className="w-full resize-y rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-text focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring" />
+            <p className="mt-1 text-[11px] text-mutedText">
+              Topiknya bisa dari sini <span className="font-medium text-text">atau</span> dari file content plan yang lu upload — nggak harus dua-duanya.
+            </p>
+          </div>
 
           <button onClick={extract} disabled={extracting}
             className="flex w-full items-center justify-center gap-1.5 rounded-md bg-primary py-2 text-sm font-medium text-onPrimary hover:opacity-90 disabled:opacity-50 cursor-pointer">
