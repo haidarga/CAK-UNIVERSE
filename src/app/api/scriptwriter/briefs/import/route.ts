@@ -186,6 +186,17 @@ async function handleImport(req: Request) {
   // into its own "brief" (12 hooks -> 12 topics). The topic can come from a
   // plan file OR from what the writer typed; see the fallback below.
 
+  // Safety net for the plain "upload a content plan, generate everything" flow.
+  // If NOTHING was read as a plan and the writer typed no topic either, the
+  // upload can only have been meant as the plan — detection just misread it
+  // (an odd filename plus an ambiguous first page is enough). Re-interpreting
+  // beats erroring: without this, removing the old lone-file coercion would
+  // have let a misdetect break the original fully-automatic path. An explicit
+  // role from the caller is still honored.
+  if (!sources.some((s) => s.role === 'topics') && !hint?.trim() && sources.length > 0) {
+    sources.forEach((s) => { if (!s.roleFromClient) s.role = 'topics' })
+  }
+
   const topicText = sources.filter((s) => s.role === 'topics').map((s) => s.text).join('\n\n')
   const hookText = sources.filter((s) => s.role === 'hooks').map((s) => s.text).join('\n\n')
   const sourceText = topicText
