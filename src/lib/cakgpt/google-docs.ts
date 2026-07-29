@@ -8,11 +8,12 @@
 //     to the reader, unlike the old `[[id:...]]` marker that used to sit
 //     right in the visible title.
 //   - Pull: re-parses the Doc's plain text back into blocks on a best-effort
-//     basis (regex against the "shot.line (section): text" format we wrote).
-//     Lines the writer reformatted freely become new blocks with fresh
-//     block_ids — this deliberately reuses the same "structural edit orphans
-//     the old flag" behavior already designed into the manual-edit path
-//     (see qc_flags target_ref / ARCHITECTURE.md §3), not a new hack.
+//     basis. Push no longer writes the old "shot.line (section): " prefix —
+//     it was machine scaffolding the writer had to read on every line — so
+//     pull now rebuilds blocks positionally with fresh block_ids. That is the
+//     same path a human-rewritten line always took (see qc_flags target_ref /
+//     ARCHITECTURE.md §3); the STRUCTURED_LINE_RE branch is kept only for docs
+//     pushed before this change.
 import type { Block, BlockInput } from '@/lib/cakgpt/schemas'
 import { generateBlockId } from '@/lib/cakgpt/block-id'
 
@@ -96,13 +97,11 @@ type DocNamedRanges = Record<string, { namedRanges?: Array<{ name?: string; rang
 type RenderedNaskah = {
   text: string
   headingEnd: number
-  prefixRanges: Array<{ start: number; end: number }> // "N.N (section...): "
   speakerRanges: Array<{ start: number; end: number }> // "Speaker: "
   noteRanges: Array<{ start: number; end: number }> // "   [visual note]"
 }
 
 function renderNaskah(n: NaskahForDoc): RenderedNaskah {
-  const prefixRanges: RenderedNaskah['prefixRanges'] = []
   const speakerRanges: RenderedNaskah['speakerRanges'] = []
   const noteRanges: RenderedNaskah['noteRanges'] = []
 
@@ -117,11 +116,20 @@ function renderNaskah(n: NaskahForDoc): RenderedNaskah {
   let text = `${title}\n`
   const headingEnd = text.indexOf('\n')
 
+  // No "N.N (section): " prefix any more — it was scaffolding for the machine
+  // (pull re-parsed it) that the writer had to read on EVERY line. Sections
+  // now show as a blank line where the section changes, so the shape is still
+  // visible without labels. Trade-off accepted deliberately: pull can no
+  // longer recover shot/line/section from the text, so a pulled naskah gets
+  // fresh block_ids — the same path any human-rewritten line already took, and
+  // pull has never been used on any doc here (0 of 5). The alternative (a
+  // named range per block to keep it machine-readable) would mean 1000+ named
+  // ranges in one doc with no documented API limit, risking the push flow that
+  // IS used constantly.
+  let prevSection: string | null = null
   for (const block of n.body) {
-    const ts = block.timestamp_range ? ` ${block.timestamp_range}` : ''
-    const prefixStart = text.length
-    text += `${block.shot_no}.${block.line_no} (${block.section_key}${ts}): `
-    prefixRanges.push({ start: prefixStart, end: text.length })
+    if (prevSection !== null && block.section_key !== prevSection) text += '\n'
+    prevSection = block.section_key
 
     if (block.speaker) {
       const speakerStart = text.length
@@ -137,7 +145,7 @@ function renderNaskah(n: NaskahForDoc): RenderedNaskah {
       noteRanges.push({ start: noteStart, end: text.length - 1 }) // exclude the trailing \n
     }
   }
-  return { text: text + '\n', headingEnd, prefixRanges, speakerRanges, noteRanges }
+  return { text: text + '\n', headingEnd, speakerRanges, noteRanges }
 }
 
 const MUTED = { red: 0.45, green: 0.45, blue: 0.45 }
@@ -164,7 +172,6 @@ export async function pushNaskahToDoc(accessToken: string, documentId: string, n
 
   let fullText = ''
   const headingRanges: Array<{ start: number; end: number; naskahId: string }> = []
-  const prefixRanges: Array<{ start: number; end: number }> = []
   const speakerRanges: Array<{ start: number; end: number }> = []
   const noteRanges: Array<{ start: number; end: number }> = []
 
@@ -173,7 +180,6 @@ export async function pushNaskahToDoc(accessToken: string, documentId: string, n
     const r = renderNaskah(n)
     fullText += r.text
     headingRanges.push({ start, end: start + r.headingEnd, naskahId: n.naskah_id })
-    for (const x of r.prefixRanges) prefixRanges.push({ start: start + x.start, end: start + x.end })
     for (const x of r.speakerRanges) speakerRanges.push({ start: start + x.start, end: start + x.end })
     for (const x of r.noteRanges) noteRanges.push({ start: start + x.start, end: start + x.end })
   }
@@ -196,16 +202,6 @@ export async function pushNaskahToDoc(accessToken: string, documentId: string, n
       createNamedRange: {
         name: r.naskahId,
         range: { startIndex: 1 + r.start, endIndex: 1 + r.end },
-      },
-    })
-  }
-  // Shot/section prefix — small and muted, out of the way of the actual line.
-  for (const r of prefixRanges) {
-    requests.push({
-      updateTextStyle: {
-        range: { startIndex: 1 + r.start, endIndex: 1 + r.end },
-        textStyle: { fontSize: { magnitude: 9, unit: 'PT' }, foregroundColor: { color: { rgbColor: MUTED } } },
-        fields: 'fontSize,foregroundColor',
       },
     })
   }
