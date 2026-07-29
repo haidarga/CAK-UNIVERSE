@@ -138,6 +138,22 @@ export const ImportBriefSchema = z.object({
 })
 export type ImportBrief = z.infer<typeof ImportBriefSchema>
 
+// ── Hook bank import (the writer's own ready-made opening lines) ────────────
+// Deliberately just the line itself: the writer supplies finished hooks, so
+// there is nothing to structure beyond keeping each one intact.
+export const HookBankOutputSchema = z.object({
+  hooks: z.array(z.string().min(1).max(400)).max(300),
+})
+
+// Upper bound carried into the batch — a bank far larger than this would blow
+// up every generation prompt (it is injected per naskah).
+export const MAX_HOOK_BANK = 300
+
+// How many files one import may carry (content plan + hook bank, plus a little
+// headroom for a plan split in two). Shared so the client refuses the extra
+// files BEFORE uploading them, instead of the server silently dropping the tail.
+export const MAX_SOURCES = 4
+
 export const ImportCommitSchema = z.object({
   client_id: z.string().uuid().nullable().optional(),
   status: z.enum(['draft', 'ready']).default('ready'),

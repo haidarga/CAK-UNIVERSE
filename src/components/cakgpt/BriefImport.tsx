@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Upload, ClipboardPaste, FileText, X, Sparkles, Loader2, ExternalLink } from 'lucide-react'
 import { uploadFileForImport, MAX_IMPORT_UPLOAD_BYTES } from '@/lib/cakgpt/upload-client'
-import { MAX_DAY_TOTAL, MAX_FANOUT_ITEMS } from '@/lib/cakgpt/schemas'
+import { MAX_DAY_TOTAL, MAX_FANOUT_ITEMS, MAX_SOURCES } from '@/lib/cakgpt/schemas'
 
 type PreviewBrief = {
   _id: string // stable client-side key (extraction time), never sent to the server
@@ -29,6 +29,14 @@ export function BriefImport({ clients, personas }: {
   const [hint, setHint] = useState('')
   const [fileName, setFileName] = useState<string | null>(null)
 
+  // Hook bank (the writer's own opening lines) + what each uploaded file was
+  // detected as, so a wrong guess is visible and correctable instead of silent.
+  const [hooks, setHooks] = useState<string[]>([])
+  const [detected, setDetected] = useState<Array<{ filename: string; role: string }>>([])
+  // Kept OUT of `error`: the briefs did extract fine, so this must not render
+  // as the same red "the whole import failed" banner and scare the writer off
+  // reviewing them.
+  const [hookNotice, setHookNotice] = useState<string | null>(null)
   const [extracting, setExtracting] = useState(false)
   const [briefs, setBriefs] = useState<PreviewBrief[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -58,18 +66,27 @@ export function BriefImport({ clients, personas }: {
     try {
       let res: Response
       if (mode === 'file') {
-        const file = fileRef.current?.files?.[0]
-        if (!file) { setError('pick a file first'); return }
+        const picked = Array.from(fileRef.current?.files || [])
+        if (picked.length === 0) { setError('pick a file first'); return }
+        // Refuse the extra files here — uploading them first only to have the
+        // server drop the tail wastes time and storage with no feedback.
+        if (picked.length > MAX_SOURCES) { setError(`Kebanyakan file (${picked.length}) — maks ${MAX_SOURCES} sekali import.`); return }
         // Upload straight to Supabase Storage (browser → Storage, never
         // through our Vercel function) so large files skip Vercel's hard
-        // 4.5 MB request-body cap entirely.
-        setProgress('Uploading file…')
-        const uploaded = await uploadFileForImport(file)
-        if (!uploaded.ok) { setError(uploaded.error); return }
+        // 4.5 MB request-body cap entirely. Multiple files are allowed so the
+        // content plan and the hook bank can go in together; the server works
+        // out which is which (and says so in the preview).
+        const uploadedSources: Array<{ storage_path: string; filename: string }> = []
+        for (let i = 0; i < picked.length; i++) {
+          setProgress(picked.length > 1 ? `Uploading file ${i + 1}/${picked.length}…` : 'Uploading file…')
+          const uploaded = await uploadFileForImport(picked[i])
+          if (!uploaded.ok) { setError(`${picked[i].name}: ${uploaded.error}`); return }
+          uploadedSources.push({ storage_path: uploaded.path, filename: picked[i].name })
+        }
         setProgress('Extracting…')
         res = await fetch('/api/scriptwriter/briefs/import', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ storage_path: uploaded.path, hint }),
+          body: JSON.stringify({ sources: uploadedSources, hint }),
         })
       } else {
         const payload = mode === 'text' ? { text, hint } : { google_doc: gdoc, hint }
@@ -78,7 +95,11 @@ export function BriefImport({ clients, personas }: {
         })
       }
 
-      let data: { ok?: boolean; error?: string; briefs?: Omit<PreviewBrief, '_id'>[] }
+      let data: {
+        ok?: boolean; error?: string; briefs?: Omit<PreviewBrief, '_id'>[]
+        hooks?: string[]; hook_error?: string | null
+        sources?: Array<{ filename: string; role: string }>
+      }
       try {
         data = await res.json()
       } catch {
@@ -91,10 +112,19 @@ export function BriefImport({ clients, personas }: {
       if (!data.ok) {
         if (res.status === 428) { setError('Google not connected.'); window.open('/api/integrations/google/auth', '_blank', 'noopener,noreferrer') }
         else setError(data.error || 'extraction failed')
+        // The server reports which file it read as what even when the import
+        // fails (e.g. every file landed as a hook bank) — showing it here is
+        // the difference between "I forgot the plan" and "detection misfired".
+        setDetected(data.sources || [])
         return
       }
       const list: PreviewBrief[] = (data.briefs || []).map((b) => ({ ...b, _id: crypto.randomUUID() }))
       setBriefs(list) // may be [] — the empty-state branch handles that
+      setHooks(data.hooks || [])
+      setDetected(data.sources || [])
+      // Hook extraction is best-effort server-side. Surface it as a NOTICE, not
+      // an error — the briefs are fine and still worth importing.
+      setHookNotice(data.hook_error ? `Hook bank nggak kebaca: ${data.hook_error} — brief tetap bisa diimport, tapi hook-nya nggak kepake.` : null)
       setCommittedBriefs(null)
       setCreatedBatchId(null)
       setProgress(null)
@@ -157,6 +187,7 @@ export function BriefImport({ clients, personas }: {
   function reset() {
     setBriefs(null); setText(''); setGdoc(''); setHint(''); setFileName(null); setSelectedPersonaIds([])
     setCommittedBriefs(null); setCreatedBatchId(null); setError(null); setProgress(null); setSteering(''); setDays(1)
+    setHooks([]); setDetected([]); setHookNotice(null)
     if (fileRef.current) fileRef.current.value = ''
   }
 
@@ -225,7 +256,12 @@ export function BriefImport({ clients, personas }: {
         setProgress('Creating batch…')
         const batchRes = await fetch('/api/scriptwriter/batches', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: `Content plan ${new Date().toLocaleDateString('id-ID')}`, client_id: clientId || null }),
+          // hook_bank rides on the batch: it applies to this import's run only.
+          body: JSON.stringify({
+            name: `Content plan ${new Date().toLocaleDateString('id-ID')}`,
+            client_id: clientId || null,
+            hook_bank: hooks.length > 0 ? hooks : undefined,
+          }),
         })
         const batchData = await batchRes.json()
         if (!batchData.ok) { setError(`${batchData.error || 'failed to create batch'} — briefs were saved; retry to continue.`); return }
@@ -330,11 +366,17 @@ export function BriefImport({ clients, personas }: {
 
           {mode === 'file' && (
             <div>
-              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.pdf,.docx,.txt,.md" disabled={extracting}
-                onChange={(e) => setFileName(e.target.files?.[0]?.name || null)}
+              <input ref={fileRef} type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.docx,.txt,.md" disabled={extracting}
+                onChange={(e) => {
+                  const names = Array.from(e.target.files || []).map((f) => f.name)
+                  setFileName(names.length ? names.join(', ') : null)
+                }}
                 className="block w-full text-xs text-mutedText file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-text hover:file:bg-border" />
               {fileName && <p className="mt-1 truncate text-xs text-mutedText">Selected: {fileName}</p>}
-              <p className="mt-1 text-[11px] text-mutedText">Maks {MAX_IMPORT_UPLOAD_BYTES / 1024 / 1024} MB. File PDF gede banget (banyak gambar/screenshot)? Pakai tab Paste atau Google Doc.</p>
+              <p className="mt-1 text-[11px] text-mutedText">
+                Bisa pilih lebih dari 1 file: content plan + hook bank sekaligus — sistem ndeteksi sendiri mana yang mana (hasil deteksinya ditampilin, bisa dikoreksi).
+              </p>
+              <p className="mt-1 text-[11px] text-mutedText">Maks {MAX_IMPORT_UPLOAD_BYTES / 1024 / 1024} MB per file. File PDF gede banget (banyak gambar/screenshot)? Pakai tab Paste atau Google Doc.</p>
             </div>
           )}
           {mode === 'text' && (
@@ -371,6 +413,21 @@ export function BriefImport({ clients, personas }: {
       )}
       {progress && <p className="text-xs text-mutedText">{progress}</p>}
 
+      {/* Detection breakdown also renders when the import FAILED (e.g. every
+          file was read as a hook bank), which is exactly when it's needed. */}
+      {briefs === null && detected.length > 0 && (
+        <ul className="space-y-0.5">
+          {detected.map((d, i) => (
+            <li key={i} className="flex items-center gap-1.5 text-[11px] text-mutedText">
+              <span className={`rounded px-1.5 py-0.5 font-medium ${d.role === 'hooks' ? 'bg-accent/15 text-accent' : 'bg-primary/10 text-primary'}`}>
+                {d.role === 'hooks' ? 'Hook bank' : 'Topik'}
+              </span>
+              <span className="truncate">{d.filename}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
       {briefs !== null && briefs.length === 0 && (
         <div className="space-y-2 rounded-md border border-dashed border-border p-4 text-center">
           <p className="text-sm text-mutedText">No briefs found in that source.</p>
@@ -384,6 +441,40 @@ export function BriefImport({ clients, personas }: {
             <span className="text-xs font-medium text-text">{briefs.length} briefs found — review before importing</span>
             <button onClick={reset} disabled={disabled} className="text-xs text-mutedText hover:text-text hover:underline disabled:opacity-50 cursor-pointer">Start over</button>
           </div>
+
+          {/* What each uploaded file was read as. Shown whenever more than one
+              file was sent so a wrong guess is caught before generating. */}
+          {detected.length > 1 && (
+            <div className="rounded-md border border-border bg-background p-2">
+              <p className="mb-1 text-[11px] font-medium text-text">File kebaca sebagai:</p>
+              <ul className="space-y-0.5">
+                {detected.map((d, i) => (
+                  <li key={i} className="flex items-center gap-1.5 text-[11px] text-mutedText">
+                    <span className={`rounded px-1.5 py-0.5 font-medium ${d.role === 'hooks' ? 'bg-accent/15 text-accent' : 'bg-primary/10 text-primary'}`}>
+                      {d.role === 'hooks' ? 'Hook bank' : 'Topik'}
+                    </span>
+                    <span className="truncate">{d.filename}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-[10px] text-mutedText">Kebalik? Klik “Start over”, terus rename file-nya (kasih kata “hook” di nama file hook bank) dan upload ulang.</p>
+            </div>
+          )}
+
+          {hookNotice && (
+            <p className="rounded-md border border-warning/30 bg-warning/[0.06] px-2 py-1.5 text-[11px] text-warning">{hookNotice}</p>
+          )}
+
+          {hooks.length > 0 && (
+            <div className="rounded-md border border-accent/30 bg-accent/[0.05] p-2">
+              <p className="text-[11px] font-medium text-text">
+                Hook bank: {hooks.length} hook kebaca — dipakai buat batch ini aja
+              </p>
+              <p className="mt-1 line-clamp-2 text-[11px] text-mutedText">
+                mis. {hooks.slice(0, 2).map((h) => `“${h.length > 60 ? h.slice(0, 60) + '…' : h}”`).join(' · ')}
+              </p>
+            </div>
+          )}
 
           <div className="max-h-64 space-y-1.5 overflow-y-auto">
             {briefs.map((b) => (

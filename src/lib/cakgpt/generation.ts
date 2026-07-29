@@ -122,8 +122,14 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
   if (personaErr || !persona || !persona.is_active) return { ok: false, error: 'persona not found or inactive' }
 
   const { data: batch, error: batchErr } = await supabase
-    .from('sw_batches').select('id, created_by').eq('id', params.batchId).eq('created_by', createdBy).maybeSingle()
+    .from('sw_batches').select('id, created_by, hook_bank').eq('id', params.batchId).eq('created_by', createdBy).maybeSingle()
   if (batchErr || !batch) return { ok: false, error: 'batch not found' }
+
+  // The writer's own hook lines, uploaded with this import (migration 018).
+  // Absent = the built-in rubric behavior, unchanged.
+  const hookBank = Array.isArray(batch.hook_bank)
+    ? (batch.hook_bank as unknown[]).filter((h): h is string => typeof h === 'string' && h.trim().length > 0)
+    : []
 
   const hookRubrics = await getActiveHookRubrics(supabase)
   if (hookRubrics.length === 0) return { ok: false, error: 'no active hook rubrics seeded — run supabase/seed.sql' }
@@ -151,6 +157,7 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
       extraContext: params.extraContext,
       dayNo: params.dayNo,
       dayTotal: params.dayTotal,
+      hookBank,
     })
     // Generous output budget. This call used to pass none, falling back to the
     // shim's 8000 — and gemini-2.5-flash spends part of THAT SAME budget on

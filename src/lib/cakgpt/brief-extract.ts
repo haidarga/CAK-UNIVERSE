@@ -16,8 +16,13 @@ import { callGeminiJSON, LLMError } from '@/lib/cakgpt/llm'
 import {
   buildBriefExtractionPrompt, BRIEF_EXTRACTION_RESPONSE_SCHEMA,
   buildNaskahExtractionPrompt, NASKAH_EXTRACTION_RESPONSE_SCHEMA,
+  buildHookExtractionPrompt, HOOK_EXTRACTION_RESPONSE_SCHEMA,
+  buildFileRolePrompt, FILE_ROLE_RESPONSE_SCHEMA,
 } from '@/lib/cakgpt/prompts'
-import { BriefExtractionOutputSchema, ImportedNaskahSchema, type ImportBrief, type ImportedNaskah } from '@/lib/cakgpt/schemas'
+import {
+  BriefExtractionOutputSchema, ImportedNaskahSchema, HookBankOutputSchema, MAX_HOOK_BANK,
+  type ImportBrief, type ImportedNaskah,
+} from '@/lib/cakgpt/schemas'
 
 export type SourceKind = 'spreadsheet' | 'pdf' | 'docx' | 'text'
 
@@ -190,6 +195,77 @@ export async function extractBriefsFromText(opts: { apiKey: string; text: string
       return { ok: false, error: 'a section of this plan is too large to extract in one go — try a smaller file or split it into parts.' }
     }
     return { ok: false, error: `extraction failed: ${msg}` }
+  }
+}
+
+// ── Hook bank ───────────────────────────────────────────────────────────────
+export type ExtractHooksResult =
+  | { ok: true; hooks: string[] }
+  | { ok: false; error: string }
+
+// Pull the writer's ready-made opening lines out of an uploaded hook bank.
+// Single call (no chunking like briefs): a hook bank is a flat list of short
+// lines, so even a few hundred of them stay well inside one response.
+export async function extractHooksFromText(opts: { apiKey: string; text: string }): Promise<ExtractHooksResult> {
+  const trimmed = opts.text.trim()
+  if (!trimmed) return { ok: false, error: 'the hook bank file is empty' }
+
+  try {
+    const raw = await callGeminiJSON({
+      apiKey: opts.apiKey,
+      prompt: buildHookExtractionPrompt({ sourceText: trimmed.slice(0, 60_000) }),
+      responseSchema: HOOK_EXTRACTION_RESPONSE_SCHEMA,
+      temperature: 0.1, // copying lines out verbatim — creativity would be a bug here
+      maxOutputTokens: 32000,
+    })
+    const parsed = HookBankOutputSchema.parse(Array.isArray(raw) ? { hooks: raw } : raw)
+    // Dedupe (a bank often repeats a line across categories) while preserving
+    // the writer's original order.
+    const seen = new Set<string>()
+    const hooks: string[] = []
+    for (const h of parsed.hooks) {
+      const line = h.trim()
+      if (!line) continue
+      const key = line.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      hooks.push(line)
+    }
+    if (hooks.length === 0) return { ok: false, error: 'no hooks found in that file' }
+    return { ok: true, hooks: hooks.slice(0, MAX_HOOK_BANK) }
+  } catch (e) {
+    const msg = e instanceof LLMError ? e.message : e instanceof Error ? e.message : 'hook extraction failed'
+    return { ok: false, error: `hook extraction failed: ${msg}` }
+  }
+}
+
+// ── File role detection (topics vs hook bank) ───────────────────────────────
+export type FileRole = 'topics' | 'hooks'
+
+// Decide what an uploaded file IS, so the writer can drop both files in without
+// labelling them. Filename is checked first because it's free and usually
+// decisive; otherwise a small LLM call reads a sample of the content. Detection
+// is surfaced in the UI and overridable — a wrong guess must never silently
+// route a content plan into the hook extractor.
+export async function detectFileRole(opts: { apiKey: string; filename: string; text: string }): Promise<FileRole> {
+  const name = opts.filename.toLowerCase()
+  if (/\bhooks?\b|hook[-_ ]?bank/.test(name)) return 'hooks'
+  if (/content[-_ ]?plan|\bbrief|\btopic|\bplan\b|jadwal|rencana/.test(name)) return 'topics'
+
+  try {
+    const raw = await callGeminiJSON({
+      apiKey: opts.apiKey,
+      prompt: buildFileRolePrompt({ filename: opts.filename, sample: opts.text.slice(0, 4000) }),
+      responseSchema: FILE_ROLE_RESPONSE_SCHEMA,
+      temperature: 0,
+      maxOutputTokens: 2000,
+    })
+    const role = (raw as { role?: string })?.role
+    return role === 'hooks' ? 'hooks' : 'topics'
+  } catch {
+    // Classification is a convenience, never a gate: on failure assume the
+    // common case (a content plan) and let the writer correct it in the UI.
+    return 'topics'
   }
 }
 

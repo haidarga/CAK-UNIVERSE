@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/cakgpt/supabase/server'
 import { requireUser } from '@/lib/cakgpt/auth'
 import { getActiveClientId } from '@/lib/cakgpt/active-client'
+import { MAX_HOOK_BANK } from '@/lib/cakgpt/schemas'
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -38,8 +39,24 @@ export async function POST(req: Request) {
     }
   }
 
+  // Optional per-import hook bank (the writer's own ready-made opening lines).
+  // Bounded + sanitized here because it is injected into EVERY generation
+  // prompt for this batch — an unbounded array would silently inflate every
+  // call. Absent/empty stores null, and generation falls back to the built-in
+  // hook rubric behavior.
+  let hookBank: string[] | null = null
+  if (Array.isArray(body.hook_bank)) {
+    const lines = (body.hook_bank as unknown[])
+      .filter((h): h is string => typeof h === 'string')
+      .map((h) => h.trim())
+      .filter(Boolean)
+      .slice(0, MAX_HOOK_BANK)
+      .map((h) => h.slice(0, 400))
+    if (lines.length > 0) hookBank = lines
+  }
+
   const { data, error } = await supabase
-    .from('sw_batches').insert({ created_by: user.id, name, client_id: clientId }).select('*').single()
+    .from('sw_batches').insert({ created_by: user.id, name, client_id: clientId, hook_bank: hookBank }).select('*').single()
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true, batch: data })
 }

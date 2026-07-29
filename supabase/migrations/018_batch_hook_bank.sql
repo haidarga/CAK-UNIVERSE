@@ -1,0 +1,21 @@
+-- Per-import hook bank: the writer's OWN ready-made hook lines, uploaded
+-- alongside the content plan and used for that run only.
+--
+-- Scope is deliberately the batch, not a permanent per-brand library: the
+-- writer asked for it to "stick to that import" so a bank can be swapped
+-- freely between runs without curating a stored asset. Attaching it to
+-- sw_batches (one batch == one Import & Generate run) also means generation
+-- reads it from a row it ALREADY loads, and TriageQueue re-generating into the
+-- same batch inherits the same hooks for free.
+--
+-- Shape: jsonb array of strings, e.g. ["Ibu-ibu pekerja mana suaranya?", ...].
+-- NULL/absent = no uploaded bank, and generation falls back to the built-in
+-- sw_hook_rubrics behavior exactly as before.
+--
+-- Note this does NOT replace sw_hook_rubrics: those stay as the hook TYPE
+-- taxonomy the model must still classify its choice against (hook_type is a
+-- required field in the generation schema and drives QC). The bank supplies
+-- the actual opening LINES; the rubric keeps labelling what kind of hook it is.
+-- Apply via Supabase SQL Editor after 017.
+
+alter table sw_batches add column if not exists hook_bank jsonb;
