@@ -21,7 +21,7 @@ export async function GET(req: Request) {
 
   let query = supabase
     .from('sw_naskah')
-    .select('id, title, status, current_version_id, updated_at, persona_id')
+    .select('id, title, status, current_version_id, updated_at, persona_id, brief_id, day_no, created_at')
     .eq('created_by', user.id)
     .eq('status', status)
     .order('updated_at', { ascending: false })
@@ -80,17 +80,49 @@ export async function GET(req: Request) {
       flag_counts: flagCounts,
       has_open_blockers: flagCounts.blocker > 0,
       _flags: versionFlags, // used for filtering below, stripped before response
+      _briefId: n.brief_id,
+      _dayNo: n.day_no,
+      _createdAt: n.created_at,
     }
   })
 
   if (severityFilter) items = items.filter((i) => i._flags.some((f) => f.severity === severityFilter))
   if (categoryFilter) items = items.filter((i) => i._flags.some((f) => f.category === categoryFilter))
 
+  // Risk-first ordering is deliberate (ARCHITECTURE.md §6) and unchanged: open
+  // blockers float to the top, zero-flag items sink to where bulk-approve
+  // targets them. Only the FINAL tiebreaker changed — it used to be "most
+  // recently updated", which for a bulk run is just "whichever of the 12
+  // concurrent jobs happened to finish last". That scattered a multi-day series
+  // (Hari 3 above Hari 1, one persona's days interleaved with another's).
+  // Equally-risky items now read in the order a human thinks about them:
+  // topic → persona → day.
+  // One fixed rank per topic, computed BEFORE sorting: the earliest naskah
+  // created for that brief. Comparing each item's own created_at instead would
+  // be an inconsistent comparator — two naskah of the same topic can sit on
+  // either side of another topic's, so the "same brief" branch and the
+  // timestamp branch would disagree and scramble the result.
+  const briefRank = new Map<string, number>()
+  for (const i of items) {
+    if (!i._briefId) continue
+    const t = new Date(i._createdAt).getTime()
+    const cur = briefRank.get(i._briefId)
+    if (cur === undefined || t < cur) briefRank.set(i._briefId, t)
+  }
+
   items.sort((a, b) => {
     if (a.has_open_blockers !== b.has_open_blockers) return a.has_open_blockers ? -1 : 1
     if (a.flag_counts.blocker !== b.flag_counts.blocker) return b.flag_counts.blocker - a.flag_counts.blocker
-    return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    // Group a topic's naskah together. brief_id is opaque, so topics follow the
+    // order their first naskah appeared (which tracks content-plan order).
+    if (a._briefId !== b._briefId) {
+      return (briefRank.get(a._briefId ?? '') ?? 0) - (briefRank.get(b._briefId ?? '') ?? 0)
+    }
+    const nameCmp = (a.persona_name || '').localeCompare(b.persona_name || '')
+    if (nameCmp !== 0) return nameCmp
+    // Days ascending (1,2,3…); single-day naskah (null) keep a stable slot.
+    return (a._dayNo ?? 0) - (b._dayNo ?? 0)
   })
 
-  return NextResponse.json({ ok: true, items: items.map(({ _flags, ...rest }) => rest) })
+  return NextResponse.json({ ok: true, items: items.map(({ _flags, _briefId, _dayNo, _createdAt, ...rest }) => rest) })
 }

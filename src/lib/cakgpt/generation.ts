@@ -193,6 +193,10 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
       // Readable, scannable title (week · day · topic · persona) so the fan-out
       // doesn't produce a queue full of "Untitled naskah".
       title: composeNaskahTitle(brief, persona.name, { no: params.dayNo, total: params.dayTotal }),
+      // Stored as a real column (not just inside the title) so lists can ORDER
+      // BY it — jobs finish out of order, so any timestamp sort scrambles a
+      // series. Null for single-day naskah.
+      day_no: params.dayNo ?? null,
       status: 'draft',
       source: params.sourceIdeaSessionId ? 'promoted_from_idea' : 'generated',
       source_idea_session_id: params.sourceIdeaSessionId || null,
