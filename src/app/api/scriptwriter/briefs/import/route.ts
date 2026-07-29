@@ -7,7 +7,7 @@ import { getValidAccessToken } from '@/lib/cakgpt/google-oauth'
 import { getDoc } from '@/lib/cakgpt/google-docs'
 import { extractBriefsFromText, extractHooksFromText, detectFileRole, type FileRole } from '@/lib/cakgpt/brief-extract'
 import { readSourceFromStorage } from '@/lib/cakgpt/import-storage'
-import { MAX_SOURCES } from '@/lib/cakgpt/schemas'
+import { MAX_SOURCES, type HookBankItem } from '@/lib/cakgpt/schemas'
 import { withDeadline, DeadlineExceededError } from '@/lib/cakgpt/deadline'
 
 // File parsing (pdf/xlsx/docx) needs the Node runtime, not edge.
@@ -227,11 +227,14 @@ async function handleImport(req: Request) {
   // Hook bank is best-effort and never blocks the import: a failed/empty hook
   // file still leaves a perfectly good set of briefs to review, and the writer
   // sees which files were read as what in the preview.
-  let hooks: string[] = []
+  let hooks: HookBankItem[] = []
   let hookError: string | null = null
   if (hookText.trim()) {
     try {
-      const hookRes = await withDeadline(extractHooksFromText({ apiKey, text: hookText }), HOOK_DEADLINE_MS, 'reading the hook bank')
+      // Same knownClusters steering as the brief extraction above: the hook's
+      // cluster tag is matched against sw_personas.cluster at generation time,
+      // so "Dad" vs an existing "Dad Persona" would silently never line up.
+      const hookRes = await withDeadline(extractHooksFromText({ apiKey, text: hookText, knownClusters }), HOOK_DEADLINE_MS, 'reading the hook bank')
       if (hookRes.ok) hooks = hookRes.hooks
       else hookError = hookRes.error
     } catch (e) {

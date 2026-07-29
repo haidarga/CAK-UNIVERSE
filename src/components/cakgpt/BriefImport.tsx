@@ -31,7 +31,7 @@ export function BriefImport({ clients, personas }: {
 
   // Hook bank (the writer's own opening lines) + what each uploaded file was
   // detected as, so a wrong guess is visible and correctable instead of silent.
-  const [hooks, setHooks] = useState<string[]>([])
+  const [hooks, setHooks] = useState<Array<{ cluster: string | null; text: string }>>([])
   const [detected, setDetected] = useState<Array<{ filename: string; role: string }>>([])
   // Kept OUT of `error`: the briefs did extract fine, so this must not render
   // as the same red "the whole import failed" banner and scare the writer off
@@ -97,7 +97,7 @@ export function BriefImport({ clients, personas }: {
 
       let data: {
         ok?: boolean; error?: string; briefs?: Omit<PreviewBrief, '_id'>[]
-        hooks?: string[]; hook_error?: string | null
+        hooks?: Array<{ cluster: string | null; text: string }>; hook_error?: string | null
         sources?: Array<{ filename: string; role: string }>
       }
       try {
@@ -465,16 +465,47 @@ export function BriefImport({ clients, personas }: {
             <p className="rounded-md border border-warning/30 bg-warning/[0.06] px-2 py-1.5 text-[11px] text-warning">{hookNotice}</p>
           )}
 
-          {hooks.length > 0 && (
-            <div className="rounded-md border border-accent/30 bg-accent/[0.05] p-2">
-              <p className="text-[11px] font-medium text-text">
-                Hook bank: {hooks.length} hook kebaca — dipakai buat batch ini aja
-              </p>
-              <p className="mt-1 line-clamp-2 text-[11px] text-mutedText">
-                mis. {hooks.slice(0, 2).map((h) => `“${h.length > 60 ? h.slice(0, 60) + '…' : h}”`).join(' · ')}
-              </p>
-            </div>
-          )}
+          {hooks.length > 0 && (() => {
+            // Group for display + coverage check. A persona draws only from its
+            // OWN cluster (plus untagged hooks), so a cluster holding fewer
+            // hooks than `days` will wrap and repeat within that series — worth
+            // flagging here, while adding hooks is still easy.
+            const untagged = hooks.filter((h) => !h.cluster).length
+            const byCluster = new Map<string, number>()
+            for (const h of hooks) {
+              if (!h.cluster) continue
+              const k = h.cluster.trim()
+              byCluster.set(k, (byCluster.get(k) || 0) + 1)
+            }
+            const thin = [...byCluster.entries()].filter(([, n]) => n + untagged < days)
+            return (
+              <div className="rounded-md border border-accent/30 bg-accent/[0.05] p-2">
+                <p className="text-[11px] font-medium text-text">
+                  Hook bank: {hooks.length} hook kebaca — dipakai buat batch ini aja
+                </p>
+                {byCluster.size > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {[...byCluster.entries()].map(([c, n]) => (
+                      <span key={c} className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">{c}: {n}</span>
+                    ))}
+                    {untagged > 0 && (
+                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-mutedText" title="Hook tanpa cluster — kepake buat semua persona">
+                        tanpa cluster: {untagged}
+                      </span>
+                    )}
+                  </div>
+                )}
+                <p className="mt-1 line-clamp-2 text-[11px] text-mutedText">
+                  mis. {hooks.slice(0, 2).map((h) => `“${h.text.length > 60 ? h.text.slice(0, 60) + '…' : h.text}”`).join(' · ')}
+                </p>
+                {days > 1 && thin.length > 0 && (
+                  <p className="mt-1 text-[11px] text-warning">
+                    Hook kurang buat {days} hari di cluster: {thin.map(([c, n]) => `${c} (${n + untagged})`).join(', ')} — hari berikutnya bakal ngulang hook yang sama.
+                  </p>
+                )}
+              </div>
+            )
+          })()}
 
           <div className="max-h-64 space-y-1.5 overflow-y-auto">
             {briefs.map((b) => (

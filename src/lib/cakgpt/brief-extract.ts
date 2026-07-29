@@ -21,7 +21,7 @@ import {
 } from '@/lib/cakgpt/prompts'
 import {
   BriefExtractionOutputSchema, ImportedNaskahSchema, HookBankOutputSchema, MAX_HOOK_BANK,
-  type ImportBrief, type ImportedNaskah,
+  type ImportBrief, type ImportedNaskah, type HookBankItem,
 } from '@/lib/cakgpt/schemas'
 
 export type SourceKind = 'spreadsheet' | 'pdf' | 'docx' | 'text'
@@ -200,36 +200,39 @@ export async function extractBriefsFromText(opts: { apiKey: string; text: string
 
 // ── Hook bank ───────────────────────────────────────────────────────────────
 export type ExtractHooksResult =
-  | { ok: true; hooks: string[] }
+  | { ok: true; hooks: HookBankItem[] }
   | { ok: false; error: string }
 
-// Pull the writer's ready-made opening lines out of an uploaded hook bank.
-// Single call (no chunking like briefs): a hook bank is a flat list of short
-// lines, so even a few hundred of them stay well inside one response.
-export async function extractHooksFromText(opts: { apiKey: string; text: string }): Promise<ExtractHooksResult> {
+// Pull the writer's ready-made opening lines out of an uploaded hook bank,
+// keeping the audience cluster each one is filed under — generation draws from
+// a persona's OWN cluster, so an untagged bank would let a Dad persona open
+// with a Working Mom line. Single call (no chunking like briefs): a hook bank
+// is short lines, so even a few hundred stay well inside one response.
+export async function extractHooksFromText(opts: { apiKey: string; text: string; knownClusters?: string[] }): Promise<ExtractHooksResult> {
   const trimmed = opts.text.trim()
   if (!trimmed) return { ok: false, error: 'the hook bank file is empty' }
 
   try {
     const raw = await callGeminiJSON({
       apiKey: opts.apiKey,
-      prompt: buildHookExtractionPrompt({ sourceText: trimmed.slice(0, 60_000) }),
+      prompt: buildHookExtractionPrompt({ sourceText: trimmed.slice(0, 60_000), knownClusters: opts.knownClusters }),
       responseSchema: HOOK_EXTRACTION_RESPONSE_SCHEMA,
       temperature: 0.1, // copying lines out verbatim — creativity would be a bug here
       maxOutputTokens: 32000,
     })
     const parsed = HookBankOutputSchema.parse(Array.isArray(raw) ? { hooks: raw } : raw)
-    // Dedupe (a bank often repeats a line across categories) while preserving
-    // the writer's original order.
+    // Dedupe on (cluster, line): the SAME line under two clusters is kept, since
+    // each cluster draws from its own pool. Preserves the writer's order.
     const seen = new Set<string>()
-    const hooks: string[] = []
+    const hooks: HookBankItem[] = []
     for (const h of parsed.hooks) {
-      const line = h.trim()
-      if (!line) continue
-      const key = line.toLowerCase()
+      const text = h.text.trim()
+      if (!text) continue
+      const cluster = h.cluster?.trim() || null
+      const key = `${(cluster || '').toLowerCase()}|${text.toLowerCase()}`
       if (seen.has(key)) continue
       seen.add(key)
-      hooks.push(line)
+      hooks.push({ cluster, text })
     }
     if (hooks.length === 0) return { ok: false, error: 'no hooks found in that file' }
     return { ok: true, hooks: hooks.slice(0, MAX_HOOK_BANK) }

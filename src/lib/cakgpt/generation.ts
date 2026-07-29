@@ -52,6 +52,57 @@ function fieldLookup(fields: Record<string, unknown> | null | undefined, re: Reg
   return null
 }
 
+type HookBankEntry = { cluster: string | null; text: string }
+
+// Stable 32-bit hash — used only to give each (brief × persona) a different
+// starting point in its cluster's hook pool. Deterministic on purpose: a real
+// random pick would hand the same naskah a different hook on every retry,
+// making regeneration unreproducible and diffs meaningless.
+function stableHash(s: string): number {
+  let h = 2166136261
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return h >>> 0
+}
+
+// Pick THE hook for this naskah out of the uploaded bank.
+//
+// The bank is a pool, not a menu: the caller assigns one line and the model is
+// told to use it. Letting the model choose would collapse a multi-day series
+// onto whichever line it judged "best" — identical inputs, identical answer,
+// same hook five days running.
+//
+//   1. Narrow to the persona's own cluster (a Dad persona must never open with
+//      a Working Mom line). Untagged hooks are always eligible. If nothing
+//      matches, fall back to the whole bank rather than dropping the feature.
+//   2. Offset the starting index by a hash of (brief, persona) so different
+//      topics/personas don't all open with hook #1.
+//   3. Step by day, so days 1..N walk consecutive DIFFERENT hooks. Wraps only
+//      when the cluster has fewer hooks than days — surfaced in the import UI
+//      so the writer can add more instead of silently getting repeats.
+export function pickHookForNaskah(args: {
+  bank: HookBankEntry[]
+  personaCluster: string | null | undefined
+  briefId: string
+  personaId: string
+  dayNo?: number
+}): string | undefined {
+  const bank = args.bank.filter((h) => h && typeof h.text === 'string' && h.text.trim())
+  if (bank.length === 0) return undefined
+
+  const key = args.personaCluster?.trim().toLowerCase()
+  const eligible = key
+    ? bank.filter((h) => !h.cluster || h.cluster.trim().toLowerCase() === key)
+    : bank
+  const pool = eligible.length > 0 ? eligible : bank
+
+  const offset = stableHash(`${args.briefId}|${args.personaId}`)
+  const step = Math.max(1, args.dayNo || 1) - 1
+  return pool[(offset + step) % pool.length].text
+}
+
 // How long the script should run. This used to be hardcoded to 30s for EVERY
 // naskah, which silently capped how much the model would ever write — a 30s
 // script is ~8-12 blocks no matter how much output budget it has, so briefs
@@ -115,7 +166,7 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
 
   const { data: persona, error: personaErr } = await supabase
     .from('sw_personas')
-    .select('id, name, tone, diction_quirks, banned_words, required_words, sample_lines, red_flags, is_active, created_by')
+    .select('id, name, cluster, tone, diction_quirks, banned_words, required_words, sample_lines, red_flags, is_active, created_by')
     .eq('id', personaId)
     .eq('created_by', createdBy)
     .maybeSingle()
@@ -126,9 +177,18 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
   if (batchErr || !batch) return { ok: false, error: 'batch not found' }
 
   // The writer's own hook lines, uploaded with this import (migration 018).
-  // Absent = the built-in rubric behavior, unchanged.
-  const hookBank = Array.isArray(batch.hook_bank)
-    ? (batch.hook_bank as unknown[]).filter((h): h is string => typeof h === 'string' && h.trim().length > 0)
+  // Absent = the built-in rubric behavior, unchanged. Tolerates the pre-cluster
+  // shape (bare strings) so a batch created before that change still works.
+  const hookBank: HookBankEntry[] = Array.isArray(batch.hook_bank)
+    ? (batch.hook_bank as unknown[])
+        .map((h) => {
+          if (typeof h === 'string') return { cluster: null, text: h }
+          const o = h as { cluster?: unknown; text?: unknown }
+          return typeof o?.text === 'string'
+            ? { cluster: typeof o.cluster === 'string' ? o.cluster : null, text: o.text }
+            : null
+        })
+        .filter((h): h is HookBankEntry => !!h && h.text.trim().length > 0)
     : []
 
   const hookRubrics = await getActiveHookRubrics(supabase)
@@ -157,7 +217,13 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
       extraContext: params.extraContext,
       dayNo: params.dayNo,
       dayTotal: params.dayTotal,
-      hookBank,
+      assignedHook: pickHookForNaskah({
+        bank: hookBank,
+        personaCluster: persona.cluster,
+        briefId: params.briefId,
+        personaId,
+        dayNo: params.dayNo,
+      }),
     })
     // Generous output budget. This call used to pass none, falling back to the
     // shim's 8000 — and gemini-2.5-flash spends part of THAT SAME budget on

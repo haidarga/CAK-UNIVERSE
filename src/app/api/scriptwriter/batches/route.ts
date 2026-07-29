@@ -44,14 +44,21 @@ export async function POST(req: Request) {
   // prompt for this batch — an unbounded array would silently inflate every
   // call. Absent/empty stores null, and generation falls back to the built-in
   // hook rubric behavior.
-  let hookBank: string[] | null = null
+  // Each entry is {cluster, text}: generation draws from the persona's OWN
+  // cluster, so the tag has to survive the round trip.
+  let hookBank: Array<{ cluster: string | null; text: string }> | null = null
   if (Array.isArray(body.hook_bank)) {
     const lines = (body.hook_bank as unknown[])
-      .filter((h): h is string => typeof h === 'string')
-      .map((h) => h.trim())
-      .filter(Boolean)
+      .map((h) => {
+        if (typeof h === 'string') return { cluster: null, text: h.trim() }
+        const o = h as { cluster?: unknown; text?: unknown }
+        if (typeof o?.text !== 'string') return null
+        const cluster = typeof o.cluster === 'string' && o.cluster.trim() ? o.cluster.trim().slice(0, 80) : null
+        return { cluster, text: o.text.trim() }
+      })
+      .filter((h): h is { cluster: string | null; text: string } => !!h && h.text.length > 0)
       .slice(0, MAX_HOOK_BANK)
-      .map((h) => h.slice(0, 400))
+      .map((h) => ({ cluster: h.cluster, text: h.text.slice(0, 400) }))
     if (lines.length > 0) hookBank = lines
   }
 

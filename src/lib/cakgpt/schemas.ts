@@ -139,10 +139,18 @@ export const ImportBriefSchema = z.object({
 export type ImportBrief = z.infer<typeof ImportBriefSchema>
 
 // ── Hook bank import (the writer's own ready-made opening lines) ────────────
-// Deliberately just the line itself: the writer supplies finished hooks, so
-// there is nothing to structure beyond keeping each one intact.
+// Each hook carries the audience cluster it was filed under, because the bank
+// is a POOL to draw from per persona — a Dad persona must not open with a hook
+// written for Working Moms. Hook banks are grouped by cluster in the source
+// file; cluster is null only when a line sits outside any group.
+export const HookBankItemSchema = z.object({
+  cluster: z.string().max(80).nullable().optional(),
+  text: z.string().min(1).max(400),
+})
+export type HookBankItem = z.infer<typeof HookBankItemSchema>
+
 export const HookBankOutputSchema = z.object({
-  hooks: z.array(z.string().min(1).max(400)).max(300),
+  hooks: z.array(HookBankItemSchema).max(300),
 })
 
 // Upper bound carried into the batch — a bank far larger than this would blow
