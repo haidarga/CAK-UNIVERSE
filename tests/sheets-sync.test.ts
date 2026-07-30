@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { formatNaskahForSheetsExport, parseClientFeedbackDelta } from '../src/lib/sheets-helpers'
 
 describe('Google Sheets Export & Feedback Sync Helper', () => {
-  it('formats naskah list for Google Sheets export correctly with blocks', () => {
+  it('formats naskah list for Google Sheets export correctly with dynamic shot blocks', () => {
     const rawNaskah = [{
       id: 'naskah_123',
       title: 'Why Susu Segar? · Emma Hasibuan',
@@ -18,11 +18,11 @@ describe('Google Sheets Export & Feedback Sync Helper', () => {
     const exported = formatNaskahForSheetsExport(rawNaskah)
     expect(exported.length).toBe(1)
     expect(exported[0].persona).toBe('Emma Hasibuan')
-    expect(exported[0].hook_text).toContain('Bingung kenapa susu formula kok ga cocok sama anak kamu?')
-    expect(exported[0].body_text).toContain('Bunda, perhatiin deh! Banyak banget jenis susu di pasaran.')
-    expect(exported[0].body_text).toContain('Fakta ilmiahnya, susu segar itu sumber nutrisi paling alami.')
-    expect(exported[0].cta_text).toContain('Jadi, kalau mau yang terbaik buat anak, cek lagi deh susunya.')
-    expect(exported[0].visual_notes).toContain('Scene 1: Emma ekspresi bingung')
+    expect(exported[0].hook_text).toContain('[Shot 1] Emma Hasibuan: Bingung kenapa susu formula kok ga cocok sama anak kamu?')
+    expect(exported[0].body_text).toContain('[Shot 2] Emma Hasibuan: Bunda, perhatiin deh! Banyak banget jenis susu di pasaran.')
+    expect(exported[0].body_text).toContain('[Shot 3] Emma Hasibuan: Fakta ilmiahnya, susu segar itu sumber nutrisi paling alami.')
+    expect(exported[0].cta_text).toContain('[Shot 5] Emma Hasibuan: Jadi, kalau mau yang terbaik buat anak, cek lagi deh susunya.')
+    expect(exported[0].visual_notes).toContain('[Shot 1] Emma ekspresi bingung')
   })
 
   it('detects direct cell edit feedback from client', () => {

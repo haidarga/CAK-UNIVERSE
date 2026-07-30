@@ -7,36 +7,23 @@ export function formatNaskahForSheetsExport(naskahList: any[]) {
     const ctaParts: string[] = []
     const visualParts: string[] = []
 
-    let hookCount = 0
-    let bodyCount = 0
-    let ctaCount = 0
-
     blocks.forEach((b, blockIdx) => {
       const text = (b.text || '').trim()
       const speaker = (b.speaker || '').trim()
-      const speakerTag = speaker ? `[${speaker}]` : ''
+      const shotLabel = `[Shot ${b.shot_no || blockIdx + 1}]`
+      const lineText = speaker ? `${shotLabel} ${speaker}: ${text}` : `${shotLabel} ${text}`
       const key = (b.section_key || b.type || '').toLowerCase()
 
       if (key.includes('hook') || (blockIdx === 0 && !key.includes('body') && !key.includes('cta'))) {
-        if (text) {
-          hookCount++
-          hookParts.push(hookCount > 1 ? `Hook ${hookCount}: ${speakerTag} ${text}` : `${speakerTag} ${text}`.trim())
-        }
+        if (text) hookParts.push(lineText.trim())
       } else if (key.includes('cta') || (blockIdx === blocks.length - 1 && blocks.length > 2 && key.includes('cta'))) {
-        if (text) {
-          ctaCount++
-          ctaParts.push(ctaCount > 1 ? `CTA ${ctaCount}: ${speakerTag} ${text}` : `${speakerTag} ${text}`.trim())
-        }
+        if (text) ctaParts.push(lineText.trim())
       } else {
-        if (text) {
-          bodyCount++
-          bodyParts.push(`Scene ${bodyCount}: ${speakerTag} ${text}`.trim())
-        }
+        if (text) bodyParts.push(lineText.trim())
       }
 
       if (b.visual_note?.trim()) {
-        const shotNo = b.shot_no || blockIdx + 1
-        visualParts.push(`Scene ${shotNo}: ${b.visual_note.trim()}`)
+        visualParts.push(`${shotLabel} ${b.visual_note.trim()}`)
       }
     })
 
