@@ -45,7 +45,10 @@ export async function POST(req: Request) {
     if (legacySettings) settings = legacySettings
   }
 
-  const studioUrl = settings?.studio_api_url
+  let studioUrl = settings?.studio_api_url || ''
+  if (studioUrl && !/^https?:\/\//i.test(studioUrl)) {
+    studioUrl = `https://${studioUrl}`
+  }
   const studioApiKey = settings?.studio_api_key
   if (!studioUrl || !studioApiKey) {
     return NextResponse.json({

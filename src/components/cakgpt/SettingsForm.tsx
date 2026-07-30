@@ -53,20 +53,27 @@ export function SettingsForm({
   async function onSaveStudio(e: React.FormEvent) {
     e.preventDefault()
     if (!studioUrl.trim()) return setStudioError('Studio URL is required')
+
+    let formattedUrl = studioUrl.trim()
+    if (!/^https?:\/\//i.test(formattedUrl)) {
+      formattedUrl = `https://${formattedUrl}`
+    }
+
     setStudioSaving(true)
     setStudioError(null)
     setStudioSaved(false)
     try {
-      const res = await fetch('/api/settings', {
+      const res = await fetch('/api/scriptwriter/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          studio_api_url: studioUrl.trim(),
+          studio_api_url: formattedUrl,
           ...(studioKey.trim() ? { studio_api_key: studioKey.trim() } : {}),
         }),
       })
       const data = await res.json()
       if (!data.ok) throw new Error(data.error || 'failed to save studio settings')
+      setStudioUrl(formattedUrl)
       setStudioConfigured(true)
       setStudioSaved(true)
       setStudioKey('')
