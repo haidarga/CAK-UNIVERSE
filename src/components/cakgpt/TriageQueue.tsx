@@ -581,7 +581,7 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
             </button>
           )}
           <div className="mx-1 h-5 w-px bg-border" />
-          <button onClick={pushToStudio} disabled={studioPushing}
+          <button onClick={() => pushToStudio()} disabled={studioPushing}
             title="Push approved naskah to CAK Video Studio as production jobs"
             className="flex items-center gap-1 rounded-md bg-gradient-to-r from-purple-600 to-pink-600 px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50 cursor-pointer shadow-sm shadow-purple-500/30">
             <Zap size={14} aria-hidden /> {studioPushing ? 'Pushing…' : '🎬 Push to Studio'}
