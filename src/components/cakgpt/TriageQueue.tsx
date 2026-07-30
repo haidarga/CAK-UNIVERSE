@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Check, X, Sparkles, RefreshCw, FileUp, FileDown, ExternalLink, Pencil, Save, RotateCcw, ShieldCheck, ChevronDown, Link2, Zap } from 'lucide-react'
+import { Check, X, Sparkles, RefreshCw, FileUp, FileDown, ExternalLink, Pencil, Save, RotateCcw, ShieldCheck, ChevronDown, Link2, Zap, FileSpreadsheet } from 'lucide-react'
 import { MAX_DAY_TOTAL, MAX_FANOUT_ITEMS } from '@/lib/cakgpt/schemas'
 
 type QueueItem = {
@@ -534,6 +534,58 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
     }
   }
 
+  const [sheetExporting, setSheetExporting] = useState(false)
+
+  async function pushToSheet() {
+    let idsToExport = Array.from(checkedPushIds)
+    if (idsToExport.length === 0) {
+      idsToExport = items.map(i => i.naskah_id)
+    }
+    if (idsToExport.length === 0) {
+      alert('Pilih minimal 1 naskah untuk di-push ke Spreadsheet.')
+      return
+    }
+
+    setSheetExporting(true)
+    try {
+      const res = await fetch('/api/sheets/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ naskah_ids: idsToExport }),
+      })
+      const data = await res.json()
+      if (!data.ok) {
+        alert(`❌ Gagal export: ${data.error}`)
+        return
+      }
+
+      const headers = ['naskah_id', 'topic', 'persona', 'day_series', 'hook_text', 'body_text', 'cta_text', 'client_status', 'client_comment']
+      const tsvLines = [headers.join('\t')]
+      for (const row of data.rows) {
+        tsvLines.push([
+          row.naskah_id,
+          `"${(row.topic || '').replace(/"/g, '""')}"`,
+          `"${(row.persona || '').replace(/"/g, '""')}"`,
+          `"${(row.day_series || '').replace(/"/g, '""')}"`,
+          `"${(row.hook_text || '').replace(/"/g, '""')}"`,
+          `"${(row.body_text || '').replace(/"/g, '""')}"`,
+          `"${(row.cta_text || '').replace(/"/g, '""')}"`,
+          `"${(row.client_status || '').replace(/"/g, '""')}"`,
+          `"${(row.client_comment || '').replace(/"/g, '""')}"`,
+        ].join('\t'))
+      }
+      const tsvContent = tsvLines.join('\n')
+
+      await navigator.clipboard.writeText(tsvContent)
+      alert(`✅ Berhasil export ${data.count} naskah!\n\nTeks format Spreadsheet sudah disalin ke clipboard.\nBuka Google Sheets lu lalu tekan Ctrl+V untuk Paste!`)
+      setDocStatus(`✅ Exported ${data.count} naskah to Spreadsheet clipboard (Ctrl+V in Google Sheets)`)
+    } catch (e) {
+      alert(`❌ Error export: ${e instanceof Error ? e.message : 'Network error'}`)
+    } finally {
+      setSheetExporting(false)
+    }
+  }
+
   async function flagAction(flagId: string, status: 'resolved' | 'dismissed') {
     try {
       await fetch(`/api/scriptwriter/qc/flags/${flagId}`, {
@@ -593,6 +645,11 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
             title="Rewrite the Google Doc from current naskah"
             className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-text hover:bg-muted disabled:opacity-50 cursor-pointer">
             <FileUp size={14} aria-hidden /> {docSyncing === 'push' ? 'Pushing…' : docRef ? 'Push' : 'Push to Doc'}
+          </button>
+          <button onClick={pushToSheet} disabled={sheetExporting}
+            title="Export naskah to Google Sheets TSV format (Auto-copied to Clipboard)"
+            className="flex items-center gap-1 rounded-md border border-green-600/40 bg-green-500/10 px-2.5 py-1.5 text-xs font-medium text-green-400 hover:bg-green-500/20 disabled:opacity-50 cursor-pointer">
+            <FileSpreadsheet size={14} aria-hidden /> {sheetExporting ? 'Exporting…' : '📊 Push to Sheet'}
           </button>
           {docRef && (
             <button onClick={pullFromDoc} disabled={docSyncing !== null}
