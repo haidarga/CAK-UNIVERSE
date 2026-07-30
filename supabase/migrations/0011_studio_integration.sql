@@ -1,11 +1,18 @@
--- Studio integration — track push status on naskah + store connection settings.
+-- Studio integration — track push status on naskah + store connection settings in cakai-ecosystem.
 
--- Track push status per naskah (which jobs were created in Video Studio)
-alter table naskah add column if not exists
-  studio_handoff jsonb;
+-- 1. Add columns to sw_user_settings (scriptwriter user settings in cakai-ecosystem)
+alter table sw_user_settings add column if not exists studio_api_key text;
+alter table sw_user_settings add column if not exists studio_api_url text;
+
+-- Also add to user_settings if present for backwards compatibility
+alter table if exists user_settings add column if not exists studio_api_key text;
+alter table if exists user_settings add column if not exists studio_api_url text;
+
+-- 2. Track push status per naskah
+alter table naskah add column if not exists studio_handoff jsonb;
 -- Structure: { studio_job_ids: [uuid], pushed_at: timestamptz, status: 'pushed'|'generating'|'done'|'error' }
 
--- Persist per-user persona mappings for auto-match fallback
+-- 3. Persist per-user persona mappings for auto-match fallback
 create table if not exists persona_studio_mappings (
   id                  uuid primary key default gen_random_uuid(),
   created_by          uuid not null references auth.users(id) default auth.uid(),
