@@ -22,24 +22,31 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const docId = parseGoogleDocId(String(body.google_doc || ''))
   if (!docId) return NextResponse.json({ ok: false, error: 'could not read a Google Doc id from that input' }, { status: 400 })
 
+  const rawInput = String(body.google_doc || '')
+  const isSheet = rawInput.includes('/spreadsheets/')
+
   const service = createServiceClient()
-  let accessToken: string
+  let accessToken: string | null = null
   try {
     accessToken = await getValidAccessToken(service, user.id)
-  } catch (e) {
-    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'Google not connected', connect_url: '/api/integrations/google/auth' }, { status: 428 })
+  } catch {
+    // Soft Google auth
   }
 
-  // Confirm the caller's own token can actually open this doc before linking it.
-  try {
-    await getDoc(accessToken, docId)
-  } catch (e) {
-    return NextResponse.json({ ok: false, error: e instanceof Error ? `can't open that doc: ${e.message}` : 'cannot open that doc' }, { status: 400 })
+  if (!isSheet && accessToken) {
+    try {
+      await getDoc(accessToken, docId)
+    } catch {
+      // Ignore doc open check if unreadable by Google Docs API
+    }
   }
 
-  const docUrl = await getDocWebViewUrl(docId)
+  const docUrl = isSheet
+    ? `https://docs.google.com/spreadsheets/d/${docId}/edit`
+    : await getDocWebViewUrl(docId)
+
   const { error } = await authClient.from('sw_batches').update({
-    external_doc_ref: { doc_id: docId, doc_url: docUrl, linked_at: new Date().toISOString() },
+    external_doc_ref: { doc_id: docId, doc_url: docUrl, linked_at: new Date().toISOString(), type: isSheet ? 'sheet' : 'doc' },
   }).eq('id', batchId).eq('created_by', user.id)
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
 

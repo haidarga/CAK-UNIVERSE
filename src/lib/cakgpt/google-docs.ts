@@ -50,8 +50,10 @@ export async function getDocWebViewUrl(documentId: string): Promise<string> {
 // id charset so it can only ever become the path suffix of the fixed
 // docs.googleapis.com URL (no SSRF / path injection).
 export function parseGoogleDocId(input: string): string | null {
-  const m = input.match(/\/document\/d\/([a-zA-Z0-9_-]+)/)
-  if (m) return m[1]
+  const mDoc = input.match(/\/document\/d\/([a-zA-Z0-9_-]+)/)
+  if (mDoc) return mDoc[1]
+  const mSheet = input.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)
+  if (mSheet) return mSheet[1]
   if (/^[a-zA-Z0-9_-]{20,}$/.test(input.trim())) return input.trim()
   return null
 }
