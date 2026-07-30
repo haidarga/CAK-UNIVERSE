@@ -1,22 +1,14 @@
 // GET /api/studio/status — poll Video Studio for job status updates.
-//
-// Auth: normal Supabase session.
-// Query: ?naskah_ids=id1,id2  (Caketing naskah IDs that were pushed)
-//
-// Fetches studio_handoff from naskah, then queries Video Studio for live status.
+// Compatible with both sw_ (cakai-ecosystem) and standard schemas.
 
-import { createServerClient } from '@/lib/supabase/server'
-import { requirePageUser } from '@/lib/auth'
+import { createServerClient } from '@/lib/cakgpt/supabase/server'
+import { requireUser } from '@/lib/cakgpt/auth'
 import { NextResponse } from 'next/server'
 
 export async function GET(req: Request) {
   const supabase = await createServerClient()
-  let user
-  try {
-    user = await requirePageUser(supabase)
-  } catch {
-    return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
-  }
+  const { user, unauthorized } = await requireUser(supabase)
+  if (unauthorized) return unauthorized
 
   const { searchParams } = new URL(req.url)
   const rawIds = searchParams.get('naskah_ids') || ''
@@ -26,12 +18,21 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: 'naskah_ids required' }, { status: 400 })
   }
 
-  // Fetch studio connection settings
-  const { data: settings } = await supabase
-    .from('user_settings')
+  // Fetch studio connection settings (sw_user_settings fallback user_settings)
+  let { data: settings } = await supabase
+    .from('sw_user_settings')
     .select('studio_api_key, studio_api_url')
     .eq('user_id', user.id)
     .maybeSingle()
+
+  if (!settings?.studio_api_key) {
+    const { data: legacySettings } = await supabase
+      .from('user_settings')
+      .select('studio_api_key, studio_api_url')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (legacySettings) settings = legacySettings
+  }
 
   const studioUrl = settings?.studio_api_url
   const studioApiKey = settings?.studio_api_key
@@ -39,12 +40,22 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: 'Studio integration not configured' }, { status: 400 })
   }
 
-  // Fetch naskah with studio_handoff
-  const { data: naskahRows } = await supabase
-    .from('naskah')
+  // Fetch naskah with studio_handoff (sw_naskah fallback naskah)
+  let naskahRows: any[] | null = null
+  const { data: swRows } = await supabase
+    .from('sw_naskah')
     .select('id, studio_handoff')
     .in('id', naskahIds)
-    .eq('created_by', user.id)
+
+  if (swRows && swRows.length > 0) {
+    naskahRows = swRows
+  } else {
+    const { data: legacyRows } = await supabase
+      .from('naskah')
+      .select('id, studio_handoff')
+      .in('id', naskahIds)
+    naskahRows = legacyRows
+  }
 
   if (!naskahRows || naskahRows.length === 0) {
     return NextResponse.json({ ok: false, error: 'No naskah found' }, { status: 404 })
@@ -85,12 +96,10 @@ export async function GET(req: Request) {
       }, { status: 502 })
     }
 
-    // Build status map
     const jobStatuses = new Map<string, { id: string; status: string; result_urls?: any[] }>(
       (studioData.jobs || []).map((j: any) => [j.id, j])
     )
 
-    // Update naskah.studio_handoff status if changed
     for (const n of naskahRows) {
       const handoff = n.studio_handoff as any
       if (!handoff?.studio_job_ids) continue
@@ -99,7 +108,6 @@ export async function GET(req: Request) {
       const studioJob = jobStatuses.get(jobId)
       if (!studioJob) continue
 
-      // Map studio status to handoff status
       const statusMap: Record<string, string> = {
         pending: 'pushed',
         in_progress: 'generating',
@@ -112,13 +120,17 @@ export async function GET(req: Request) {
       const newStatus = statusMap[studioJob.status] || 'pushed'
 
       if (handoff.status !== newStatus) {
-        await supabase
-          .from('naskah')
-          .update({
-            studio_handoff: { ...handoff, status: newStatus }
-          })
+        const nextHandoff = { ...handoff, status: newStatus }
+        const { error: swErr } = await supabase
+          .from('sw_naskah')
+          .update({ studio_handoff: nextHandoff })
           .eq('id', n.id)
-          .eq('created_by', user.id)
+        if (swErr) {
+          await supabase
+            .from('naskah')
+            .update({ studio_handoff: nextHandoff })
+            .eq('id', n.id)
+        }
       }
     }
 

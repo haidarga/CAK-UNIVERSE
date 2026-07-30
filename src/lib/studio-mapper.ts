@@ -6,7 +6,7 @@
 // The blocks are grouped by shot_no. Within each shot, lines are concatenated
 // into dialogue and visual notes seed the image_prompt.
 
-import type { Block } from '@/lib/schemas'
+import type { Block } from '@/lib/cakgpt/schemas'
 
 type StudioShot = {
   shot: number

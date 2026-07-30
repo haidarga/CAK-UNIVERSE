@@ -1,19 +1,8 @@
 // POST /api/studio/push — push approved naskah to CAK Video Studio.
-//
-// Auth: normal Supabase session.
-// Body: { naskah_ids: string[] }  — UUIDs of approved naskah to push.
-//
-// Flow:
-//   1. Fetch naskah + their current_version body (blocks)
-//   2. Resolve persona mapping (auto-match by name, fallback to saved manual mapping)
-//   3. Convert blocks → Video Studio shot format
-//   4. POST to Video Studio /api/external/ingest
-//   5. Store studio_job_ids in naskah.studio_handoff
-//   6. Return results
+// Compatible with both sw_ (cakai-ecosystem) and standard schemas.
 
-import { createServerClient } from '@/lib/supabase/server'
-import { requirePageUser } from '@/lib/auth'
-import { getGeminiApiKey } from '@/lib/settings'
+import { createServerClient } from '@/lib/cakgpt/supabase/server'
+import { requireUser } from '@/lib/cakgpt/auth'
 import { blocksToStudioShots, blocksToRawText } from '@/lib/studio-mapper'
 import { NextResponse } from 'next/server'
 
@@ -21,15 +10,11 @@ const MAX_PUSH_PER_REQUEST = 20
 
 export async function POST(req: Request) {
   const supabase = await createServerClient()
-  let user
-  try {
-    user = await requirePageUser(supabase)
-  } catch {
-    return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
-  }
+  const { user, unauthorized } = await requireUser(supabase)
+  if (unauthorized) return unauthorized
 
   // Parse body
-  let body
+  let body: any
   try {
     body = await req.json()
   } catch {
@@ -44,12 +29,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: `Max ${MAX_PUSH_PER_REQUEST} naskah per push` }, { status: 400 })
   }
 
-  // Get Studio integration settings
-  const { data: settings } = await supabase
-    .from('user_settings')
+  // Get Studio integration settings (try sw_user_settings first, then user_settings)
+  let { data: settings } = await supabase
+    .from('sw_user_settings')
     .select('studio_api_key, studio_api_url')
     .eq('user_id', user.id)
     .maybeSingle()
+
+  if (!settings?.studio_api_key) {
+    const { data: legacySettings } = await supabase
+      .from('user_settings')
+      .select('studio_api_key, studio_api_url')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (legacySettings) settings = legacySettings
+  }
 
   const studioUrl = settings?.studio_api_url
   const studioApiKey = settings?.studio_api_key
@@ -60,19 +54,37 @@ export async function POST(req: Request) {
     }, { status: 400 })
   }
 
-  // Fetch naskah + versions + personas
-  const { data: naskahRows, error: naskahErr } = await supabase
-    .from('naskah')
+  // Fetch naskah (try sw_naskah first, fallback to naskah)
+  let naskahRows: any[] | null = null
+
+  const { data: swNaskah } = await supabase
+    .from('sw_naskah')
     .select(`
       id, title, status, batch_id, brief_id, persona_id, studio_handoff,
       current_version_id,
-      personas!inner(id, name)
+      sw_personas!inner(id, name)
     `)
     .in('id', naskah_ids)
-    .eq('created_by', user.id)
 
-  if (naskahErr || !naskahRows) {
-    return NextResponse.json({ ok: false, error: `Failed to fetch naskah: ${naskahErr?.message}` }, { status: 500 })
+  if (swNaskah && swNaskah.length > 0) {
+    naskahRows = swNaskah.map(n => ({
+      ...n,
+      personas: n.sw_personas,
+    }))
+  } else {
+    const { data: legacyNaskah } = await supabase
+      .from('naskah')
+      .select(`
+        id, title, status, batch_id, brief_id, persona_id, studio_handoff,
+        current_version_id,
+        personas!inner(id, name)
+      `)
+      .in('id', naskah_ids)
+    naskahRows = legacyNaskah
+  }
+
+  if (!naskahRows || naskahRows.length === 0) {
+    return NextResponse.json({ ok: false, error: 'Failed to fetch naskah items' }, { status: 404 })
   }
 
   // Only push approved naskah
@@ -81,14 +93,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: 'No approved naskah found' }, { status: 400 })
   }
 
-  // Fetch current version bodies
+  // Fetch current version bodies (try sw_naskah_versions first, fallback to naskah_versions)
   const versionIds = approvedNaskah.map(n => n.current_version_id).filter(Boolean)
-  const { data: versions } = versionIds.length > 0
-    ? await supabase
+  let versions: any[] | null = null
+
+  if (versionIds.length > 0) {
+    const { data: swVersions } = await supabase
+      .from('sw_naskah_versions')
+      .select('id, naskah_id, body, format_meta')
+      .in('id', versionIds)
+    if (swVersions && swVersions.length > 0) {
+      versions = swVersions
+    } else {
+      const { data: legacyVersions } = await supabase
         .from('naskah_versions')
         .select('id, naskah_id, body, format_meta')
         .in('id', versionIds)
-    : { data: [] }
+      versions = legacyVersions
+    }
+  }
 
   const versionByNaskah = new Map(
     (versions || []).map(v => [v.naskah_id, v])
@@ -104,36 +127,63 @@ export async function POST(req: Request) {
     (savedMappings || []).map(m => [m.caketing_persona_id, m])
   )
 
-  // Fetch brief context
-  const briefIds = [...new Set(approvedNaskah.map(n => n.brief_id))]
-  const { data: briefs } = briefIds.length > 0
-    ? await supabase
+  // Fetch brief context (try sw_strategist_briefs first, fallback to strategist_briefs)
+  const briefIds = [...new Set(approvedNaskah.map(n => n.brief_id).filter(Boolean))]
+  let briefs: any[] | null = null
+  if (briefIds.length > 0) {
+    const { data: swBriefs } = await supabase
+      .from('sw_strategist_briefs')
+      .select('id, title, product, platform, fields')
+      .in('id', briefIds)
+    briefs = swBriefs
+    if (!briefs || briefs.length === 0) {
+      const { data: legacyBriefs } = await supabase
         .from('strategist_briefs')
         .select('id, title, product, platform, fields')
         .in('id', briefIds)
-    : { data: [] }
+      briefs = legacyBriefs
+    }
+  }
 
   const briefById = new Map((briefs || []).map(b => [b.id, b]))
 
   // Fetch batch info for brand context
   const batchIds = [...new Set(approvedNaskah.map(n => n.batch_id).filter(Boolean))]
-  const { data: batches } = batchIds.length > 0
-    ? await supabase
+  let batches: any[] | null = null
+  if (batchIds.length > 0) {
+    const { data: swBatches } = await supabase
+      .from('sw_batches')
+      .select('id, name, client_id')
+      .in('id', batchIds)
+    batches = swBatches
+    if (!batches || batches.length === 0) {
+      const { data: legacyBatches } = await supabase
         .from('batches')
         .select('id, name, client_id')
         .in('id', batchIds)
-    : { data: [] }
+      batches = legacyBatches
+    }
+  }
 
   const batchById = new Map((batches || []).map(b => [b.id, b]))
 
   // Fetch client (brand) names
   const clientIds = [...new Set((batches || []).map(b => b.client_id).filter(Boolean))]
-  const { data: clients } = clientIds.length > 0
-    ? await supabase
+  let clients: any[] | null = null
+  if (clientIds.length > 0) {
+    const { data: swClients } = await supabase
+      .from('sw_clients')
+      .select('id, name')
+      .in('id', clientIds)
+    clients = swClients
+    if (!clients || clients.length === 0) {
+      const { data: legacyClients } = await supabase
         .from('clients')
         .select('id, name')
         .in('id', clientIds)
-    : { data: [] }
+      clients = legacyClients
+    }
+  }
 
   const clientById = new Map((clients || []).map(c => [c.id, c]))
 
@@ -155,18 +205,17 @@ export async function POST(req: Request) {
     }
 
     const blocks = version.body
-    const persona = n.personas as unknown as { id: string; name: string }
+    const persona = n.personas as { id: string; name: string }
     const brief = briefById.get(n.brief_id)
     const batch = n.batch_id ? batchById.get(n.batch_id) : null
     const client = batch?.client_id ? clientById.get(batch.client_id) : null
 
     // Resolve persona mapping
-    const savedMapping = mappingByPersona.get(persona.id)
+    const savedMapping = persona?.id ? mappingByPersona.get(persona.id) : null
 
     const personaMapping = {
-      source_persona_id: persona.id,
-      persona_name: persona.name,
-      // If there's a saved manual mapping, use it; otherwise let Studio auto-match
+      source_persona_id: persona?.id || null,
+      persona_name: persona?.name || 'Subject',
       ...(savedMapping ? {
         studio_persona_id: savedMapping.studio_persona_id,
         studio_persona_name: savedMapping.studio_persona_name,
@@ -176,7 +225,6 @@ export async function POST(req: Request) {
     // Convert blocks → shots
     const parsedShots = blocksToStudioShots(blocks)
     const rawText = blocksToRawText(blocks)
-
     const formatMeta = version.format_meta || {}
 
     ingestItems.push({
@@ -184,7 +232,7 @@ export async function POST(req: Request) {
       source_ref: {
         naskah_id: n.id,
         batch_id: n.batch_id,
-        persona_id: persona.id,
+        persona_id: persona?.id,
         brief_id: n.brief_id,
       },
       title: n.title || 'Untitled',
@@ -210,7 +258,7 @@ export async function POST(req: Request) {
   }
 
   // POST to Video Studio
-  let studioResponse
+  let studioResponse: any
   try {
     const res = await fetch(`${studioUrl.replace(/\/$/, '')}/api/external/ingest`, {
       method: 'POST',
@@ -236,7 +284,7 @@ export async function POST(req: Request) {
     }, { status: 502 })
   }
 
-  // Update naskah.studio_handoff with the returned job IDs
+  // Update naskah.studio_handoff with returned job IDs
   const studioJobs = studioResponse.jobs || []
   const jobIdsByNaskah = new Map<string, string>()
 
@@ -248,19 +296,25 @@ export async function POST(req: Request) {
     }
   }
 
-  // Write handoff data back to each naskah
+  // Write handoff data back (try sw_naskah first, then naskah)
   for (const [naskahId, studioJobId] of jobIdsByNaskah) {
-    await supabase
-      .from('naskah')
-      .update({
-        studio_handoff: {
-          studio_job_ids: [studioJobId],
-          pushed_at: new Date().toISOString(),
-          status: 'pushed',
-        }
-      })
+    const handoffData = {
+      studio_job_ids: [studioJobId],
+      pushed_at: new Date().toISOString(),
+      status: 'pushed',
+    }
+
+    const { error: swErr } = await supabase
+      .from('sw_naskah')
+      .update({ studio_handoff: handoffData })
       .eq('id', naskahId)
-      .eq('created_by', user.id)
+
+    if (swErr) {
+      await supabase
+        .from('naskah')
+        .update({ studio_handoff: handoffData })
+        .eq('id', naskahId)
+    }
   }
 
   return NextResponse.json({
