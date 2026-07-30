@@ -2,24 +2,34 @@ export function formatNaskahForSheetsExport(naskahList: any[]) {
   return naskahList.map((n, idx) => {
     const blocks: any[] = Array.isArray(n.body) ? n.body : []
 
-    let hookBlocks = blocks.filter(b => (b.section_key || b.type || '').toLowerCase().includes('hook'))
-    let ctaBlocks = blocks.filter(b => (b.section_key || b.type || '').toLowerCase().includes('cta'))
-    let bodyBlocks = blocks.filter(b => !hookBlocks.includes(b) && !ctaBlocks.includes(b))
+    const hookParts: string[] = []
+    const bodyParts: string[] = []
+    const ctaParts: string[] = []
+    const visualParts: string[] = []
 
-    // Fallbacks if section_key wasn't named 'hook' or 'cta'
-    if (hookBlocks.length === 0 && blocks.length > 0) {
-      hookBlocks = [blocks[0]]
-      bodyBlocks = blocks.slice(1)
-    }
-    if (ctaBlocks.length === 0 && bodyBlocks.length > 1) {
-      ctaBlocks = [bodyBlocks[bodyBlocks.length - 1]]
-      bodyBlocks = bodyBlocks.slice(0, bodyBlocks.length - 1)
-    }
+    blocks.forEach((b, blockIdx) => {
+      const text = (b.text || '').trim()
+      const speaker = (b.speaker || '').trim()
+      const lineText = speaker ? `${speaker}: ${text}` : text
+      const key = (b.section_key || b.type || '').toLowerCase()
 
-    const hookText = hookBlocks.map(b => b.text || '').filter(Boolean).join('\n')
-    const bodyText = bodyBlocks.map(b => b.text || '').filter(Boolean).join('\n')
-    const ctaText = ctaBlocks.map(b => b.text || '').filter(Boolean).join('\n')
-    const visualNotes = blocks.map(b => b.visual_note ? `[${b.section_key || 'shot'}] ${b.visual_note}` : '').filter(Boolean).join('\n')
+      if (key.includes('hook') || (blockIdx === 0 && !key.includes('body') && !key.includes('cta'))) {
+        if (text) hookParts.push(lineText)
+      } else if (key.includes('cta') || (blockIdx === blocks.length - 1 && blocks.length > 2 && key.includes('cta'))) {
+        if (text) ctaParts.push(lineText)
+      } else {
+        if (text) bodyParts.push(lineText)
+      }
+
+      if (b.visual_note?.trim()) {
+        visualParts.push(`Shot ${b.shot_no || blockIdx + 1} (Line ${b.line_no || blockIdx + 1}): ${b.visual_note.trim()}`)
+      }
+    })
+
+    const hookText = hookParts.join('\n')
+    const bodyText = bodyParts.join('\n')
+    const ctaText = ctaParts.join('\n')
+    const visualText = visualParts.join('\n')
 
     return {
       no: idx + 1,
@@ -28,9 +38,9 @@ export function formatNaskahForSheetsExport(naskahList: any[]) {
       persona: n.persona_name || 'Subject',
       day_series: n.day_series || n.title?.match(/Hari \d+(?:\/\d+)?/i)?.[0] || (n.day_no ? `Hari ${n.day_no}` : 'Hari 1/3'),
       hook_text: hookText || n.title || '',
-      body_text: bodyText || '',
-      cta_text: ctaText || '',
-      visual_notes: visualNotes || '-',
+      body_text: bodyText || '-',
+      cta_text: ctaText || '-',
+      visual_notes: visualText || '-',
       client_status: n.client_status || 'Pending Review',
       client_comment: n.client_comment || '',
     }

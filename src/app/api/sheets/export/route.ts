@@ -49,16 +49,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: 'naskah_ids or batch_id required' }, { status: 400 })
   }
 
-  // 1. Fetch sw_naskah without sw_naskah_versions relation (avoids PostgREST ambiguity)
+  // 1. Fetch naskah with current_version_id and persona
   let { data: naskahRows } = await supabase
     .from('sw_naskah')
-    .select('id, title, status, day_no, brief_id, persona_id, sw_personas(id, name)')
+    .select('id, title, status, day_no, brief_id, persona_id, current_version_id, sw_personas(id, name)')
     .in('id', targetIds)
 
   if (!naskahRows || naskahRows.length === 0) {
     const { data: legacyRows } = await supabase
       .from('naskah')
-      .select('id, title, status, day_no, brief_id, persona_id, personas(id, name)')
+      .select('id, title, status, day_no, brief_id, persona_id, current_version_id, personas(id, name)')
       .in('id', targetIds)
 
     naskahRows = (legacyRows || []).map((l: any) => ({
@@ -71,22 +71,39 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: 'No naskah found for export' }, { status: 404 })
   }
 
-  // 2. Fetch versions separately using explicit naskah_id query
+  // 2. Fetch version rows by current_version_id OR naskah_id fallback
+  const versionIds = naskahRows.map(n => n.current_version_id).filter(Boolean)
   const nIds = naskahRows.map(n => n.id)
-  const { data: swVer } = await supabase
-    .from('sw_naskah_versions')
-    .select('id, naskah_id, body, is_current')
-    .in('naskah_id', nIds)
 
-  const { data: legacyVer } = await supabase
-    .from('naskah_versions')
-    .select('id, naskah_id, body, is_current')
-    .in('naskah_id', nIds)
+  let versions: any[] = []
+  if (versionIds.length > 0) {
+    const { data: swVerById } = await supabase
+      .from('sw_naskah_versions')
+      .select('id, naskah_id, body')
+      .in('id', versionIds)
 
-  const allVersions = [...(swVer || []), ...(legacyVer || [])]
+    if (swVerById && swVerById.length > 0) {
+      versions = swVerById
+    }
+  }
+
+  if (versions.length === 0) {
+    const { data: swVerByNId } = await supabase
+      .from('sw_naskah_versions')
+      .select('id, naskah_id, body')
+      .in('naskah_id', nIds)
+
+    const { data: legacyVer } = await supabase
+      .from('naskah_versions')
+      .select('id, naskah_id, body')
+      .in('naskah_id', nIds)
+
+    versions = [...(swVerByNId || []), ...(legacyVer || [])]
+  }
+
   const versionMap = new Map<string, any>()
-  for (const v of allVersions) {
-    if (v.is_current || !versionMap.has(v.naskah_id)) {
+  for (const v of versions) {
+    if (!versionMap.has(v.naskah_id) || !versionMap.get(v.naskah_id)?.body?.length) {
       versionMap.set(v.naskah_id, v)
     }
   }

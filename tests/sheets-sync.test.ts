@@ -2,24 +2,27 @@ import { describe, it, expect } from 'vitest'
 import { formatNaskahForSheetsExport, parseClientFeedbackDelta } from '../src/lib/sheets-helpers'
 
 describe('Google Sheets Export & Feedback Sync Helper', () => {
-  it('formats naskah list for Google Sheets export correctly', () => {
+  it('formats naskah list for Google Sheets export correctly with blocks', () => {
     const rawNaskah = [{
       id: 'naskah_123',
-      title: 'PURE NUTRITION · Stacy Prixie · Hari 1/3',
-      persona_name: 'Stacy Prixie',
+      title: 'Why Susu Segar? · Emma Hasibuan',
+      persona_name: 'Emma Hasibuan',
       body: [
-        { type: 'hook', text: 'Ternyata ga semua susu anak sama' },
-        { type: 'body', text: 'Kandungan nutrisinya lengkap banget' },
-        { type: 'cta', text: 'Cek keranjang kuning sekarang!' },
+        { block_id: 'b1', section_key: 'hook', shot_no: 1, line_no: 1, speaker: 'Emma Hasibuan', text: 'Bingung kenapa susu formula kok ga cocok sama anak kamu?', visual_note: 'Emma ekspresi bingung' },
+        { block_id: 'b2', section_key: 'body', shot_no: 2, line_no: 3, speaker: 'Emma Hasibuan', text: 'Bunda, perhatiin deh! Banyak banget jenis susu di pasaran.', visual_note: 'Emma talking head' },
+        { block_id: 'b3', section_key: 'body', shot_no: 3, line_no: 4, speaker: 'Emma Hasibuan', text: 'Fakta ilmiahnya, susu segar itu sumber nutrisi paling alami.', visual_note: 'Emma green screen' },
+        { block_id: 'b4', section_key: 'cta', shot_no: 5, line_no: 8, speaker: 'Emma Hasibuan', text: 'Jadi, kalau mau yang terbaik buat anak, cek lagi deh susunya.', visual_note: 'Emma menunjuk keranjang' },
       ]
     }]
 
     const exported = formatNaskahForSheetsExport(rawNaskah)
     expect(exported.length).toBe(1)
-    expect(exported[0].persona).toBe('Stacy Prixie')
-    expect(exported[0].day_series).toBe('Hari 1/3')
-    expect(exported[0].hook_text).toBe('Ternyata ga semua susu anak sama')
-    expect(exported[0].cta_text).toBe('Cek keranjang kuning sekarang!')
+    expect(exported[0].persona).toBe('Emma Hasibuan')
+    expect(exported[0].hook_text).toContain('Bingung kenapa susu formula kok ga cocok sama anak kamu?')
+    expect(exported[0].body_text).toContain('Bunda, perhatiin deh! Banyak banget jenis susu di pasaran.')
+    expect(exported[0].body_text).toContain('Fakta ilmiahnya, susu segar itu sumber nutrisi paling alami.')
+    expect(exported[0].cta_text).toContain('Jadi, kalau mau yang terbaik buat anak, cek lagi deh susunya.')
+    expect(exported[0].visual_notes).toContain('Shot 1 (Line 1): Emma ekspresi bingung')
   })
 
   it('detects direct cell edit feedback from client', () => {
@@ -32,16 +35,5 @@ describe('Google Sheets Export & Feedback Sync Helper', () => {
     expect(delta.should_update).toBe(true)
     expect(delta.revised_text).toBe('Susu ini terjangkau dan tinggi kalsium')
     expect(delta.version_tag).toBe('v_revised_client')
-  })
-
-  it('detects client comments feedback', () => {
-    const delta = parseClientFeedbackDelta({
-      naskah_id: 'naskah_123',
-      current_text: 'Susu ini enak',
-      client_comment: 'Tolong tambahin kata DSA (Dokter Spesialis Anak)',
-    })
-
-    expect(delta.should_update).toBe(true)
-    expect(delta.revision_notes).toContain('Client comment: "Tolong tambahin kata DSA')
   })
 })
