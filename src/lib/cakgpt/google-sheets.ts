@@ -1,4 +1,4 @@
-// Google Sheets API v4 helper for writing formatted naskah rows directly into a Google Sheet with styling
+// Google Sheets API v4 helper for writing and reading formatted naskah rows directly into a Google Sheet with styling
 export async function pushValuesToGoogleSheet(accessToken: string, spreadsheetId: string, rows: any[][]) {
   const range = 'Sheet1!A1:J' + (rows.length + 1)
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`
@@ -42,6 +42,25 @@ export async function pushValuesToGoogleSheet(accessToken: string, spreadsheetId
   await formatGoogleSheetStyling(accessToken, spreadsheetId, rows.length)
 
   return data
+}
+
+export async function getValuesFromGoogleSheet(accessToken: string, spreadsheetId: string) {
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A1:J200`
+  let res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+
+  if (!res.ok) {
+    // Fallback to default range
+    const fallbackUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/A1:J200`
+    res = await fetch(fallbackUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+  }
+
+  if (!res.ok) throw new Error(`Failed to fetch Google Sheet data: ${res.statusText}`)
+  const data = await res.json()
+  return data.values || []
 }
 
 export async function formatGoogleSheetStyling(accessToken: string, spreadsheetId: string, rowCount: number) {

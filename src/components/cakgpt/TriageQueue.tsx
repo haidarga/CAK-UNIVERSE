@@ -535,6 +535,34 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
   }
 
   const [sheetExporting, setSheetExporting] = useState(false)
+  const [sheetSyncing, setSheetSyncing] = useState(false)
+
+  async function syncFeedbackFromSheet() {
+    setSheetSyncing(true)
+    try {
+      const res = await fetch('/api/sheets/sync-feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          batch_id: batchId,
+          google_sheet_url: docRef?.doc_url?.includes('/spreadsheets/') ? docRef.doc_url : undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!data.ok) {
+        alert(`❌ Gagal sync feedback: ${data.error}`)
+        return
+      }
+
+      alert(`✅ Berhasil SYNC ${data.synced_count || 0} naskah!\n\n${data.message || 'Revisi/feedback dari Google Sheet sudah otomatis diterapkan ke Caketing.'}`)
+      setDocStatus(`✅ Synced ${data.synced_count || 0} naskah from Google Sheet feedback`)
+      fetchQueue()
+    } catch (e) {
+      alert(`❌ Error sync feedback: ${e instanceof Error ? e.message : 'Network error'}`)
+    } finally {
+      setSheetSyncing(false)
+    }
+  }
 
   async function pushToSheet() {
     let idsToExport = Array.from(checkedPushIds)
@@ -660,9 +688,14 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
             <FileUp size={14} aria-hidden /> {docSyncing === 'push' ? 'Pushing…' : docRef ? 'Push' : 'Push to Doc'}
           </button>
           <button onClick={pushToSheet} disabled={sheetExporting}
-            title="Export naskah to Google Sheets TSV format (Auto-copied to Clipboard)"
+            title="Export naskah to Google Sheets (Direct API Push or TSV Clipboard)"
             className="flex items-center gap-1 rounded-md border border-green-600/40 bg-green-500/10 px-2.5 py-1.5 text-xs font-medium text-green-400 hover:bg-green-500/20 disabled:opacity-50 cursor-pointer">
             <FileSpreadsheet size={14} aria-hidden /> {sheetExporting ? 'Exporting…' : '📊 Push to Sheet'}
+          </button>
+          <button onClick={syncFeedbackFromSheet} disabled={sheetSyncing}
+            title="Pull client edits & comments from Google Sheet back to Caketing"
+            className="flex items-center gap-1 rounded-md border border-emerald-600/40 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50 cursor-pointer">
+            <RefreshCw size={14} className={sheetSyncing ? 'animate-spin' : ''} aria-hidden /> {sheetSyncing ? 'Syncing…' : '🔄 Sync Feedback'}
           </button>
           {docRef && (
             <button onClick={pullFromDoc} disabled={docSyncing !== null}
