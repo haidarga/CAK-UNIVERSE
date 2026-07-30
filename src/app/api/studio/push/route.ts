@@ -206,11 +206,7 @@ export async function POST(req: Request) {
       continue
     }
 
-    // Already pushed? Skip.
-    if (n.studio_handoff?.studio_job_ids?.length > 0) {
-      errors.push({ naskah_id: n.id, error: 'Already pushed to Studio' })
-      continue
-    }
+    // Allow re-pushing any selected naskah
 
     const briefKey = n.brief_id || n.title?.split('·')[0]?.trim() || 'general'
     if (!batchMapByBrief.has(briefKey)) {
