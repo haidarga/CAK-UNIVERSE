@@ -23,10 +23,10 @@ export async function GET(req: Request) {
     .from('sw_naskah')
     .select('id, title, status, current_version_id, updated_at, persona_id, brief_id, day_no, created_at')
     .eq('created_by', user.id)
-    .eq('status', status)
     .order('updated_at', { ascending: false })
     .limit(MAX_ITEMS)
   if (batchId) query = query.eq('batch_id', batchId)
+  if (status && status !== 'all') query = query.eq('status', status)
 
   const { data: naskahRows, error } = await query
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })

@@ -196,10 +196,8 @@ export async function POST(req: Request) {
   const ingestItems = []
   const errors: Array<{ naskah_id: string; error: string }> = []
 
-  // Unique push batch ID for grouping in Studio Inbox
-  const pushBatchId = `batch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
-  const firstBatchName = batches?.[0]?.name || approvedNaskah[0]?.title?.split('·')[0]?.trim() || 'Content Plan'
-  const pushBatchTitle = `${firstBatchName} (${approvedNaskah.length} Naskah)`
+  // Unique push batch ID per brief/topic for clean grouping in Studio Inbox
+  const batchMapByBrief = new Map<string, { id: string; title: string }>()
 
   for (const n of approvedNaskah) {
     const version = versionByNaskah.get(n.id)
@@ -213,6 +211,15 @@ export async function POST(req: Request) {
       errors.push({ naskah_id: n.id, error: 'Already pushed to Studio' })
       continue
     }
+
+    const briefKey = n.brief_id || n.title?.split('·')[0]?.trim() || 'general'
+    if (!batchMapByBrief.has(briefKey)) {
+      const brief = briefById.get(n.brief_id)
+      const topicTitle = brief?.title || brief?.product || n.title?.split('·')[0]?.trim() || 'Content Plan'
+      const pBatchId = `batch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+      batchMapByBrief.set(briefKey, { id: pBatchId, title: topicTitle })
+    }
+    const bInfo = batchMapByBrief.get(briefKey)!
 
     const blocks = version.body
     const persona = n.personas as { id: string; name: string }
@@ -244,8 +251,8 @@ export async function POST(req: Request) {
         batch_id: n.batch_id,
         persona_id: persona?.id,
         brief_id: n.brief_id,
-        push_batch_id: pushBatchId,
-        push_batch_title: pushBatchTitle,
+        push_batch_id: bInfo.id,
+        push_batch_title: bInfo.title,
       },
       title: n.title || 'Untitled',
       naskah_text: rawText,

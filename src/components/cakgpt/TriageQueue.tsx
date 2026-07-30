@@ -123,10 +123,12 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
     ? readyBriefs.filter((b) => !b.client_id || b.client_id === batchClientId)
     : readyBriefs
 
+  const [statusFilter, setStatusFilter] = useState<'draft' | 'approved' | 'all'>('all')
+
   const fetchQueue = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/scriptwriter/triage/queue?batch_id=${batchId}`)
+      const res = await fetch(`/api/scriptwriter/triage/queue?batch_id=${batchId}&status=${statusFilter}`)
       const data = await res.json()
       if (data.ok) setItems(data.items)
       else setActionError(data.error || 'failed to load queue')
@@ -135,7 +137,7 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
     } finally {
       setLoading(false)
     }
-  }, [batchId])
+  }, [batchId, statusFilter])
 
   useEffect(() => { fetchQueue() }, [fetchQueue])
 
@@ -713,6 +715,21 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
 
       <div className="flex flex-1 overflow-hidden">
         <div className="w-96 shrink-0 overflow-y-auto border-r border-border">
+          <div className="flex items-center gap-1.5 border-b border-border bg-muted/40 px-3 py-1.5 text-xs font-medium">
+            <span className="text-[11px] text-mutedText mr-1 font-semibold">Filter:</span>
+            <button onClick={() => setStatusFilter('all')}
+              className={`rounded px-2 py-0.5 text-[11px] font-semibold cursor-pointer transition-colors ${statusFilter === 'all' ? 'bg-primary text-onPrimary' : 'text-mutedText hover:text-text'}`}>
+              All
+            </button>
+            <button onClick={() => setStatusFilter('draft')}
+              className={`rounded px-2 py-0.5 text-[11px] font-semibold cursor-pointer transition-colors ${statusFilter === 'draft' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' : 'text-mutedText hover:text-text'}`}>
+              Draft
+            </button>
+            <button onClick={() => setStatusFilter('approved')}
+              className={`rounded px-2 py-0.5 text-[11px] font-semibold cursor-pointer transition-colors ${statusFilter === 'approved' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'text-mutedText hover:text-text'}`}>
+              Approved / Pushed
+            </button>
+          </div>
           {items.length > 0 && (
             <div className="flex items-center justify-between border-b border-border bg-muted/20 px-4 py-2 text-[11px] text-mutedText">
               <div className="flex items-center gap-2">
