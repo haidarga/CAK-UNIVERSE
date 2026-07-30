@@ -10,7 +10,7 @@ export async function GET() {
   const { data } = await supabase
     .from('sw_user_settings')
     .select('gemini_api_key, studio_api_key, studio_api_url')
-    .eq('user_id', user.id)
+    .eq('created_by', user.id)
     .maybeSingle()
 
   return NextResponse.json({
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   let body: Record<string, unknown>
   try { body = await req.json() } catch { return NextResponse.json({ ok: false, error: 'invalid json' }, { status: 400 }) }
 
-  const updates: Record<string, string> = { user_id: user.id }
+  const updates: Record<string, any> = { created_by: user.id }
 
   if (typeof body.gemini_api_key === 'string' && body.gemini_api_key.trim()) {
     updates.gemini_api_key = body.gemini_api_key.trim()
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
 
   const { error } = await supabase
     .from('sw_user_settings')
-    .upsert(updates, { onConflict: 'user_id' })
+    .upsert(updates, { onConflict: 'created_by' })
 
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
 

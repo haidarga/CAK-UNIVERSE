@@ -33,7 +33,7 @@ export async function POST(req: Request) {
   let { data: settings } = await supabase
     .from('sw_user_settings')
     .select('studio_api_key, studio_api_url')
-    .eq('user_id', user.id)
+    .eq('created_by', user.id)
     .maybeSingle()
 
   if (!settings?.studio_api_key) {
