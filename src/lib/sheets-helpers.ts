@@ -1,15 +1,40 @@
 export function formatNaskahForSheetsExport(naskahList: any[]) {
-  return naskahList.map(n => ({
-    naskah_id: n.id,
-    topic: n.topic || n.title?.split('·')[0]?.trim() || 'Content Plan',
-    persona: n.persona_name || 'Subject',
-    day_series: n.day_series || n.title?.match(/Hari \d+(?:\/\d+)?/i)?.[0] || 'Hari 1/3',
-    hook_text: n.hook || n.body?.find((b: any) => b.type === 'hook')?.text || '',
-    body_text: n.body?.filter((b: any) => b.type !== 'hook' && b.type !== 'cta')?.map((b: any) => b.text).join('\n') || '',
-    cta_text: n.cta || n.body?.find((b: any) => b.type === 'cta')?.text || '',
-    client_status: n.client_status || 'Pending Review',
-    client_comment: n.client_comment || '',
-  }))
+  return naskahList.map((n, idx) => {
+    const blocks: any[] = Array.isArray(n.body) ? n.body : []
+
+    let hookBlocks = blocks.filter(b => (b.section_key || b.type || '').toLowerCase().includes('hook'))
+    let ctaBlocks = blocks.filter(b => (b.section_key || b.type || '').toLowerCase().includes('cta'))
+    let bodyBlocks = blocks.filter(b => !hookBlocks.includes(b) && !ctaBlocks.includes(b))
+
+    // Fallbacks if section_key wasn't named 'hook' or 'cta'
+    if (hookBlocks.length === 0 && blocks.length > 0) {
+      hookBlocks = [blocks[0]]
+      bodyBlocks = blocks.slice(1)
+    }
+    if (ctaBlocks.length === 0 && bodyBlocks.length > 1) {
+      ctaBlocks = [bodyBlocks[bodyBlocks.length - 1]]
+      bodyBlocks = bodyBlocks.slice(0, bodyBlocks.length - 1)
+    }
+
+    const hookText = hookBlocks.map(b => b.text || '').filter(Boolean).join('\n')
+    const bodyText = bodyBlocks.map(b => b.text || '').filter(Boolean).join('\n')
+    const ctaText = ctaBlocks.map(b => b.text || '').filter(Boolean).join('\n')
+    const visualNotes = blocks.map(b => b.visual_note ? `[${b.section_key || 'shot'}] ${b.visual_note}` : '').filter(Boolean).join('\n')
+
+    return {
+      no: idx + 1,
+      naskah_id: n.id,
+      topic: n.topic || n.title?.split('·')[0]?.trim() || 'Content Plan',
+      persona: n.persona_name || 'Subject',
+      day_series: n.day_series || n.title?.match(/Hari \d+(?:\/\d+)?/i)?.[0] || (n.day_no ? `Hari ${n.day_no}` : 'Hari 1/3'),
+      hook_text: hookText || n.title || '',
+      body_text: bodyText || '',
+      cta_text: ctaText || '',
+      visual_notes: visualNotes || '-',
+      client_status: n.client_status || 'Pending Review',
+      client_comment: n.client_comment || '',
+    }
+  })
 }
 
 export function parseClientFeedbackDelta(payload: {

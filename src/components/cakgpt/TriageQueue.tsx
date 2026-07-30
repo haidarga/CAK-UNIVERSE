@@ -551,7 +551,11 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
       const res = await fetch('/api/sheets/export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ naskah_ids: idsToExport }),
+        body: JSON.stringify({
+          naskah_ids: idsToExport,
+          batch_id: batchId,
+          google_sheet_url: docRef?.doc_url?.includes('/spreadsheets/') ? docRef.doc_url : undefined,
+        }),
       })
       const data = await res.json()
       if (!data.ok) {
@@ -559,26 +563,36 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
         return
       }
 
-      const headers = ['naskah_id', 'topic', 'persona', 'day_series', 'hook_text', 'body_text', 'cta_text', 'client_status', 'client_comment']
+      if (data.direct_pushed && data.sheet_url) {
+        alert(`✅ Berhasil PUSH ${data.count} naskah langsung ke Google Sheet lu!\n\nTabel langsung ter-update di Google Sheets.`)
+        setDocStatus(`✅ Direct pushed ${data.count} naskah to Google Sheet`)
+        window.open(data.sheet_url, '_blank')
+        return
+      }
+
+      // Clipboard fallback with rich Indonesian headers
+      const headers = ['No', 'Judul / Topik', 'Persona', 'Hari / Seri', 'Hook (Kalimat Utama)', 'Isi Script / Body', 'Call To Action (CTA)', 'Visual & Direction Notes', 'Status Klien', 'Komentar Klien', 'Naskah ID']
       const tsvLines = [headers.join('\t')]
       for (const row of data.rows) {
         tsvLines.push([
-          row.naskah_id,
+          row.no,
           `"${(row.topic || '').replace(/"/g, '""')}"`,
           `"${(row.persona || '').replace(/"/g, '""')}"`,
           `"${(row.day_series || '').replace(/"/g, '""')}"`,
           `"${(row.hook_text || '').replace(/"/g, '""')}"`,
           `"${(row.body_text || '').replace(/"/g, '""')}"`,
           `"${(row.cta_text || '').replace(/"/g, '""')}"`,
+          `"${(row.visual_notes || '').replace(/"/g, '""')}"`,
           `"${(row.client_status || '').replace(/"/g, '""')}"`,
           `"${(row.client_comment || '').replace(/"/g, '""')}"`,
+          row.naskah_id,
         ].join('\t'))
       }
       const tsvContent = tsvLines.join('\n')
 
       await navigator.clipboard.writeText(tsvContent)
-      alert(`✅ Berhasil export ${data.count} naskah!\n\nTeks format Spreadsheet sudah disalin ke clipboard.\nBuka Google Sheets lu lalu tekan Ctrl+V untuk Paste!`)
-      setDocStatus(`✅ Exported ${data.count} naskah to Spreadsheet clipboard (Ctrl+V in Google Sheets)`)
+      alert(`✅ Berhasil export ${data.count} naskah berformat rapi!\n\nTeks tabel (Hook, Body, CTA, Visual Notes) sudah disalin ke clipboard.\nBuka Google Sheets lu ➔ Klik sel A1 ➔ Tekan Ctrl+V untuk Paste!`)
+      setDocStatus(`✅ Exported ${data.count} naskah (Hook, Body, CTA, Visual Notes) to Spreadsheet clipboard`)
     } catch (e) {
       alert(`❌ Error export: ${e instanceof Error ? e.message : 'Network error'}`)
     } finally {
