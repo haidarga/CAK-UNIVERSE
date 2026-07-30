@@ -90,11 +90,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: 'Failed to fetch naskah items' }, { status: 404 })
   }
 
-  // Only push approved naskah
-  const approvedNaskah = naskahRows.filter(n => n.status === 'approved')
-  if (approvedNaskah.length === 0) {
-    return NextResponse.json({ ok: false, error: 'No approved naskah found' }, { status: 400 })
+  // If any pushed naskah are still in draft, auto-approve them on push
+  const draftIdsToApprove = naskahRows.filter(n => n.status !== 'approved').map(n => n.id)
+  if (draftIdsToApprove.length > 0) {
+    await supabase.from('sw_naskah').update({ status: 'approved' }).in('id', draftIdsToApprove)
+    await supabase.from('naskah').update({ status: 'approved' }).in('id', draftIdsToApprove)
   }
+  const approvedNaskah = naskahRows
 
   // Fetch current version bodies (try sw_naskah_versions first, fallback to naskah_versions)
   const versionIds = approvedNaskah.map(n => n.current_version_id).filter(Boolean)

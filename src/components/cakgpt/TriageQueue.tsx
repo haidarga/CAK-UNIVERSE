@@ -85,6 +85,25 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
   // Studio push state
   const [studioPushing, setStudioPushing] = useState(false)
   const [studioStatus, setStudioStatus] = useState<string | null>(null)
+  const [checkedPushIds, setCheckedPushIds] = useState<Set<string>>(new Set())
+
+  function toggleCheck(id: string, e: React.MouseEvent | React.ChangeEvent) {
+    e.stopPropagation()
+    setCheckedPushIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAllPush() {
+    if (checkedPushIds.size === items.length) {
+      setCheckedPushIds(new Set())
+    } else {
+      setCheckedPushIds(new Set(items.map(i => i.naskah_id)))
+    }
+  }
 
   // Background generation progress (jobs drain in chunks via /api/gen-jobs/process).
   const [genStatus, setGenStatus] = useState<{ active: number; done: number; failed: number; total: number } | null>(null)
@@ -455,21 +474,29 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
     }
   }
 
-  // Push approved naskah to CAK Video Studio
-  async function pushToStudio() {
-    const approvedIds = items.filter(i => i.status === 'approved').map(i => i.naskah_id)
-    if (approvedIds.length === 0) {
-      setStudioStatus('No approved naskah to push')
+  // Push approved or selected naskah to CAK Video Studio
+  async function pushToStudio(targetIds?: string[]) {
+    let idsToPush = targetIds && targetIds.length > 0 ? targetIds : Array.from(checkedPushIds)
+    if (idsToPush.length === 0) {
+      // Fallback to all approved items in queue
+      idsToPush = items.filter(i => i.status === 'approved').map(i => i.naskah_id)
+    }
+    if (idsToPush.length === 0 && detail?.naskah.id) {
+      // Fallback to currently open detail item
+      idsToPush = [detail.naskah.id]
+    }
+    if (idsToPush.length === 0) {
+      setStudioStatus('Select or open a naskah to push')
       return
     }
-    if (!window.confirm(`Push ${approvedIds.length} approved naskah to CAK Video Studio?`)) return
+    if (!window.confirm(`Push ${idsToPush.length} naskah to CAK Video Studio?`)) return
     setStudioPushing(true)
     setStudioStatus(null)
     try {
       const res = await fetch('/api/studio/push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ naskah_ids: approvedIds }),
+        body: JSON.stringify({ naskah_ids: idsToPush }),
       })
       const data = await res.json()
       if (!data.ok) {
@@ -477,6 +504,7 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
         return
       }
       setStudioStatus(`✅ Pushed ${data.pushed} naskah to Video Studio`)
+      setCheckedPushIds(new Set())
       fetchQueue()
     } catch {
       setStudioStatus('Network error pushing to Studio')
@@ -685,33 +713,62 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
 
       <div className="flex flex-1 overflow-hidden">
         <div className="w-96 shrink-0 overflow-y-auto border-r border-border">
+          {items.length > 0 && (
+            <div className="flex items-center justify-between border-b border-border bg-muted/20 px-4 py-2 text-[11px] text-mutedText">
+              <div className="flex items-center gap-2">
+                <button onClick={toggleSelectAllPush} className="font-medium text-primary hover:underline cursor-pointer">
+                  {checkedPushIds.size === items.length ? 'Deselect all' : 'Select all'}
+                </button>
+                <span>·</span>
+                <button onClick={() => setCheckedPushIds(new Set(items.filter(i => i.status === 'approved').map(i => i.naskah_id)))} className="font-medium text-accent hover:underline cursor-pointer">
+                  Select approved
+                </button>
+              </div>
+              {checkedPushIds.size > 0 && (
+                <span className="font-semibold text-purple-400">{checkedPushIds.size} selected</span>
+              )}
+            </div>
+          )}
           {loading && items.length === 0 && <p className="p-4 text-sm text-mutedText">Loading…</p>}
           {!loading && items.length === 0 && <p className="p-4 text-sm text-mutedText">Nothing in the queue. Generate some naskah above.</p>}
-          {items.map((item, i) => (
-            <button key={item.naskah_id} onClick={() => selectItem(i)}
-              aria-current={i === selected ? 'true' : undefined}
-              className={`relative block w-full border-b border-border px-4 py-3 text-left transition-colors duration-150 cursor-pointer ${
-                i === selected ? 'bg-primary/5' : 'hover:bg-muted/40'
-              }`}>
-              {i === selected && <span className="absolute inset-y-0 left-0 w-0.5 bg-primary" aria-hidden />}
-              <div className="flex items-center justify-between gap-2">
-                <span className={`truncate text-sm text-text ${i === selected ? 'font-semibold' : 'font-medium'}`}>{item.title || 'Untitled naskah'}</span>
-                {item.flag_counts.blocker + item.flag_counts.warning + item.flag_counts.nit === 0 && (
-                  <Check size={14} className="shrink-0 text-primary" aria-hidden />
-                )}
-              </div>
-              <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                {item.persona_name && <span className="rounded bg-accent/10 px-1.5 py-0.5 font-data text-[11px] font-medium text-accent">{item.persona_name}</span>}
-                {item.hook_name && <span className="font-data text-[11px] text-mutedText">{item.hook_name}</span>}
-                {item.flag_counts.blocker > 0 && (
-                  <span className={`rounded border px-1.5 py-0.5 font-data text-[11px] ${SEVERITY_STYLES.blocker}`}>{item.flag_counts.blocker} blocker</span>
-                )}
-                {item.flag_counts.warning > 0 && (
-                  <span className={`rounded border px-1.5 py-0.5 font-data text-[11px] ${SEVERITY_STYLES.warning}`}>{item.flag_counts.warning} warning</span>
-                )}
-              </div>
-            </button>
-          ))}
+          {items.map((item, i) => {
+            const isChecked = checkedPushIds.has(item.naskah_id)
+            return (
+              <button key={item.naskah_id} onClick={() => selectItem(i)}
+                aria-current={i === selected ? 'true' : undefined}
+                className={`relative block w-full border-b border-border px-4 py-3 text-left transition-colors duration-150 cursor-pointer ${
+                  i === selected ? 'bg-primary/5' : 'hover:bg-muted/40'
+                }`}>
+                {i === selected && <span className="absolute inset-y-0 left-0 w-0.5 bg-primary" aria-hidden />}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={(e) => toggleCheck(item.naskah_id, e)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="h-3.5 w-3.5 rounded border-border accent-purple-600 cursor-pointer shrink-0"
+                  />
+                  <span className={`truncate text-sm text-text flex-1 ${i === selected ? 'font-semibold' : 'font-medium'}`}>{item.title || 'Untitled naskah'}</span>
+                  {item.flag_counts.blocker + item.flag_counts.warning + item.flag_counts.nit === 0 && (
+                    <Check size={14} className="shrink-0 text-primary" aria-hidden />
+                  )}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5 pl-5">
+                  {item.persona_name && <span className="rounded bg-accent/10 px-1.5 py-0.5 font-data text-[11px] font-medium text-accent">{item.persona_name}</span>}
+                  {item.hook_name && <span className="font-data text-[11px] text-mutedText">{item.hook_name}</span>}
+                  {item.flag_counts.blocker > 0 && (
+                    <span className={`rounded border px-1.5 py-0.5 font-data text-[11px] ${SEVERITY_STYLES.blocker}`}>{item.flag_counts.blocker} blocker</span>
+                  )}
+                  {item.flag_counts.warning > 0 && (
+                    <span className={`rounded border px-1.5 py-0.5 font-data text-[11px] ${SEVERITY_STYLES.warning}`}>{item.flag_counts.warning} warning</span>
+                  )}
+                  {item.status === 'approved' && (
+                    <span className="rounded bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 font-data text-[11px] text-emerald-400 font-semibold">✓ approved</span>
+                  )}
+                </div>
+              </button>
+            )
+          })}
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
@@ -720,7 +777,7 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
             <div className="mx-auto max-w-2xl space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-text">{detail.naskah.title || 'Untitled naskah'}</h2>
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
                   {!editing ? (
                     <>
                       <button onClick={startEditing}
@@ -739,6 +796,12 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
                       <button onClick={() => approveOne(detail.naskah.id)}
                         className="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-onPrimary hover:opacity-90 cursor-pointer">
                         <Check size={14} aria-hidden /> Approve
+                      </button>
+                      <div className="mx-0.5 h-4 w-px bg-border" />
+                      <button onClick={() => pushToStudio([detail.naskah.id])} disabled={studioPushing}
+                        title="Push THIS naskah directly to CAK Video Studio"
+                        className="flex items-center gap-1.5 rounded-md bg-gradient-to-r from-purple-600 to-pink-600 px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50 cursor-pointer shadow-sm shadow-purple-500/30">
+                        <Zap size={14} aria-hidden /> {studioPushing ? 'Pushing…' : '🎬 Push to Studio'}
                       </button>
                     </>
                   ) : (
