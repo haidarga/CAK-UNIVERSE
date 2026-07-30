@@ -571,7 +571,7 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
       }
 
       // Clipboard fallback with rich Indonesian headers
-      const headers = ['No', 'Judul / Topik', 'Persona', 'Hari / Seri', 'Hook (Kalimat Utama)', 'Isi Script / Body', 'Call To Action (CTA)', 'Visual & Direction Notes', 'Status Klien', 'Komentar Klien', 'Naskah ID']
+      const headers = ['No', 'Judul / Topik', 'Persona', 'Hari / Seri', 'Hook (Kalimat Utama)', 'Isi Script / Body', 'Call To Action (CTA)', 'Visual & Direction Notes', 'Status Klien', 'Komentar / Revisi Klien']
       const tsvLines = [headers.join('\t')]
       for (const row of data.rows) {
         tsvLines.push([
@@ -585,7 +585,6 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
           `"${(row.visual_notes || '').replace(/"/g, '""')}"`,
           `"${(row.client_status || '').replace(/"/g, '""')}"`,
           `"${(row.client_comment || '').replace(/"/g, '""')}"`,
-          row.naskah_id,
         ].join('\t'))
       }
       const tsvContent = tsvLines.join('\n')

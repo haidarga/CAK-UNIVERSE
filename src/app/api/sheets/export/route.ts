@@ -134,7 +134,7 @@ export async function POST(req: Request) {
 
       // Build header row + data rows
       const tableRows = [
-        ['No', 'Judul / Topik', 'Persona', 'Hari / Seri', 'Hook (Kalimat Utama)', 'Isi Script / Body', 'Call To Action (CTA)', 'Visual & Direction Notes', 'Status Klien', 'Komentar Klien', 'Naskah ID'],
+        ['No', 'Judul / Topik', 'Persona', 'Hari / Seri', 'Hook (Kalimat Utama)', 'Isi Script / Body', 'Call To Action (CTA)', 'Visual & Direction Notes', 'Status Klien', 'Komentar / Revisi Klien'],
         ...sheetsData.map(row => [
           row.no,
           row.topic,
@@ -146,7 +146,6 @@ export async function POST(req: Request) {
           row.visual_notes,
           row.client_status,
           row.client_comment,
-          row.naskah_id,
         ]),
       ]
 

@@ -22,7 +22,7 @@ describe('Google Sheets Export & Feedback Sync Helper', () => {
     expect(exported[0].body_text).toContain('Bunda, perhatiin deh! Banyak banget jenis susu di pasaran.')
     expect(exported[0].body_text).toContain('Fakta ilmiahnya, susu segar itu sumber nutrisi paling alami.')
     expect(exported[0].cta_text).toContain('Jadi, kalau mau yang terbaik buat anak, cek lagi deh susunya.')
-    expect(exported[0].visual_notes).toContain('Shot 1 (Line 1): Emma ekspresi bingung')
+    expect(exported[0].visual_notes).toContain('Scene 1: Emma ekspresi bingung')
   })
 
   it('detects direct cell edit feedback from client', () => {
