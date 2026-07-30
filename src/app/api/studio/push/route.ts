@@ -6,7 +6,7 @@ import { requireUser } from '@/lib/cakgpt/auth'
 import { blocksToStudioShots, blocksToRawText } from '@/lib/studio-mapper'
 import { NextResponse } from 'next/server'
 
-const MAX_PUSH_PER_REQUEST = 20
+const MAX_PUSH_PER_REQUEST = 100
 
 export async function POST(req: Request) {
   const supabase = await createServerClient()

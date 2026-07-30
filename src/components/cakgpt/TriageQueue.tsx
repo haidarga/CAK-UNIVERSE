@@ -488,28 +488,47 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
       idsToPush = [detail.naskah.id]
     }
     if (idsToPush.length === 0) {
-      setStudioStatus('Select or open a naskah to push')
+      alert('Pilih minimal 1 naskah untuk di-push ke Studio.')
       return
     }
-    if (!window.confirm(`Push ${idsToPush.length} naskah to CAK Video Studio?`)) return
+    if (!window.confirm(`Push ${idsToPush.length} naskah ke CAK Video Studio?`)) return
     setStudioPushing(true)
-    setStudioStatus(null)
+    setStudioStatus(`Pushing ${idsToPush.length} naskah to Video Studio…`)
+
+    // Chunk into 50-item batches to guarantee zero timeouts/limits
+    const CHUNK_SIZE = 50
+    let totalPushed = 0
+    let lastError: string | null = null
+
     try {
-      const res = await fetch('/api/studio/push', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ naskah_ids: idsToPush }),
-      })
-      const data = await res.json()
-      if (!data.ok) {
-        setStudioStatus(data.error || 'Push failed')
-        return
+      for (let i = 0; i < idsToPush.length; i += CHUNK_SIZE) {
+        const chunk = idsToPush.slice(i, i + CHUNK_SIZE)
+        const res = await fetch('/api/studio/push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ naskah_ids: chunk }),
+        })
+        const data = await res.json()
+        if (!data.ok) {
+          lastError = data.error || 'Push failed'
+          break
+        }
+        totalPushed += data.pushed || chunk.length
       }
-      setStudioStatus(`✅ Pushed ${data.pushed} naskah to Video Studio`)
-      setCheckedPushIds(new Set())
-      fetchQueue()
-    } catch {
-      setStudioStatus('Network error pushing to Studio')
+
+      if (lastError) {
+        alert(`❌ Gagal push ke Studio: ${lastError}`)
+        setStudioStatus(`❌ ${lastError}`)
+      } else {
+        alert(`✅ Berhasil push ${totalPushed} naskah ke CAK Video Studio!`)
+        setStudioStatus(`✅ Pushed ${totalPushed} naskah to Video Studio`)
+        setCheckedPushIds(new Set())
+        fetchQueue()
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Network error'
+      alert(`❌ Error push: ${msg}`)
+      setStudioStatus(`Network error: ${msg}`)
     } finally {
       setStudioPushing(false)
     }
@@ -605,6 +624,7 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
         </div>
       )}
       {docStatus && <p className="border-b border-border bg-muted/40 px-6 py-1.5 text-xs text-mutedText">{docStatus}</p>}
+      {studioStatus && <p className="border-b border-border bg-purple-500/10 px-6 py-1.5 text-xs text-purple-300 font-semibold">{studioStatus}</p>}
       {genStatus && genStatus.total > 0 && (genStatus.active > 0 || genStatus.failed > 0) && (
         <div className="flex items-center gap-2 border-b border-border bg-accent/5 px-6 py-1.5 text-xs text-mutedText">
           {genStatus.active > 0 && <RefreshCw size={12} className="animate-spin text-accent" aria-hidden />}
