@@ -18,7 +18,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { batch_id, google_sheet_url, naskah_id, current_text, updated_cell_text, client_comment, client_status } = body
+  const { batch_id, naskah_ids, google_sheet_url, naskah_id, current_text, updated_cell_text, client_comment, client_status } = body
 
   // Single naskah feedback update
   if (naskah_id) {
@@ -65,7 +65,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, updated: true, naskah_id, version_id: newVer?.id })
   }
 
-  // Batch-wide Google Sheet Auto Sync
+  // Target naskah list for batch sync
+  let targetNaskah: any[] = []
+  if (Array.isArray(naskah_ids) && naskah_ids.length > 0) {
+    const { data: nList } = await supabase.from('sw_naskah').select('id, title, persona_id, day_no, current_version_id, sw_personas(id, name)').in('id', naskah_ids)
+    if (nList) targetNaskah = nList
+  } else if (batch_id) {
+    const { data: bList } = await supabase.from('sw_naskah').select('id, title, persona_id, day_no, current_version_id, sw_personas(id, name)').eq('batch_id', batch_id)
+    if (bList) targetNaskah = bList
+  }
+
+  if (targetNaskah.length === 0) {
+    return NextResponse.json({ ok: false, error: 'Target naskah list is empty' }, { status: 400 })
+  }
+
+  // Google Sheet ID lookup
   let linkedSheetId: string | null = null
   if (batch_id) {
     const { data: batch } = await supabase.from('sw_batches').select('external_doc_ref').eq('id', batch_id).maybeSingle()
@@ -96,21 +110,23 @@ export async function POST(req: Request) {
     const dataRows = sheetRows.slice(1)
     let syncedCount = 0
 
-    // Fetch all naskah in batch
-    const { data: batchNaskah } = await supabase.from('sw_naskah').select('id, title, persona_id, day_no, current_version_id').eq('batch_id', batch_id)
-    if (!batchNaskah) return NextResponse.json({ ok: true, synced_count: 0 })
-
     for (let i = 0; i < dataRows.length; i++) {
       const row = dataRows[i]
-      const topic = row[1]
-      const statusCell = row[8] || ''
-      const commentCell = row[9] || ''
+      const topic = (row[1] || '').trim()
+      const personaName = (row[2] || '').trim()
+      const statusCell = (row[8] || '').trim()
+      const commentCell = (row[9] || '').trim()
 
-      const matchingNaskah = batchNaskah[i] || batchNaskah.find(n => n.title?.includes(topic))
+      // Match target naskah by persona name, topic, or row index
+      const matchingNaskah = targetNaskah.find(n => {
+        const pName = Array.isArray(n.sw_personas) ? n.sw_personas[0]?.name : n.sw_personas?.name
+        return pName && personaName && pName.toLowerCase() === personaName.toLowerCase()
+      }) || targetNaskah[i]
+
       if (!matchingNaskah) continue
 
       const hasComment = !!commentCell.trim()
-      const isApproved = statusCell.trim().toLowerCase().includes('approve')
+      const isApproved = statusCell.toLowerCase().includes('approve')
 
       if (isApproved) {
         await supabase.from('sw_naskah').update({ status: 'approved' }).eq('id', matchingNaskah.id)
@@ -118,7 +134,7 @@ export async function POST(req: Request) {
       }
 
       if (hasComment) {
-        // Create revision entry
+        // Create revision entry with client comment
         const { data: curVer } = await supabase.from('sw_naskah_versions').select('*').eq('id', matchingNaskah.current_version_id).maybeSingle()
         if (curVer) {
           await supabase.from('sw_naskah_versions').update({ is_current: false }).eq('naskah_id', matchingNaskah.id)
@@ -127,7 +143,7 @@ export async function POST(req: Request) {
             version_number: (curVer.version_number || 1) + 1,
             is_current: true,
             body: curVer.body,
-            notes: `Client Comment: "${commentCell.trim()}"`,
+            notes: `Client Feedback: "${commentCell.trim()}"`,
           }).select().single()
 
           if (newVer) {

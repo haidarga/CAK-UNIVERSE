@@ -539,12 +539,17 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
 
   async function syncFeedbackFromSheet() {
     setSheetSyncing(true)
+    let idsToSync = Array.from(checkedPushIds)
+    if (idsToSync.length === 0) {
+      idsToSync = items.map(i => i.naskah_id)
+    }
+
     try {
       const res = await fetch('/api/sheets/sync-feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          batch_id: batchId,
+          naskah_ids: idsToSync,
           google_sheet_url: docRef?.doc_url?.includes('/spreadsheets/') ? docRef.doc_url : undefined,
         }),
       })
