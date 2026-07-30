@@ -208,13 +208,21 @@ export async function POST(req: Request) {
 
     // Allow re-pushing any selected naskah
 
-    const briefKey = n.brief_id || n.title?.split('·')[0]?.trim() || 'general'
+    // Extract day string or day number (e.g. Hari 1/3, Hari 2/3) from title or day_no column
+    const dayMatch = n.title?.match(/Hari \d+(?:\/\d+)?/i)?.[0] || (n.day_no ? `Hari ${n.day_no}` : '')
+    const briefId = n.brief_id || n.title?.split('·')[0]?.trim() || 'general'
+    const briefKey = dayMatch ? `${briefId}_${dayMatch.toLowerCase().replace(/[^a-z0-9]/g, '_')}` : briefId
+
     if (!batchMapByBrief.has(briefKey)) {
       const brief = briefById.get(n.brief_id)
       const topicTitle = brief?.title || brief?.product || n.title?.split('·')[0]?.trim() || 'Content Plan'
       const cleanSlug = topicTitle.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 30)
-      const pBatchId = n.brief_id ? `batch_${n.brief_id}` : `batch_${cleanSlug}`
-      batchMapByBrief.set(briefKey, { id: pBatchId, title: topicTitle })
+      const daySuffix = dayMatch ? dayMatch.replace(/\s+/g, '') : ''
+      const pBatchId = n.brief_id
+        ? `batch_${n.brief_id}_${daySuffix.toLowerCase()}`
+        : `batch_${cleanSlug}_${daySuffix.toLowerCase()}`
+      const fullTitle = dayMatch ? `${topicTitle} · ${dayMatch}` : topicTitle
+      batchMapByBrief.set(briefKey, { id: pBatchId, title: fullTitle })
     }
     const bInfo = batchMapByBrief.get(briefKey)!
 
@@ -248,6 +256,8 @@ export async function POST(req: Request) {
         batch_id: n.batch_id,
         persona_id: persona?.id,
         brief_id: n.brief_id,
+        day_no: n.day_no,
+        day_match: dayMatch,
         push_batch_id: bInfo.id,
         push_batch_title: bInfo.title,
       },
