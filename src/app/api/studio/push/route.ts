@@ -216,7 +216,8 @@ export async function POST(req: Request) {
     if (!batchMapByBrief.has(briefKey)) {
       const brief = briefById.get(n.brief_id)
       const topicTitle = brief?.title || brief?.product || n.title?.split('·')[0]?.trim() || 'Content Plan'
-      const pBatchId = `batch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+      const cleanSlug = topicTitle.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 30)
+      const pBatchId = n.brief_id ? `batch_${n.brief_id}` : `batch_${cleanSlug}`
       batchMapByBrief.set(briefKey, { id: pBatchId, title: topicTitle })
     }
     const bInfo = batchMapByBrief.get(briefKey)!
