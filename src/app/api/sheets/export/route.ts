@@ -16,31 +16,62 @@ export async function POST(req: Request) {
   }
 
   const { naskah_ids, batch_id } = body
+  let targetIds = Array.isArray(naskah_ids) && naskah_ids.length > 0 ? naskah_ids : []
 
-  let query = supabase.from('sw_naskah').select(`
-    id, title, status, day_no, brief_id, persona_id,
-    sw_personas(id, name),
-    sw_naskah_versions(id, body, is_current)
-  `)
+  if (targetIds.length === 0 && batch_id) {
+    const { data: bItems } = await supabase.from('sw_naskah').select('id').eq('batch_id', batch_id)
+    if (bItems) targetIds = bItems.map(i => i.id)
+  }
 
-  if (Array.isArray(naskah_ids) && naskah_ids.length > 0) {
-    query = query.in('id', naskah_ids)
-  } else if (batch_id) {
-    query = query.eq('batch_id', batch_id)
-  } else {
+  if (targetIds.length === 0) {
     return NextResponse.json({ ok: false, error: 'naskah_ids or batch_id required' }, { status: 400 })
   }
 
-  const { data: naskahRows, error } = await query
-  if (error || !naskahRows) {
-    return NextResponse.json({ ok: false, error: error?.message || 'Failed to fetch naskah' }, { status: 500 })
+  // 1. Fetch sw_naskah without sw_naskah_versions relation (avoids PostgREST ambiguity)
+  let { data: naskahRows } = await supabase
+    .from('sw_naskah')
+    .select('id, title, status, day_no, brief_id, persona_id, sw_personas(id, name)')
+    .in('id', targetIds)
+
+  if (!naskahRows || naskahRows.length === 0) {
+    const { data: legacyRows } = await supabase
+      .from('naskah')
+      .select('id, title, status, day_no, brief_id, persona_id, personas(id, name)')
+      .in('id', targetIds)
+
+    naskahRows = (legacyRows || []).map((l: any) => ({
+      ...l,
+      sw_personas: l.personas,
+    }))
+  }
+
+  if (!naskahRows || naskahRows.length === 0) {
+    return NextResponse.json({ ok: false, error: 'No naskah found for export' }, { status: 404 })
+  }
+
+  // 2. Fetch versions separately using explicit naskah_id query
+  const nIds = naskahRows.map(n => n.id)
+  const { data: swVer } = await supabase
+    .from('sw_naskah_versions')
+    .select('id, naskah_id, body, is_current')
+    .in('naskah_id', nIds)
+
+  const { data: legacyVer } = await supabase
+    .from('naskah_versions')
+    .select('id, naskah_id, body, is_current')
+    .in('naskah_id', nIds)
+
+  const allVersions = [...(swVer || []), ...(legacyVer || [])]
+  const versionMap = new Map<string, any>()
+  for (const v of allVersions) {
+    if (v.is_current || !versionMap.has(v.naskah_id)) {
+      versionMap.set(v.naskah_id, v)
+    }
   }
 
   const formattedList = naskahRows.map(n => {
     const persona = Array.isArray(n.sw_personas) ? n.sw_personas[0] : n.sw_personas
-    const currentVer = Array.isArray(n.sw_naskah_versions)
-      ? n.sw_naskah_versions.find((v: any) => v.is_current) || n.sw_naskah_versions[0]
-      : n.sw_naskah_versions
+    const currentVer = versionMap.get(n.id)
 
     return {
       id: n.id,
