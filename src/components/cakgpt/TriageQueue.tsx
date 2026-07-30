@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Check, X, Sparkles, RefreshCw, FileUp, FileDown, ExternalLink, Pencil, Save, RotateCcw, ShieldCheck, ChevronDown, Link2 } from 'lucide-react'
+import { Check, X, Sparkles, RefreshCw, FileUp, FileDown, ExternalLink, Pencil, Save, RotateCcw, ShieldCheck, ChevronDown, Link2, Zap } from 'lucide-react'
 import { MAX_DAY_TOTAL, MAX_FANOUT_ITEMS } from '@/lib/cakgpt/schemas'
 
 type QueueItem = {
@@ -81,6 +81,10 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
   const [linkOpen, setLinkOpen] = useState(false)
   const [linkInput, setLinkInput] = useState('')
   const [linking, setLinking] = useState(false)
+
+  // Studio push state
+  const [studioPushing, setStudioPushing] = useState(false)
+  const [studioStatus, setStudioStatus] = useState<string | null>(null)
 
   // Background generation progress (jobs drain in chunks via /api/gen-jobs/process).
   const [genStatus, setGenStatus] = useState<{ active: number; done: number; failed: number; total: number } | null>(null)
@@ -451,6 +455,36 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
     }
   }
 
+  // Push approved naskah to CAK Video Studio
+  async function pushToStudio() {
+    const approvedIds = items.filter(i => i.status === 'approved').map(i => i.naskah_id)
+    if (approvedIds.length === 0) {
+      setStudioStatus('No approved naskah to push')
+      return
+    }
+    if (!window.confirm(`Push ${approvedIds.length} approved naskah to CAK Video Studio?`)) return
+    setStudioPushing(true)
+    setStudioStatus(null)
+    try {
+      const res = await fetch('/api/studio/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ naskah_ids: approvedIds }),
+      })
+      const data = await res.json()
+      if (!data.ok) {
+        setStudioStatus(data.error || 'Push failed')
+        return
+      }
+      setStudioStatus(`✅ Pushed ${data.pushed} naskah to Video Studio`)
+      fetchQueue()
+    } catch {
+      setStudioStatus('Network error pushing to Studio')
+    } finally {
+      setStudioPushing(false)
+    }
+  }
+
   async function flagAction(flagId: string, status: 'resolved' | 'dismissed') {
     try {
       await fetch(`/api/scriptwriter/qc/flags/${flagId}`, {
@@ -518,6 +552,12 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
               <FileDown size={14} aria-hidden /> {docSyncing === 'pull' ? 'Pulling…' : 'Pull'}
             </button>
           )}
+          <div className="mx-1 h-5 w-px bg-border" />
+          <button onClick={pushToStudio} disabled={studioPushing}
+            title="Push approved naskah to CAK Video Studio as production jobs"
+            className="flex items-center gap-1 rounded-md bg-gradient-to-r from-purple-600 to-pink-600 px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50 cursor-pointer shadow-sm shadow-purple-500/30">
+            <Zap size={14} aria-hidden /> {studioPushing ? 'Pushing…' : '🎬 Push to Studio'}
+          </button>
           <button onClick={fetchQueue} aria-label="Refresh queue"
             className="rounded-md p-1.5 text-mutedText hover:bg-muted hover:text-text cursor-pointer">
             <RefreshCw size={16} aria-hidden />
