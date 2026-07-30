@@ -196,6 +196,11 @@ export async function POST(req: Request) {
   const ingestItems = []
   const errors: Array<{ naskah_id: string; error: string }> = []
 
+  // Unique push batch ID for grouping in Studio Inbox
+  const pushBatchId = `batch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+  const firstBatchName = batches?.[0]?.name || approvedNaskah[0]?.title?.split('·')[0]?.trim() || 'Content Plan'
+  const pushBatchTitle = `${firstBatchName} (${approvedNaskah.length} Naskah)`
+
   for (const n of approvedNaskah) {
     const version = versionByNaskah.get(n.id)
     if (!version?.body) {
@@ -239,6 +244,8 @@ export async function POST(req: Request) {
         batch_id: n.batch_id,
         persona_id: persona?.id,
         brief_id: n.brief_id,
+        push_batch_id: pushBatchId,
+        push_batch_title: pushBatchTitle,
       },
       title: n.title || 'Untitled',
       naskah_text: rawText,
