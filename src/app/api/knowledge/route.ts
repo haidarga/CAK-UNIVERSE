@@ -29,8 +29,8 @@ export async function GET(req: Request) {
   const { data, error } = await query
 
   if (error) {
-    // If sw_knowledge table does not exist yet in local DB, return empty array gracefully
-    if (error.code === '42P01') {
+    // If sw_knowledge table does not exist yet in DB, return empty array gracefully
+    if (error.code === '42P01' || error.code === 'PGRST205') {
       return NextResponse.json({ ok: true, items: [] })
     }
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
@@ -79,6 +79,12 @@ export async function POST(req: Request) {
     .single()
 
   if (error) {
+    if (error.code === '42P01' || error.code === 'PGRST205') {
+      return NextResponse.json({
+        ok: false,
+        error: "Tabel 'sw_knowledge' belum dibuat di Supabase. Silakan jalankan SQL migration 019_sw_knowledge.sql di Supabase SQL Editor."
+      }, { status: 400 })
+    }
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   }
 
