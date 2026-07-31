@@ -544,13 +544,19 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
       idsToSync = items.map(i => i.naskah_id)
     }
 
+    // FIX BUG 2: always send batch_id so backend can look up the linked sheet
+    // even when google_sheet_url is not in local state.
+    // FIX BUG 1: send google_sheet_url when docRef IS a spreadsheet.
+    const sheetUrl = docRef?.doc_url?.includes('/spreadsheets/') ? docRef.doc_url : undefined
+
     try {
       const res = await fetch('/api/sheets/sync-feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          batch_id: batchId,
           naskah_ids: idsToSync,
-          google_sheet_url: docRef?.doc_url?.includes('/spreadsheets/') ? docRef.doc_url : undefined,
+          google_sheet_url: sheetUrl,
         }),
       })
       const data = await res.json()
@@ -597,6 +603,8 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
       }
 
       if (data.direct_pushed && data.sheet_url) {
+        // FIX BUG 3: save the spreadsheet URL to docRef so Sync Feedback can find it
+        setDocRef({ doc_id: data.sheet_url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)?.[1] || '', doc_url: data.sheet_url })
         alert(`✅ Berhasil PUSH ${data.count} naskah langsung ke Google Sheet lu!\n\nTabel langsung ter-update di Google Sheets.`)
         setDocStatus(`✅ Direct pushed ${data.count} naskah to Google Sheet`)
         window.open(data.sheet_url, '_blank')

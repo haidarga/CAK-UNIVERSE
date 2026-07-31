@@ -6,7 +6,32 @@ import { getValuesFromGoogleSheet } from '@/lib/cakgpt/google-sheets'
 import { parseGoogleDocId } from '@/lib/cakgpt/google-docs'
 import { runLLM } from '@/lib/llm'
 
-// AI Helper to rewrite script blocks according to client feedback/revision requests
+// ── Sheet-ID resolution (FIX for BUG 1) ─────────────────────────────────────
+// external_doc_ref can be either a Google Doc (type='doc') or a Google Sheet
+// (type='sheet'). We only accept the latter for sync-feedback.
+function resolveLinkedSheetId(
+  googleSheetUrl: string | undefined,
+  batchExternalDocRef: { doc_id?: string; doc_url?: string; type?: string } | null
+): string | null {
+  // 1. Explicit URL passed from frontend always wins
+  if (googleSheetUrl) {
+    const m = googleSheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)
+    if (m) return m[1]
+    // plain sheet id
+    const bare = parseGoogleDocId(googleSheetUrl)
+    if (bare) return bare
+  }
+  // 2. Batch-linked ref — accept only if it really is a sheet
+  if (batchExternalDocRef?.type === 'sheet' && batchExternalDocRef.doc_id) {
+    return batchExternalDocRef.doc_id
+  }
+  if (batchExternalDocRef?.doc_url?.includes('/spreadsheets/') && batchExternalDocRef.doc_id) {
+    return batchExternalDocRef.doc_id
+  }
+  return null
+}
+
+// ── AI Auto-Rewrite engine ────────────────────────────────────────────────────
 async function applyAiRevisionToBlocks(
   currentBlocks: any[],
   clientInstruction: string,
@@ -17,127 +42,118 @@ async function applyAiRevisionToBlocks(
   const systemPrompt = `You are an expert AI script editor for viral short-form videos (TikTok, Reels, Shorts).
 Your task is to revise and rewrite the provided video script blocks based strictly on the client's revision feedback instruction.
 Rules:
-1. Maintain the exact same JSON array schema of blocks:
+1. Maintain the exact same JSON array schema:
    [{ "block_id": "...", "section_key": "hook"|"body"|"cta", "shot_no": 1, "line_no": 1, "speaker": "...", "text": "...", "visual_note": "..." }]
 2. Apply the client's revision feedback directly into the script dialogue ("text") and visual notes ("visual_note").
-3. Do NOT remove block_ids or change the number of blocks unless requested.
+3. Do NOT remove block_ids or change the block count unless the instruction specifically asks for it.
 4. Output ONLY valid JSON array of block objects. No markdown fences or commentary.`
 
   const userPrompt = `Persona: ${personaName || 'Speaker'}
-Client Revision Feedback Instruction:
-"${clientInstruction.trim()}"
-
+Client Revision Feedback: "${clientInstruction.trim()}"
 Original Script Blocks:
 ${JSON.stringify(currentBlocks, null, 2)}
-
 Rewrite the script blocks incorporating the client revision feedback.`
 
   try {
-    const res = await runLLM({
-      system: systemPrompt,
-      prompt: userPrompt,
-      json: true,
-      temperature: 0.7,
-    })
-
+    const res = await runLLM({ system: systemPrompt, prompt: userPrompt, json: true, temperature: 0.7 })
     const raw = res.text.trim().replace(/^```json\s*/i, '').replace(/\s*```$/, '')
     const parsed = JSON.parse(raw)
-
     if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].text) {
-      return parsed.map((p, idx) => ({
+      return parsed.map((p: any, idx: number) => ({
         block_id: p.block_id || currentBlocks[idx]?.block_id || `blk_${Date.now()}_${idx}`,
         section_key: p.section_key || currentBlocks[idx]?.section_key || 'body',
         shot_no: p.shot_no || currentBlocks[idx]?.shot_no || idx + 1,
         line_no: p.line_no || currentBlocks[idx]?.line_no || idx + 1,
         speaker: p.speaker || personaName || currentBlocks[idx]?.speaker || '',
         text: p.text || currentBlocks[idx]?.text || '',
-        visual_note: p.visual_note || currentBlocks[idx]?.visual_note || '',
+        visual_note: p.visual_note ?? currentBlocks[idx]?.visual_note ?? '',
       }))
     }
   } catch (e) {
-    console.warn('AI script revision LLM call failed, falling back to direct block text update:', e)
+    console.warn('[sync-feedback] AI revision LLM call failed, using fallback annotate:', e)
   }
 
-  // Fallback if LLM unavailable or fails: append client instruction to first and last block
-  return currentBlocks.map((b, idx) => {
-    if (idx === 0 || b.section_key === 'hook') {
-      return { ...b, text: `${b.text} [Revisi: ${clientInstruction}]` }
-    }
-    return b
-  })
+  // Fallback: annotate first block text with the instruction (better than nothing)
+  return currentBlocks.map((b, idx) =>
+    idx === 0 ? { ...b, text: `${b.text} [Revisi: ${clientInstruction}]` } : b
+  )
 }
 
+// ── Main route handler ────────────────────────────────────────────────────────
 export async function POST(req: Request) {
   const supabase = await createServerClient()
   const { user, unauthorized } = await requireUser(supabase)
   if (unauthorized) return unauthorized
 
   let body: any
-  try {
-    body = await req.json()
-  } catch {
-    return NextResponse.json({ ok: false, error: 'Invalid JSON' }, { status: 400 })
-  }
+  try { body = await req.json() }
+  catch { return NextResponse.json({ ok: false, error: 'Invalid JSON' }, { status: 400 }) }
 
   const { batch_id, naskah_ids, google_sheet_url } = body
+  const nIds: string[] = Array.isArray(naskah_ids) && naskah_ids.length > 0 ? naskah_ids : []
 
-  // 1. Fetch target naskah rows with personas & current versions
+  // 1. Fetch target naskah (FIX for BUG 2: always include batch scope)
   let targetNaskah: any[] = []
-  const nIds = Array.isArray(naskah_ids) && naskah_ids.length > 0 ? naskah_ids : []
-
-  // Always fetch all naskah in batch or list to ensure full matching capability
-  let query = supabase.from('sw_naskah').select('id, title, persona_id, day_no, current_version_id, batch_id, sw_personas(id, name)')
-  if (nIds.length > 0) {
-    query = query.in('id', nIds)
-  } else if (batch_id) {
-    query = query.eq('batch_id', batch_id)
-  }
-
-  const { data: swList } = await query
   let isSwTable = false
 
-  if (swList && swList.length > 0) {
-    targetNaskah = swList
-    isSwTable = true
-  } else {
-    // Fallback legacy table
-    let legQuery = supabase.from('naskah').select('id, title, persona_id, day_no, current_version_id, batch_id, personas(id, name)')
-    if (nIds.length > 0) legQuery = legQuery.in('id', nIds)
-    else if (batch_id) legQuery = legQuery.eq('batch_id', batch_id)
-    const { data: legList } = await legQuery
-    targetNaskah = (legList || []).map((l: any) => ({ ...l, sw_personas: l.personas }))
+  {
+    let q = supabase
+      .from('sw_naskah')
+      .select('id, title, persona_id, day_no, current_version_id, batch_id, sw_personas(id, name)')
+    if (nIds.length > 0) q = q.in('id', nIds)
+    else if (batch_id) q = q.eq('batch_id', batch_id)
+    const { data } = await q
+    if (data && data.length > 0) { targetNaskah = data; isSwTable = true }
+  }
+
+  if (targetNaskah.length === 0 && (nIds.length > 0 || batch_id)) {
+    let q = supabase
+      .from('naskah')
+      .select('id, title, persona_id, day_no, current_version_id, batch_id, personas(id, name)')
+    if (nIds.length > 0) q = q.in('id', nIds)
+    else if (batch_id) q = q.eq('batch_id', batch_id)
+    const { data } = await q
+    targetNaskah = (data || []).map((l: any) => ({ ...l, sw_personas: l.personas }))
   }
 
   if (targetNaskah.length === 0) {
-    return NextResponse.json({ ok: false, error: 'No naskah target found in queue' }, { status: 400 })
+    return NextResponse.json({ ok: false, error: 'No naskah found for the given IDs or batch' }, { status: 400 })
   }
 
-  // 2. Resolve Google Sheet ID
-  let linkedSheetId: string | null = null
-  if (google_sheet_url) {
-    linkedSheetId = parseGoogleDocId(google_sheet_url)
-  }
+  // 2. Resolve Google Sheet ID (FIX for BUG 1)
+  // Try: explicit URL → batch external_doc_ref (type=sheet) → any batch with a sheet ref
+  let linkedSheetId: string | null = resolveLinkedSheetId(google_sheet_url, null)
 
   if (!linkedSheetId && batch_id) {
-    const { data: batch } = await supabase.from('sw_batches').select('external_doc_ref').eq('id', batch_id).maybeSingle()
-    if (batch?.external_doc_ref?.doc_id && batch.external_doc_ref.doc_url?.includes('/spreadsheets/')) {
-      linkedSheetId = batch.external_doc_ref.doc_id
+    const { data: batch } = await supabase
+      .from('sw_batches')
+      .select('external_doc_ref')
+      .eq('id', batch_id)
+      .maybeSingle()
+    linkedSheetId = resolveLinkedSheetId(undefined, batch?.external_doc_ref ?? null)
+  }
+
+  if (!linkedSheetId) {
+    // Last-resort: scan all batches that have a linked sheet
+    const { data: batches } = await supabase
+      .from('sw_batches')
+      .select('id, external_doc_ref')
+      .not('external_doc_ref', 'is', null)
+      .limit(20)
+    for (const b of batches || []) {
+      const sid = resolveLinkedSheetId(undefined, b.external_doc_ref ?? null)
+      if (sid) { linkedSheetId = sid; break }
     }
   }
 
   if (!linkedSheetId) {
-    // Search any linked sheet in batch
-    const { data: anyBatch } = await supabase.from('sw_batches').select('external_doc_ref').not('external_doc_ref', 'is', null).limit(10)
-    const matchRef = (anyBatch || []).find(b => b.external_doc_ref?.doc_url?.includes('/spreadsheets/'))
-    if (matchRef?.external_doc_ref?.doc_id) {
-      linkedSheetId = matchRef.external_doc_ref.doc_id
-    }
+    return NextResponse.json({
+      ok: false,
+      error: 'Google Sheet belum di-link. Klik "Link" di toolbar, paste URL Google Sheet lu, lalu coba Sync Feedback lagi.',
+    }, { status: 400 })
   }
 
-  if (!linkedSheetId) {
-    return NextResponse.json({ ok: false, error: 'Paste or link a Google Sheet URL first' }, { status: 400 })
-  }
-
+  // 3. Fetch sheet data & match rows
   try {
     const service = createServiceClient()
     const accessToken = await getValidAccessToken(service, user.id)
@@ -147,14 +163,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, synced_count: 0, message: 'Google Sheet is empty or header-only' })
     }
 
-    // Dynamic Header Column Index Matching
     const headerRow = sheetRows[0].map((h: any) => String(h || '').toLowerCase().trim())
-    const personaColIdx = headerRow.findIndex((h: string) => h.includes('persona')) !== -1 ? headerRow.findIndex((h: string) => h.includes('persona')) : 2
-    const topicColIdx = headerRow.findIndex((h: string) => h.includes('topik') || h.includes('judul')) !== -1 ? headerRow.findIndex((h: string) => h.includes('topik') || h.includes('judul')) : 1
-    const statusColIdx = headerRow.findIndex((h: string) => h.includes('status')) !== -1 ? headerRow.findIndex((h: string) => h.includes('status')) : 8
-    const commentColIdx = headerRow.findIndex((h: string) => h.includes('komentar') || h.includes('revisi')) !== -1 ? headerRow.findIndex((h: string) => h.includes('komentar') || h.includes('revisi')) : 9
-    const hookColIdx = headerRow.findIndex((h: string) => h.includes('hook')) !== -1 ? headerRow.findIndex((h: string) => h.includes('hook')) : 4
-    const bodyColIdx = headerRow.findIndex((h: string) => h.includes('body') || h.includes('script')) !== -1 ? headerRow.findIndex((h: string) => h.includes('body') || h.includes('script')) : 5
+    const col = (keywords: string[], fallback: number) => {
+      const idx = headerRow.findIndex((h: string) => keywords.some(k => h.includes(k)))
+      return idx !== -1 ? idx : fallback
+    }
+    const personaColIdx = col(['persona'], 2)
+    const topicColIdx   = col(['topik', 'judul'], 1)
+    const statusColIdx  = col(['status'], 8)
+    const commentColIdx = col(['komentar', 'revisi'], 9)
+    const hookColIdx    = col(['hook', 'kalimat utama'], 4)
+    const bodyColIdx    = col(['body', 'isi script', 'script'], 5)
 
     const dataRows = sheetRows.slice(1)
     let syncedCount = 0
@@ -162,100 +181,107 @@ export async function POST(req: Request) {
 
     for (let i = 0; i < dataRows.length; i++) {
       const row = dataRows[i]
-      const personaName = (row[personaColIdx] || '').trim()
-      const topic = (row[topicColIdx] || '').trim()
-      const statusCell = (row[statusColIdx] || '').trim()
-      const commentCell = (row[commentColIdx] || '').trim()
-      const hookCell = (row[hookColIdx] || '').trim()
-      const bodyCell = (row[bodyColIdx] || '').trim()
+      const personaName = String(row[personaColIdx] || '').trim()
+      const topic       = String(row[topicColIdx]   || '').trim()
+      const statusCell  = String(row[statusColIdx]  || '').trim()
+      const commentCell = String(row[commentColIdx] || '').trim()
+      const hookCell    = String(row[hookColIdx]    || '').trim()
+      const bodyCell    = String(row[bodyColIdx]    || '').trim()
 
-      // Match target naskah by persona name (fuzzy), topic substring, or row index
-      const matchingNaskah = targetNaskah.find(n => {
-        const pName = Array.isArray(n.sw_personas) ? n.sw_personas[0]?.name : n.sw_personas?.name
-        if (!pName || !personaName) return false
-        const normP = pName.toLowerCase().replace(/[^a-z0-9]/g, '')
-        const normCell = personaName.toLowerCase().replace(/[^a-z0-9]/g, '')
-        return normP.includes(normCell) || normCell.includes(normP)
-      }) || targetNaskah.find(n => n.title && topic && n.title.toLowerCase().includes(topic.toLowerCase())) || targetNaskah[i]
+      // Match naskah: persona → topic → row-index
+      const matchingNaskah =
+        targetNaskah.find(n => {
+          const pName = Array.isArray(n.sw_personas) ? n.sw_personas[0]?.name : n.sw_personas?.name
+          if (!pName || !personaName) return false
+          const normP = pName.toLowerCase().replace(/[^a-z0-9]/g, '')
+          const normC = personaName.toLowerCase().replace(/[^a-z0-9]/g, '')
+          return normP.includes(normC) || normC.includes(normP)
+        }) ||
+        targetNaskah.find(n => n.title && topic && n.title.toLowerCase().includes(topic.toLowerCase())) ||
+        (i < targetNaskah.length ? targetNaskah[i] : null)
 
       if (!matchingNaskah) continue
 
-      const personaDisplayName = Array.isArray(matchingNaskah.sw_personas) ? matchingNaskah.sw_personas[0]?.name : matchingNaskah.sw_personas?.name
+      const personaDisplayName =
+        Array.isArray(matchingNaskah.sw_personas)
+          ? matchingNaskah.sw_personas[0]?.name
+          : matchingNaskah.sw_personas?.name
 
-      const hasComment = !!commentCell.trim()
+      const hasComment = !!commentCell
       const isApproved = statusCell.toLowerCase().includes('approve')
 
-      // Fetch current version
+      // Fetch current version (version_no column, not version_number)
       let curVer: any = null
       if (matchingNaskah.current_version_id) {
-        const { data: vById } = await supabase.from('sw_naskah_versions').select('*').eq('id', matchingNaskah.current_version_id).maybeSingle()
-        if (vById) curVer = vById
+        const { data } = await supabase.from('sw_naskah_versions').select('*').eq('id', matchingNaskah.current_version_id).maybeSingle()
+        if (data) curVer = data
       }
       if (!curVer) {
-        const { data: vByNId } = await supabase.from('sw_naskah_versions').select('*').eq('naskah_id', matchingNaskah.id).order('version_no', { ascending: false }).limit(1).maybeSingle()
-        if (vByNId) curVer = vByNId
-      }
-      if (!curVer) {
-        const { data: legVer } = await supabase.from('naskah_versions').select('*').eq('naskah_id', matchingNaskah.id).order('created_at', { ascending: false }).limit(1).maybeSingle()
-        if (legVer) curVer = legVer
+        const { data } = await supabase.from('sw_naskah_versions').select('*').eq('naskah_id', matchingNaskah.id).order('version_no', { ascending: false }).limit(1).maybeSingle()
+        if (data) curVer = data
       }
 
+      // Handle approval
       if (isApproved) {
-        if (isSwTable) {
-          await supabase.from('sw_naskah').update({ status: 'approved' }).eq('id', matchingNaskah.id)
-        } else {
-          await supabase.from('naskah').update({ status: 'approved' }).eq('id', matchingNaskah.id)
-        }
+        const tbl = isSwTable ? 'sw_naskah' : 'naskah'
+        await supabase.from(tbl).update({ status: 'approved' }).eq('id', matchingNaskah.id)
         syncedCount++
       }
 
+      // Handle client feedback comment
       if (hasComment) {
-        const changeSummaryNote = `Client Feedback: "${commentCell.trim()}"`
+        const changeSummary = `Client Feedback: "${commentCell}"`
 
-        // Check if this exact client feedback has already been synced to current version
-        if (curVer?.change_summary === changeSummaryNote) {
-          syncedCount++
+        // Skip if this exact feedback already applied (idempotency guard)
+        if (curVer?.change_summary === changeSummary) {
+          syncedCount++ // still count it so user sees it wasn't lost
           continue
         }
 
-        const baseBlocks = curVer?.body || [
-          { block_id: `blk_${Date.now()}`, section_key: 'hook', shot_no: 1, line_no: 1, text: hookCell || matchingNaskah.title, visual_note: '' },
-          { block_id: `blk_${Date.now()+1}`, section_key: 'body', shot_no: 2, line_no: 2, text: bodyCell || 'Naskah body', visual_note: '' },
-        ]
+        const baseBlocks = curVer?.body?.length
+          ? curVer.body
+          : [
+              { block_id: `blk_${Date.now()}`,     section_key: 'hook', shot_no: 1, line_no: 1, speaker: personaDisplayName || '', text: hookCell || matchingNaskah.title || 'Hook', visual_note: '' },
+              { block_id: `blk_${Date.now() + 1}`, section_key: 'body', shot_no: 2, line_no: 2, speaker: personaDisplayName || '', text: bodyCell || 'Naskah body', visual_note: '' },
+            ]
 
-        // Execute AI Auto-Rewrite on blocks to implement client revision instruction directly into script text & visual notes!
+        // AI rewrites the blocks to actually implement the revision instruction
         const revisedBlocks = await applyAiRevisionToBlocks(baseBlocks, commentCell, personaDisplayName)
 
         if (isSwTable) {
-          const nextVersionNo = (curVer?.version_no || 1) + 1
-          const { data: newVer, error: verErr } = await supabase.from('sw_naskah_versions').insert({
-            naskah_id: matchingNaskah.id,
-            version_no: nextVersionNo,
-            body: revisedBlocks,
-            created_via: 'writer_edit',
-            change_summary: changeSummaryNote,
-            created_by: user.id,
-          }).select().single()
+          const nextNo = (curVer?.version_no ?? 0) + 1
+          const { data: newVer, error: verErr } = await supabase
+            .from('sw_naskah_versions')
+            .insert({
+              naskah_id: matchingNaskah.id,
+              version_no: nextNo,
+              body: revisedBlocks,
+              created_via: 'writer_edit',
+              change_summary: changeSummary,
+              created_by: user.id,
+            })
+            .select()
+            .single()
 
           if (newVer) {
             await supabase.from('sw_naskah').update({ current_version_id: newVer.id, status: 'in_review' }).eq('id', matchingNaskah.id)
             syncedCount++
           } else if (verErr) {
-            syncErrors.push(`Failed version insert for ${matchingNaskah.title}: ${verErr.message}`)
+            syncErrors.push(`[${matchingNaskah.title}] ${verErr.message}`)
           }
         } else {
-          const { data: legVer, error: legErr } = await supabase.from('naskah_versions').insert({
-            naskah_id: matchingNaskah.id,
-            version_number: (curVer?.version_number || 1) + 1,
-            body: revisedBlocks,
-            notes: changeSummaryNote,
-          }).select().single()
+          const nextNo = (curVer?.version_number ?? 0) + 1
+          const { data: legVer, error: legErr } = await supabase
+            .from('naskah_versions')
+            .insert({ naskah_id: matchingNaskah.id, version_number: nextNo, body: revisedBlocks, notes: changeSummary })
+            .select()
+            .single()
 
           if (legVer) {
             await supabase.from('naskah').update({ status: 'in_review' }).eq('id', matchingNaskah.id)
             syncedCount++
           } else if (legErr) {
-            syncErrors.push(`Failed legacy version insert for ${matchingNaskah.title}: ${legErr.message}`)
+            syncErrors.push(`[${matchingNaskah.title}] ${legErr.message}`)
           }
         }
       }
@@ -268,6 +294,8 @@ export async function POST(req: Request) {
       message: `Berhasil sync ${syncedCount} revisi/feedback dari Google Sheet!`,
     })
   } catch (e) {
-    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'Sync failed' }, { status: 500 })
+    const msg = e instanceof Error ? e.message : 'Sync failed'
+    console.error('[sync-feedback] Fatal error:', msg)
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 })
   }
 }

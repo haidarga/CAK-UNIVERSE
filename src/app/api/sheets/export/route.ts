@@ -152,6 +152,21 @@ export async function POST(req: Request) {
       await pushValuesToGoogleSheet(accessToken, linkedSheetId, tableRows)
       directPushed = true
       sheetUrl = `https://docs.google.com/spreadsheets/d/${linkedSheetId}/edit`
+
+      // FIX BUG 3: persist the sheet reference to sw_batches so Sync Feedback
+      // can find this spreadsheet ID even after a page reload (without the user
+      // manually pasting the URL again).
+      if (batch_id) {
+        await supabase.from('sw_batches').update({
+          external_doc_ref: {
+            doc_id: linkedSheetId,
+            doc_url: sheetUrl,
+            type: 'sheet',
+            last_pushed_at: new Date().toISOString(),
+          },
+        }).eq('id', batch_id)
+      }
+
     } catch (e) {
       console.warn('Direct Google Sheet push failed, falling back to clipboard format:', e)
     }
