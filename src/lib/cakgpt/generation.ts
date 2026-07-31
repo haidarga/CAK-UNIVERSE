@@ -225,16 +225,20 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
         dayNo: params.dayNo,
       }),
     })
-    // Generous output budget. This call used to pass none, falling back to the
-    // shim's 8000 — and gemini-2.5-flash spends part of THAT SAME budget on
-    // hidden "thinking" tokens before it writes a single character of JSON, so
-    // the room actually left for the naskah was much smaller than 8000. The
-    // model responds by wrapping the script up early (short bodies, the
-    // occasional line cut mid-sentence) rather than erroring, which is why the
-    // truncation was silent. The full JSON for even a 60-block naskah is far
-    // under this ceiling; raising it only removes the squeeze (billing is on
-    // tokens actually produced, not the ceiling).
-    const raw = await callGeminiJSON({ apiKey, prompt, responseSchema: GENERATION_RESPONSE_SCHEMA, temperature: 0.8, maxOutputTokens: 32000 })
+    // Disable thinking in batch mode (skipCritic) — gemini-2.5-flash thinking
+    // was eating 15-30s latency AND consuming part of the output token budget
+    // for hidden reasoning, causing both slowness and silent truncation. With
+    // thinking disabled, the full budget goes to actual JSON output and each
+    // call completes in ~5-8s instead of ~30s. 16K is generous — a 60-block
+    // naskah JSON is well under that.
+    const raw = await callGeminiJSON({
+      apiKey,
+      prompt,
+      responseSchema: GENERATION_RESPONSE_SCHEMA,
+      temperature: 0.8,
+      maxOutputTokens: params.skipCritic ? 16000 : 32000,
+      disableThinking: params.skipCritic,
+    })
     generation = GenerationOutputSchema.parse(raw)
   } catch (e) {
     const msg = e instanceof LLMError ? e.message : e instanceof Error ? e.message : 'generation failed'

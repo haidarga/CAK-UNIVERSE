@@ -4,12 +4,11 @@ import { requireUser } from '@/lib/cakgpt/auth'
 import { generateNaskah } from '@/lib/cakgpt/generation'
 
 export const runtime = 'nodejs'
-export const maxDuration = 120
+export const maxDuration = 300
 
-const CHUNK = 12 // jobs claimed + run per call. Each is now 1 Gemini call (critic
-// skipped in bulk), so 12-in-flight still fits maxDuration=120 (they run in
-// parallel, wall-time bounded by the slowest job ≈30s worst-case with retries);
-// Gemini rate-limit + backoff/retry in llm.ts self-throttle if the tier can't sustain it.
+const CHUNK = 12 // jobs claimed + run per call. With thinking disabled each
+// Gemini call is ~5-8s (down from ~30s), so 12 parallel calls fit easily
+// within maxDuration=300. The pump loop drains the batch fast.
 const MAX_ATTEMPTS = 3 // a job that keeps failing gives up after this many tries
 
 // POST /api/gen-jobs/process — claim up to CHUNK pending jobs for a batch and

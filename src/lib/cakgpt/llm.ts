@@ -17,6 +17,8 @@ export async function callGeminiJSON(opts: {
   responseSchema: GeminiSchema;
   temperature?: number;
   maxOutputTokens?: number;
+  /** Skip Gemini 2.5 Flash internal thinking for faster responses. */
+  disableThinking?: boolean;
 }): Promise<unknown> {
   try {
     const res = await runLLM({
@@ -26,6 +28,7 @@ export async function callGeminiJSON(opts: {
       responseSchema: opts.responseSchema,
       temperature: opts.temperature ?? 0.7,
       maxTokens: opts.maxOutputTokens ?? 8000,
+      disableThinking: opts.disableThinking,
     });
     return extractJson(res.text);
   } catch (e) {

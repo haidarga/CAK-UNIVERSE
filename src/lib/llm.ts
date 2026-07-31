@@ -34,6 +34,16 @@ export interface LLMRequest {
    * different content-block format and no current caller needs it there.
    */
   images?: { mimeType: string; data: string }[];
+  /**
+   * Gemini-only: disable the model's internal "thinking" pass. Gemini 2.5
+   * Flash uses part of the output token budget for hidden reasoning, which
+   * adds 15-30s latency AND squeezes the room left for actual JSON output.
+   * Set to true for bulk/batch calls where speed matters more than extra
+   * reasoning depth. Has no effect on Anthropic.
+   */
+  disableThinking?: boolean;
+  /** Per-request timeout in milliseconds. Defaults to 90_000 (90s). */
+  timeoutMs?: number;
 }
 
 export interface LLMResult {
@@ -101,42 +111,66 @@ function gemini(): GoogleGenerativeAI {
 
 async function runGemini(req: LLMRequest): Promise<LLMResult> {
   const model = req.model || process.env.GEMINI_MODEL || "gemini-2.5-flash";
+
+  // Build generation config. When disableThinking is set, add
+  // thinkingConfig.thinkingBudget = 0 so gemini-2.5-flash skips its internal
+  // reasoning pass — saves 15-30s latency per call and frees the entire output
+  // budget for actual JSON content instead of hidden thought tokens.
+  const generationConfig: Record<string, unknown> = {
+    maxOutputTokens: req.maxTokens ?? 4096,
+    temperature: req.temperature ?? 0.7,
+    ...(req.json ? { responseMimeType: "application/json" } : {}),
+    ...(req.json && req.responseSchema ? { responseSchema: req.responseSchema } : {}),
+  };
+  if (req.disableThinking) {
+    (generationConfig as Record<string, unknown>).thinkingConfig = { thinkingBudget: 0 };
+  }
+
   const client = gemini().getGenerativeModel({
     model,
     systemInstruction: req.system,
-    generationConfig: {
-      maxOutputTokens: req.maxTokens ?? 4096,
-      temperature: req.temperature ?? 0.7,
-      ...(req.json ? { responseMimeType: "application/json" } : {}),
-      // responseSchema only takes effect alongside responseMimeType "application/json".
-      ...(req.json && req.responseSchema ? { responseSchema: req.responseSchema } : {}),
-    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- thinkingConfig is not in SDK types yet
+    generationConfig: generationConfig as any,
   });
 
-  // Multimodal: when images are present, build a Content with inlineData
-  // parts + the text prompt instead of the plain-string overload.
-  const res = req.images?.length
-    ? await client.generateContent({
-        contents: [
+  // Wrap in a timeout so a stuck Gemini call doesn't hang the entire Vercel
+  // function until maxDuration. Default 90s leaves headroom for the 120s cap.
+  const timeoutMs = req.timeoutMs ?? 90_000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    // Multimodal: when images are present, build a Content with inlineData
+    // parts + the text prompt instead of the plain-string overload.
+    const requestOptions = { signal: controller.signal } as { signal: AbortSignal };
+    const res = req.images?.length
+      ? await client.generateContent(
           {
-            role: "user",
-            parts: [
-              ...req.images.map((img): Part => ({ inlineData: { mimeType: img.mimeType, data: img.data } })),
-              { text: req.prompt },
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  ...req.images.map((img): Part => ({ inlineData: { mimeType: img.mimeType, data: img.data } })),
+                  { text: req.prompt },
+                ],
+              },
             ],
           },
-        ],
-      })
-    : await client.generateContent(req.prompt);
-  const text = res.response.text();
-  const usage = res.response.usageMetadata;
+          requestOptions as never,
+        )
+      : await client.generateContent(req.prompt, requestOptions as never);
+    const text = res.response.text();
+    const usage = res.response.usageMetadata;
 
-  return {
-    text,
-    provider: "gemini",
-    model,
-    tokensUsed: usage?.totalTokenCount ?? 0,
-  };
+    return {
+      text,
+      provider: "gemini",
+      model,
+      tokensUsed: usage?.totalTokenCount ?? 0,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Call the configured (or overridden) LLM provider. */

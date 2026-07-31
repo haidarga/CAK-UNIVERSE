@@ -30,3 +30,17 @@ describe("extractJson", () => {
     expect(() => extractJson("no json here")).toThrow();
   });
 });
+
+describe("LLMRequest options", () => {
+  test("LLMRequest supports disableThinking and timeoutMs properties", () => {
+    const req = {
+      system: "test",
+      prompt: "test",
+      disableThinking: true,
+      timeoutMs: 60000,
+    };
+    expect(req.disableThinking).toBe(true);
+    expect(req.timeoutMs).toBe(60000);
+  });
+});
+
