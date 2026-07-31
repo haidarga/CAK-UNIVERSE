@@ -44,8 +44,12 @@ export interface LLMResult {
 }
 
 function defaultProvider(): LLMProvider {
-  const p = (process.env.LLM_PROVIDER || "anthropic").toLowerCase();
-  return p === "gemini" ? "gemini" : "anthropic";
+  const p = process.env.LLM_PROVIDER?.toLowerCase();
+  if (p === "anthropic" && process.env.ANTHROPIC_API_KEY) return "anthropic";
+  if (p === "gemini") return "gemini";
+  if (process.env.GEMINI_API_KEY && !process.env.ANTHROPIC_API_KEY) return "gemini";
+  if (process.env.ANTHROPIC_API_KEY) return "anthropic";
+  return "gemini";
 }
 
 // ---- Anthropic ----
