@@ -203,11 +203,14 @@ export async function POST(req: Request) {
       continue
     }
 
-    // We group by Caketing batch_id so that 1 Caketing generation = 1 Studio Inbox card.
-    // If n.batch_id is missing, fallback to brief_id or 'general'.
+    // Group by topic title (e.g. "Why Susu Segar?" extracted from "Why Susu Segar? - PersonaName")
+    const rawTitle = n.title || 'Content Plan'
+    const topicTitle = rawTitle.split(' - ')[0]?.trim() || rawTitle.split('·')[0]?.trim() || 'Content Plan'
+    const topicBatchId = n.batch_id || `topic_${topicTitle.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
+
     const bInfo = {
-      id: n.batch_id || n.brief_id || 'batch_general',
-      title: n.batch_id ? batchById.get(n.batch_id)?.name || 'Content Plan' : 'General Batch'
+      id: topicBatchId,
+      title: n.batch_id ? (batchById.get(n.batch_id)?.name || topicTitle) : topicTitle
     }
 
     const blocks = version.body
