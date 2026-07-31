@@ -11,7 +11,7 @@ export const BlockInputSchema = z.object({
   timestamp_range: z.string().max(100).nullable().optional(),
   location: z.string().max(1000).nullable().optional(),
   wardrobe: z.string().max(1000).nullable().optional(),
-  text: z.string().min(1).max(4000),
+  text: z.string().max(4000).default(''),
   visual_note: z.string().max(1500).nullable().optional(),
 })
 export type BlockInput = z.infer<typeof BlockInputSchema>
@@ -29,8 +29,8 @@ export const FormatMetaSchema = z.object({
 })
 
 export const GenerationOutputSchema = z.object({
-  hook_type: z.string().min(1),
-  hook_justification: z.string().min(1).max(3000),
+  hook_type: z.string().default('pattern_interrupt'),
+  hook_justification: z.string().max(3000).default(''),
   format_meta: FormatMetaSchema,
   body: z.array(BlockInputSchema).min(1).max(100),
 })
