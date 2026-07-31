@@ -21,6 +21,7 @@ export interface TikTokProfileStats {
 
 export interface TikTokHashtagItem {
   url: string;
+  title?: string;
   views?: number;
   thumbnail?: string;
 }
