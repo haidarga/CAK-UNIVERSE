@@ -128,7 +128,7 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
   const fetchQueue = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/scriptwriter/triage/queue?batch_id=${batchId}&status=${statusFilter}`)
+      const res = await fetch(`/api/scriptwriter/triage/queue?batch_id=${batchId}&status=${statusFilter}`, { cache: 'no-store' })
       const data = await res.json()
       if (data.ok) setItems(data.items)
       else setActionError(data.error || 'failed to load queue')
@@ -544,9 +544,6 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
       idsToSync = items.map(i => i.naskah_id)
     }
 
-    // FIX BUG 2: always send batch_id so backend can look up the linked sheet
-    // even when google_sheet_url is not in local state.
-    // FIX BUG 1: send google_sheet_url when docRef IS a spreadsheet.
     const sheetUrl = docRef?.doc_url?.includes('/spreadsheets/') ? docRef.doc_url : undefined
 
     try {
@@ -560,12 +557,32 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
         }),
       })
       const data = await res.json()
+
+      // Always log diagnostics for debugging
+      if (data._diag) console.log('[sync-feedback] Diagnostics:', JSON.stringify(data._diag, null, 2))
+
       if (!data.ok) {
-        alert(`❌ Gagal sync feedback: ${data.error}`)
+        const diagInfo = data._diag ? `\n\n🔍 Debug:\n${JSON.stringify(data._diag, null, 2)}` : ''
+        alert(`❌ Gagal sync feedback: ${data.error}${diagInfo}`)
         return
       }
 
-      alert(`✅ Berhasil SYNC ${data.synced_count || 0} naskah!\n\n${data.message || 'Revisi/feedback dari Google Sheet sudah otomatis diterapkan ke Caketing.'}`)
+      if (data.synced_count > 0) {
+        alert(`✅ Berhasil SYNC ${data.synced_count} naskah!\n\n${data.message || 'Revisi/feedback dari Google Sheet sudah otomatis diterapkan ke Caketing.'}`)
+      } else {
+        // Show diagnostic info when 0 so we can debug
+        const diag = data._diag || {}
+        const debugLines = [
+          `Sheet: "${diag.sheet_title || '?'}" (${diag.sheet_fetch || '?'})`,
+          `Naskah matched: ${diag.target_naskah_count || 0}`,
+          `Data rows: ${diag.data_row_count || 0}`,
+          `Col indices: ${JSON.stringify(diag.col_indices || {})}`,
+          `Header: ${JSON.stringify(diag.header_row || [])}`,
+          diag.row_results?.length ? `Row results: ${JSON.stringify(diag.row_results.slice(0, 5))}` : '',
+          diag.batch_external_doc_ref ? `Batch ref: ${JSON.stringify(diag.batch_external_doc_ref)}` : '',
+        ].filter(Boolean).join('\n')
+        alert(`⚠️ SYNC 0 naskah — no changes detected.\n\n${data.message || ''}\n\n🔍 Debug Info:\n${debugLines}`)
+      }
       setDocStatus(`✅ Synced ${data.synced_count || 0} naskah from Google Sheet feedback`)
       fetchQueue()
     } catch (e) {

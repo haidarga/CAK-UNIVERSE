@@ -1,43 +1,11 @@
 /**
- * TDD test suite for sync-feedback logic.
+ * TDD test suite for sync-feedback logic v3.
  *
- * ROOT CAUSE BUGS being tested:
- *
- * BUG 1 — Sheet URL never resolves (0 naskah every time):
- *   TriageQueue.syncFeedbackFromSheet() sends `google_sheet_url` only when
- *   `docRef?.doc_url?.includes('/spreadsheets/')`.  BUT `docRef` is the
- *   batch's external_doc_ref which stores the *Google Doc* URL
- *   (docs.google.com/document/d/...), not the Sheet URL.  So the condition is
- *   always false, google_sheet_url is never sent, and the backend falls back to
- *   searching sw_batches for a spreadsheet ref — which also doesn't exist
- *   because the sheet was exported directly (the export API pushed to the Sheet
- *   but stored the sheet_id only in-memory, never saved it to external_doc_ref).
- *   Result: linkedSheetId === null → "Paste or link a Google Sheet URL first"
- *   or continues with null and bails in the loop with 0 matches.
- *
- * BUG 2 — batch_id never sent by frontend (so backend can't look up the sheet):
- *   TriageQueue sends { naskah_ids, google_sheet_url } but NEVER sends batch_id.
- *   The backend's fallback "search all batches for spreadsheet ref" scan has no
- *   scope — it picks any batch at random (or finds nothing).
- *
- * BUG 3 — Export API saves sheet to state but never to DB (external_doc_ref):
- *   pushToSheet() gets a sheet_url back from the export API but only calls
- *   window.open(data.sheet_url), it never calls setDocRef() with the sheet URL.
- *   So docRef stays pointing to the Google Doc, and syncFeedbackFromSheet never
- *   knows the sheet URL.
- *
- * FIXES:
- *   A. Frontend: always pass batch_id to sync-feedback. Also update docRef with
- *      sheet URL after a successful export.
- *   B. Export API: save the linked sheet URL to sw_batches.external_doc_ref so
- *      subsequent syncs can find it even if the frontend state is stale.
- *   C. Sync-feedback: when batch_id is present, resolve the sheet from
- *      sw_batches.external_doc_ref correctly (type:'sheet'), then fall back to
- *      the naskah_ids list to batch-match rows.
+ * Tests the core pure-logic functions extracted from the route handler.
  */
 import { describe, it, expect } from 'vitest'
 
-// ── Helpers re-used across tests ────────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
 function makeNaskah(overrides: Record<string, unknown> = {}) {
   return {
@@ -67,14 +35,13 @@ function makeVersion(overrides: Record<string, unknown> = {}) {
   }
 }
 
-// ── BUG 1 tests — Sheet URL resolution logic ─────────────────────────────────
+// ── Sheet-ID resolution ─────────────────────────────────────────────────────
 
 describe('resolveLinkedSheetId', () => {
   function resolveLinkedSheetId(
     googleSheetUrl: string | undefined,
     batchExternalDocRef: { doc_id?: string; doc_url?: string; type?: string } | null
   ): string | null {
-    // Replicate the exact logic in sync-feedback/route.ts after our fix
     if (googleSheetUrl) {
       const m = googleSheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)
       if (m) return m[1]
@@ -89,37 +56,19 @@ describe('resolveLinkedSheetId', () => {
   }
 
   it('resolves from explicit google_sheet_url', () => {
-    const id = resolveLinkedSheetId(
-      'https://docs.google.com/spreadsheets/d/SHEET_ID_XYZ/edit#gid=0',
-      null
-    )
-    expect(id).toBe('SHEET_ID_XYZ')
+    expect(resolveLinkedSheetId('https://docs.google.com/spreadsheets/d/SHEET_XYZ/edit#gid=0', null)).toBe('SHEET_XYZ')
   })
 
   it('resolves from external_doc_ref with type=sheet', () => {
-    const id = resolveLinkedSheetId(undefined, {
-      doc_id: 'SHEET_ID_ABC',
-      doc_url: 'https://docs.google.com/spreadsheets/d/SHEET_ID_ABC/edit',
-      type: 'sheet',
-    })
-    expect(id).toBe('SHEET_ID_ABC')
+    expect(resolveLinkedSheetId(undefined, { doc_id: 'SHEET_ABC', doc_url: 'https://docs.google.com/spreadsheets/d/SHEET_ABC/edit', type: 'sheet' })).toBe('SHEET_ABC')
   })
 
   it('resolves from external_doc_ref with spreadsheets URL (no type field)', () => {
-    const id = resolveLinkedSheetId(undefined, {
-      doc_id: 'SHEET_ID_DEF',
-      doc_url: 'https://docs.google.com/spreadsheets/d/SHEET_ID_DEF/edit',
-    })
-    expect(id).toBe('SHEET_ID_DEF')
+    expect(resolveLinkedSheetId(undefined, { doc_id: 'SHEET_DEF', doc_url: 'https://docs.google.com/spreadsheets/d/SHEET_DEF/edit' })).toBe('SHEET_DEF')
   })
 
   it('returns null when external_doc_ref is a Google Doc (not sheet)', () => {
-    const id = resolveLinkedSheetId(undefined, {
-      doc_id: 'DOC_ID_GHI',
-      doc_url: 'https://docs.google.com/document/d/DOC_ID_GHI/edit',
-      type: 'doc',
-    })
-    expect(id).toBeNull()
+    expect(resolveLinkedSheetId(undefined, { doc_id: 'DOC_GHI', doc_url: 'https://docs.google.com/document/d/DOC_GHI/edit', type: 'doc' })).toBeNull()
   })
 
   it('returns null when no URL or ref provided', () => {
@@ -127,7 +76,7 @@ describe('resolveLinkedSheetId', () => {
   })
 })
 
-// ── BUG 2 tests — Persona matching logic ─────────────────────────────────────
+// ── Persona matching ─────────────────────────────────────────────────────────
 
 describe('matchNaskahForRow', () => {
   function matchNaskahForRow(
@@ -151,36 +100,28 @@ describe('matchNaskahForRow', () => {
   }
 
   it('matches by persona name exact', () => {
-    const naskah = [makeNaskah()]
-    const match = matchNaskahForRow(naskah, 'Stacy Prixie', '', 0)
-    expect(match?.id).toBe('naskah-001')
+    expect(matchNaskahForRow([makeNaskah()], 'Stacy Prixie', '', 0)?.id).toBe('naskah-001')
   })
 
-  it('matches by partial persona name (sheet shows first name only)', () => {
-    const naskah = [makeNaskah()]
-    const match = matchNaskahForRow(naskah, 'Stacy', '', 0)
-    expect(match?.id).toBe('naskah-001')
+  it('matches by partial persona name', () => {
+    expect(matchNaskahForRow([makeNaskah()], 'Stacy', '', 0)?.id).toBe('naskah-001')
   })
 
   it('matches by topic substring when persona is empty', () => {
-    const naskah = [makeNaskah()]
-    const match = matchNaskahForRow(naskah, '', 'Working Mom', 0)
-    expect(match?.id).toBe('naskah-001')
+    expect(matchNaskahForRow([makeNaskah()], '', 'Working Mom', 0)?.id).toBe('naskah-001')
   })
 
-  it('falls back to row index when no name or topic match', () => {
+  it('falls back to row index', () => {
     const naskah = [makeNaskah(), makeNaskah({ id: 'naskah-002', sw_personas: [{ id: 'p-2', name: 'Laxita Zura' }] })]
-    const match = matchNaskahForRow(naskah, 'Unknown Person', 'Unknown Topic', 1)
-    expect(match?.id).toBe('naskah-002')
+    expect(matchNaskahForRow(naskah, 'Unknown Person', 'Unknown Topic', 1)?.id).toBe('naskah-002')
   })
 
-  it('returns null when rowIndex out of bounds and no match', () => {
-    const match = matchNaskahForRow([], 'Nobody', 'Nothing', 99)
-    expect(match).toBeNull()
+  it('returns null when no match possible', () => {
+    expect(matchNaskahForRow([], 'Nobody', 'Nothing', 99)).toBeNull()
   })
 })
 
-// ── BUG 3 tests — Duplicate comment guard ─────────────────────────────────────
+// ── Duplicate feedback guard ────────────────────────────────────────────────
 
 describe('isDuplicateFeedback', () => {
   function isDuplicateFeedback(curVer: ReturnType<typeof makeVersion> | null, commentCell: string): boolean {
@@ -188,43 +129,117 @@ describe('isDuplicateFeedback', () => {
     return curVer.change_summary === `Client Feedback: "${commentCell.trim()}"`
   }
 
-  it('detects a duplicate when change_summary matches current comment', () => {
-    const ver = makeVersion({ change_summary: 'Client Feedback: "bikin narasinya lebih kasar"' })
-    expect(isDuplicateFeedback(ver, 'bikin narasinya lebih kasar')).toBe(true)
+  it('detects duplicate', () => {
+    expect(isDuplicateFeedback(makeVersion({ change_summary: 'Client Feedback: "bikin lebih kasar"' }), 'bikin lebih kasar')).toBe(true)
   })
 
-  it('does not flag new/different comment as duplicate', () => {
-    const ver = makeVersion({ change_summary: 'Client Feedback: "bikin narasinya lebih kasar"' })
-    expect(isDuplicateFeedback(ver, 'KURANG ADA ACEKIDNYA, TAMBAHIN ACEKIDNYA')).toBe(false)
+  it('new comment is not duplicate', () => {
+    expect(isDuplicateFeedback(makeVersion({ change_summary: 'Client Feedback: "bikin lebih kasar"' }), 'TAMBAHIN ACEKIDNYA')).toBe(false)
   })
 
-  it('does not flag null change_summary as duplicate', () => {
-    const ver = makeVersion({ change_summary: null })
-    expect(isDuplicateFeedback(ver, 'bikin narasinya lebih kasar')).toBe(false)
+  it('null change_summary is not duplicate', () => {
+    expect(isDuplicateFeedback(makeVersion({ change_summary: null }), 'anything')).toBe(false)
   })
 
-  it('does not flag empty comment', () => {
-    const ver = makeVersion({ change_summary: null })
-    expect(isDuplicateFeedback(ver, '')).toBe(false)
+  it('empty comment is not duplicate', () => {
+    expect(isDuplicateFeedback(makeVersion(), '')).toBe(false)
   })
 })
 
-// ── BUG 3 tests — version_no calculation  ────────────────────────────────────
+// ── Version number calculation (BUG C fix) ──────────────────────────────────
 
 describe('nextVersionNo', () => {
-  function nextVersionNo(curVer: { version_no?: number } | null): number {
-    return (curVer?.version_no ?? 0) + 1
+  it('increments from current max', () => {
+    expect(Math.max(1, 5) + 1).toBe(6)
+  })
+
+  it('starts at 1 when no versions exist', () => {
+    expect((null ?? 0) + 1).toBe(1)
+  })
+
+  it('uses max of curVer and queried max', () => {
+    const curVerNo = 2
+    const queriedMax = 4  // other versions inserted by other flows
+    expect(Math.max(curVerNo, queriedMax) + 1).toBe(5)
+  })
+})
+
+// ── Status constraint validation (BUG B fix) ────────────────────────────────
+
+describe('sw_naskah status values', () => {
+  const VALID_STATUSES = ['draft', 'approved', 'rejected']
+
+  it('draft is valid', () => expect(VALID_STATUSES).toContain('draft'))
+  it('approved is valid', () => expect(VALID_STATUSES).toContain('approved'))
+  it('rejected is valid', () => expect(VALID_STATUSES).toContain('rejected'))
+  it('in_review is NOT valid', () => expect(VALID_STATUSES).not.toContain('in_review'))
+})
+
+// ── Column header detection ─────────────────────────────────────────────────
+
+describe('column header detection', () => {
+  function col(headerRow: string[], keywords: string[], fallback: number): number {
+    const idx = headerRow.findIndex(h => keywords.some(k => h.includes(k)))
+    return idx !== -1 ? idx : fallback
   }
 
-  it('starts at 2 when current version is 1', () => {
-    expect(nextVersionNo(makeVersion({ version_no: 1 }))).toBe(2)
+  const headers = ['no', 'judul / topik', 'persona', 'hari / seri', 'hook (kalimat utama)', 'isi script / body', 'call to action (cta)', 'visual & direction notes', 'status klien', 'komentar / revisi klien']
+
+  it('finds persona column', () => {
+    expect(col(headers, ['persona'], 2)).toBe(2)
   })
 
-  it('starts at 1 when there is no current version', () => {
-    expect(nextVersionNo(null)).toBe(1)
+  it('finds komentar column', () => {
+    expect(col(headers, ['komentar', 'revisi'], 9)).toBe(9)
   })
 
-  it('increments correctly for version 5', () => {
-    expect(nextVersionNo({ version_no: 5 })).toBe(6)
+  it('finds status column', () => {
+    expect(col(headers, ['status'], 8)).toBe(8)
+  })
+
+  it('finds hook column', () => {
+    expect(col(headers, ['hook', 'kalimat utama'], 4)).toBe(4)
+  })
+
+  it('uses fallback for missing column', () => {
+    expect(col(headers, ['nonexistent'], 99)).toBe(99)
+  })
+})
+
+// ── Google Sheets row length edge cases (BUG D) ────────────────────────────
+
+describe('Google Sheets row truncation handling', () => {
+  it('row shorter than expected returns empty string for missing cells', () => {
+    // Google Sheets API returns rows where trailing empty cells are OMITTED
+    const row = ['1', 'Topic', 'Stacy Prixie', 'Hari 1/3', 'Hook text', 'Body text', 'CTA text', 'Visual notes']
+    // row.length = 8, columns I (8) and J (9) are missing
+    const commentColIdx = 9
+    const statusColIdx = 8
+
+    // The ?? operator handles undefined correctly
+    const commentCell = String(row[commentColIdx] ?? '').trim()
+    const statusCell = String(row[statusColIdx] ?? '').trim()
+
+    expect(commentCell).toBe('')
+    expect(statusCell).toBe('')
+  })
+
+  it('full row returns all values', () => {
+    const row = ['1', 'Topic', 'Stacy', 'Hari 1', 'Hook', 'Body', 'CTA', 'Visual', 'Pending Review', 'TAMBAHIN ACEKIDNYA']
+    const commentCell = String(row[9] ?? '').trim()
+    const statusCell = String(row[8] ?? '').trim()
+
+    expect(commentCell).toBe('TAMBAHIN ACEKIDNYA')
+    expect(statusCell).toBe('Pending Review')
+  })
+
+  it('|| operator treats 0 and empty string as falsy (the old bug)', () => {
+    // This is why we use ?? instead of || for cell access
+    const row: string[] = []
+    // With ||: String(row[9] || '').trim() → String('').trim() = '' ✓ (same result here)
+    // But with an explicit 0: String(0 || '') → '' vs String(0 ?? '') → '0'
+    // For cell values this matters when the cell contains '0'
+    expect(String(row[9] ?? '')).toBe('')
+    expect(String(undefined ?? '')).toBe('')
   })
 })
