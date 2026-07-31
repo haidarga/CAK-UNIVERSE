@@ -1,8 +1,8 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Upload, ClipboardPaste, FileText, X, Sparkles, Loader2, ExternalLink } from 'lucide-react'
+import { Upload, ClipboardPaste, FileText, X, Sparkles, Loader2, ExternalLink, Brain } from 'lucide-react'
 import { uploadFileForImport, MAX_IMPORT_UPLOAD_BYTES } from '@/lib/cakgpt/upload-client'
 import { MAX_DAY_TOTAL, MAX_FANOUT_ITEMS, MAX_SOURCES } from '@/lib/cakgpt/schemas'
 
@@ -15,7 +15,7 @@ type PreviewBrief = {
   fields: Record<string, string>
 }
 
-type SourceMode = 'file' | 'text' | 'gdoc'
+type SourceMode = 'file' | 'text' | 'gdoc' | 'knowledge'
 
 export function BriefImport({ clients, personas }: {
   clients: Array<{ id: string; name: string }>
@@ -339,6 +339,7 @@ export function BriefImport({ clients, personas }: {
     { id: 'file', label: 'File', icon: Upload },
     { id: 'text', label: 'Paste', icon: ClipboardPaste },
     { id: 'gdoc', label: 'Google Doc', icon: FileText },
+    { id: 'knowledge', label: 'Knowledge Base', icon: Brain },
   ]
 
   return (
@@ -389,6 +390,14 @@ export function BriefImport({ clients, personas }: {
                 className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-text focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring" />
               <p className="mt-1 text-[11px] text-mutedText">Needs your Google account connected (Docs access).</p>
             </div>
+          )}
+          {mode === 'knowledge' && (
+            <KnowledgeSelector
+              onSelect={(item) => {
+                setText((prev) => (prev ? `${prev}\n\n--- ${item.title} ---\n${item.content}` : `--- ${item.title} ---\n${item.content}`))
+                setHint((prev) => (prev ? `${prev}; Referensi Knowledge: ${item.title}` : `Referensi Knowledge: ${item.title}`))
+              }}
+            />
           )}
 
           <div>
@@ -641,6 +650,79 @@ export function BriefImport({ clients, personas }: {
               </p>
             )
           })()}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function KnowledgeSelector({ onSelect }: { onSelect: (item: { title: string; content: string }) => void }) {
+  const [items, setItems] = useState<Array<{ id: string; title: string; content: string; source_type: string; tags: string[] }>>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/knowledge')
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.ok) setItems(j.items || [])
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  const filtered = items.filter(
+    (it) => it.title.toLowerCase().includes(search.toLowerCase()) || (it.tags || []).some((t) => t.toLowerCase().includes(search.toLowerCase()))
+  )
+
+  return (
+    <div className="space-y-2 rounded-md border border-border bg-background p-3">
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-bold text-text flex items-center gap-1.5">
+          <Brain size={14} className="text-emerald-400" /> Pilih Knowledge Base Item
+        </label>
+        <span className="text-[10px] text-mutedText">{items.length} items tersedia</span>
+      </div>
+
+      <input
+        type="text"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Cari knowledge (mis. referensi acekid, trend tiktok)..."
+        className="w-full rounded border border-border bg-surface px-2.5 py-1.5 text-xs text-text outline-none focus:border-primary"
+      />
+
+      {loading ? (
+        <div className="py-4 text-center text-xs text-mutedText">Memuat Knowledge Base...</div>
+      ) : filtered.length === 0 ? (
+        <div className="py-4 text-center text-xs text-mutedText">
+          {items.length === 0 ? 'Belum ada knowledge tersimpan. Simpan dari Content Translator atau Trend Radar terlebih dahulu.' : 'Tidak ada knowledge yang cocok.'}
+        </div>
+      ) : (
+        <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+          {filtered.map((it) => (
+            <div
+              key={it.id}
+              onClick={() => {
+                setSelectedId(it.id)
+                onSelect(it)
+              }}
+              className={`p-2 rounded border text-xs cursor-pointer transition-colors flex items-center justify-between ${
+                selectedId === it.id
+                  ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-300 font-bold'
+                  : 'border-border bg-surface hover:border-primary/50 text-text'
+              }`}
+            >
+              <div>
+                <div className="font-semibold">{it.title}</div>
+                <div className="text-[10px] text-mutedText truncate max-w-xs">{it.content.slice(0, 80)}...</div>
+              </div>
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] text-mutedText uppercase font-mono">
+                {it.source_type}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </div>

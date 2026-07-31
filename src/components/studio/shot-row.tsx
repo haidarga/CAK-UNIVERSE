@@ -52,6 +52,21 @@ export default function ShotRow({ shot }: ShotRowProps) {
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        {shot.location && (
+          <span className="chip border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+            📍 {shot.location}
+          </span>
+        )}
+        {shot.timestamp_range && (
+          <span className="chip border-sky-500/30 bg-sky-500/10 text-sky-400">
+            ⏰ {shot.timestamp_range}
+          </span>
+        )}
+        {shot.wardrobe && (
+          <span className="chip border-violet-500/30 bg-violet-500/10 text-violet-400">
+            👔 {shot.wardrobe}
+          </span>
+        )}
         {shot.capcut_transition && (
           <span className="chip border-border/60 bg-surface-2/60 text-muted">
             <Scissors className="size-3" strokeWidth={1.5} aria-hidden />

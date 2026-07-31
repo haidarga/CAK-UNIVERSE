@@ -226,11 +226,33 @@ export function TrendSearch({ onUseIdea }: { onUseIdea?: (seed: string) => void 
                   </a>
                   <button
                     type="button"
-                    onClick={() => copy(it)}
-                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-mutedText hover:text-text"
+                    onClick={async () => {
+                      const name = prompt('Simpan trend ke Knowledge Base as:', it.title?.trim() || 'Trend Reference')
+                      if (!name?.trim()) return
+                      try {
+                        const content = `Trend Title: ${it.title || 'Untitled'}\nPlatform: ${it.platform}\nURL: ${it.url}\nViews: ${it.views || 0}\nLikes: ${it.likes || 0}`
+                        const res = await fetch('/api/knowledge', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            title: name.trim(),
+                            content,
+                            source_type: 'trend_radar',
+                            source_url: it.url,
+                            tags: ['trend', it.platform],
+                            metadata: { trend: it },
+                          })
+                        })
+                        const data = await res.json()
+                        if (data.ok) alert('✅ Saved to Knowledge!')
+                        else alert(data.error || 'Gagal menyimpan knowledge')
+                      } catch {
+                        alert('Network error')
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20"
                   >
-                    {copied === it.url ? <Check size={13} /> : <Copy size={13} />}
-                    {copied === it.url ? 'Tersalin' : 'Salin'}
+                    🧠 Knowledge
                   </button>
                   {onUseIdea && (
                     <button

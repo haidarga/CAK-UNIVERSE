@@ -78,6 +78,31 @@ export async function scrapeTikTokProfile(username: string): Promise<TikTokProfi
 export async function scrapeTikTokHashtag(tag: string, limit = 15): Promise<TikTokHashtagItem[]> {
   const cleanTag = tag.replace(/^#/, "").trim();
   if (!cleanTag) return [];
+
+  // 1. Try RapidAPI TikTok Search if API key is provided in env
+  const rapidApiKey = process.env.RAPIDAPI_KEY || process.env.NEXT_PUBLIC_RAPIDAPI_KEY;
+  if (rapidApiKey) {
+    try {
+      const res = await fetch(`https://tiktok-scraper-7.p.rapidapi.com/feed/search?keywords=${encodeURIComponent(cleanTag)}&count=${limit}`, {
+        headers: {
+          'x-rapidapi-key': rapidApiKey,
+          'x-rapidapi-host': 'tiktok-scraper-7.p.rapidapi.com',
+        },
+      });
+      const data = await res.json();
+      if (data?.data?.videos && Array.isArray(data.data.videos)) {
+        return data.data.videos.slice(0, limit).map((v: any) => ({
+          url: v.play || v.video_url || `https://www.tiktok.com/@${v.author?.unique_id || 'user'}/video/${v.video_id || v.id}`,
+          title: v.title || v.desc || undefined,
+          views: v.play_count || v.stats?.playCount || undefined,
+          thumbnail: v.cover || v.origin_cover || undefined,
+        }));
+      }
+    } catch (e) {
+      console.warn('[TikTok Scraper] RapidAPI fetch failed, falling back to Lightpanda:', e);
+    }
+  }
+
   const url = `https://www.tiktok.com/tag/${encodeURIComponent(cleanTag)}`;
 
   try {

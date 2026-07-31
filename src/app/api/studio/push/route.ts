@@ -246,7 +246,6 @@ export async function POST(req: Request) {
         persona_id: persona?.id,
         brief_id: n.brief_id,
         day_no: n.day_no,
-        day_match: dayMatch,
         push_batch_id: bInfo.id,
         push_batch_title: bInfo.title,
       },

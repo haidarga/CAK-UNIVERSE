@@ -1,32 +1,37 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { Loader2, Copy, Check, ImageIcon, Sparkles, X } from 'lucide-react'
-import { uploadFileForImport, MAX_IMPORT_UPLOAD_BYTES, MAX_VIDEO_UPLOAD_BYTES } from '@/lib/cakgpt/upload-client'
+import { Image as ImageIcon, Sparkles, Loader2, X, Copy, Check } from 'lucide-react'
+import { uploadFileForImport, MAX_IMPORT_UPLOAD_BYTES } from '@/lib/cakgpt/upload-client'
 
+type Shot = { shot_no: number; description: string; camera_angle?: string }
 type VisualDirection = {
   hook_type: string
   hook_description: string
   visual_style: string
-  pacing: string
   mood: string
+  pacing: string
   target_audience_read: string
-  cta_style?: string | null
+  cta_style?: string
   notable_techniques: string[]
-  shot_breakdown: { shot_no: number; description: string; camera_angle?: string | null }[]
+  shot_breakdown: Shot[]
   suggested_angle_for_reuse: string
 }
 
-const ACCEPTED = 'image/png,image/jpeg,image/webp,image/heic,image/heif,video/mp4,video/quicktime,video/webm,video/x-matroska'
-const isVideoFile = (file: File) => file.type.startsWith('video/')
+const ACCEPTED = '.jpg,.jpeg,.png,.webp,.mp4,.mov,.webm,.m4v'
+const MAX_VIDEO_UPLOAD_BYTES = 50 * 1024 / 1024 >= 50 ? 50 * 1024 * 1024 : 50 * 1024 * 1024
+
+function isVideoFile(f: File): boolean {
+  return f.type.startsWith('video/') || /\.(mp4|mov|webm|m4v)$/i.test(f.name)
+}
 
 function directionToArahan(d: VisualDirection): string {
   const lines = [
-    `Hook: ${d.hook_type} — ${d.hook_description}`,
-    `Visual style: ${d.visual_style}`,
-    `Pacing: ${d.pacing}`,
-    `Mood: ${d.mood}`,
-    d.cta_style ? `CTA style: ${d.cta_style}` : '',
+    `HOOK (${d.hook_type.toUpperCase()}): ${d.hook_description}`,
+    `VISUAL STYLE: ${d.visual_style}`,
+    `MOOD & PACING: ${d.mood}, ${d.pacing}`,
+    `TARGET AUDIENCE: ${d.target_audience_read}`,
+    d.cta_style ? `CTA STYLE: ${d.cta_style}` : '',
     d.notable_techniques.length ? `Teknik yang dipakai: ${d.notable_techniques.join('; ')}` : '',
     `Cara adaptasi: ${d.suggested_angle_for_reuse}`,
   ].filter(Boolean)
@@ -43,6 +48,11 @@ export function ContentTranslator() {
   const [error, setError] = useState<string | null>(null)
   const [direction, setDirection] = useState<VisualDirection | null>(null)
   const [copied, setCopied] = useState(false)
+
+  const [saveModalOpen, setSaveModalOpen] = useState(false)
+  const [knowledgeTitle, setKnowledgeTitle] = useState('')
+  const [savingKnowledge, setSavingKnowledge] = useState(false)
+  const [saveSuccess, setSaveSuccess] = useState(false)
 
   function pickFile(file: File | undefined) {
     if (!file) return
@@ -102,8 +112,78 @@ export function ContentTranslator() {
     }
   }
 
+  async function saveToKnowledge() {
+    if (!direction || !knowledgeTitle.trim()) return
+    setSavingKnowledge(true)
+    try {
+      const content = directionToArahan(direction) + '\n\nShot Breakdown:\n' + direction.shot_breakdown.map(s => `#${s.shot_no}: ${s.description}`).join('\n')
+      const res = await fetch('/api/knowledge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: knowledgeTitle.trim(),
+          content,
+          source_type: 'content_translator',
+          metadata: { direction, fileName },
+          tags: ['translator', direction.hook_type, direction.visual_style].filter(Boolean),
+        }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        setSaveSuccess(true)
+        setTimeout(() => { setSaveSuccess(false); setSaveModalOpen(false); setKnowledgeTitle('') }, 1500)
+      } else {
+        alert(data.error || 'Gagal menyimpan knowledge')
+      }
+    } catch {
+      alert('Gagal menghubungi server')
+    } finally {
+      setSavingKnowledge(false)
+    }
+  }
+
   return (
     <div className="mx-auto max-w-4xl space-y-4">
+      {saveModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-xl border border-border bg-surface p-5 shadow-xl space-y-4 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-text">🧠 Simpan ke Knowledge Base</h3>
+              <button onClick={() => setSaveModalOpen(false)} className="text-mutedText hover:text-text">
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-mutedText">
+              Beri nama referensi ini (contoh: <span className="text-primary italic">"referensi acekid 1"</span>) agar bisa digunakan kembali di Brief & Naskah:
+            </p>
+            <input
+              type="text"
+              value={knowledgeTitle}
+              onChange={(e) => setKnowledgeTitle(e.target.value)}
+              placeholder="e.g. referensi acekid 1"
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-text outline-none focus:border-primary"
+              autoFocus
+            />
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setSaveModalOpen(false)}
+                className="rounded-md border border-border px-3 py-1.5 text-xs text-mutedText hover:bg-muted"
+              >
+                Batal
+              </button>
+              <button
+                onClick={saveToKnowledge}
+                disabled={savingKnowledge || !knowledgeTitle.trim()}
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-1.5 text-xs font-bold text-white hover:bg-primary/90 disabled:opacity-50"
+              >
+                {savingKnowledge ? <Loader2 size={13} className="animate-spin" /> : saveSuccess ? <Check size={13} /> : null}
+                {saveSuccess ? 'Tersimpan!' : 'Simpan Knowledge'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-lg border border-border bg-surface p-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-[220px_1fr]">
           <div>
@@ -180,15 +260,23 @@ export function ContentTranslator() {
 
       {direction && (
         <div className="space-y-3 rounded-lg border border-border bg-surface p-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
             <h2 className="text-sm font-semibold text-text">Creative Direction</h2>
-            <button
-              onClick={copyArahan}
-              className="inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
-            >
-              {copied ? <Check size={13} /> : <Copy size={13} />}
-              {copied ? 'Tersalin' : 'Salin sebagai Arahan'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setKnowledgeTitle(`Referensi — ${direction.hook_type}`); setSaveModalOpen(true) }}
+                className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20"
+              >
+                🧠 Simpan ke Knowledge
+              </button>
+              <button
+                onClick={copyArahan}
+                className="inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
+              >
+                {copied ? <Check size={13} /> : <Copy size={13} />}
+                {copied ? 'Tersalin' : 'Salin sebagai Arahan'}
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

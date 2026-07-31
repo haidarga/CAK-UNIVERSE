@@ -2,8 +2,9 @@
 
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Upload, ClipboardPaste, FileText, X, FileInput, Loader2, ChevronDown } from 'lucide-react'
+import { Upload, ClipboardPaste, FileText, X, FileInput, Loader2, ChevronDown, Brain } from 'lucide-react'
 import { uploadFileForImport, MAX_IMPORT_UPLOAD_BYTES } from '@/lib/cakgpt/upload-client'
+import { KnowledgeSelector } from './BriefImport'
 
 type PreviewNaskah = {
   _id: string
@@ -18,7 +19,7 @@ export function NaskahImport({ clients, personas }: {
   const router = useRouter()
   const fileRef = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(false)
-  const [mode, setMode] = useState<'file' | 'text' | 'gdoc'>('file')
+  const [mode, setMode] = useState<'file' | 'text' | 'gdoc' | 'knowledge'>('file')
   const [text, setText] = useState('')
   const [gdoc, setGdoc] = useState('')
   const [fileName, setFileName] = useState<string | null>(null)
@@ -166,6 +167,10 @@ export function NaskahImport({ clients, personas }: {
               className={`flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium cursor-pointer disabled:opacity-50 ${mode === 'gdoc' ? 'bg-primary/10 text-primary' : 'text-mutedText hover:bg-muted'}`}>
               <FileText size={13} aria-hidden /> Google Doc
             </button>
+            <button onClick={() => setMode('knowledge')} disabled={extracting}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium cursor-pointer disabled:opacity-50 ${mode === 'knowledge' ? 'bg-primary/10 text-primary' : 'text-mutedText hover:bg-muted'}`}>
+              <Brain size={13} aria-hidden /> Knowledge Base
+            </button>
           </div>
 
           {mode === 'file' && (
@@ -187,6 +192,13 @@ export function NaskahImport({ clients, personas }: {
                 className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-text focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring" />
               <p className="mt-1 text-[11px] text-mutedText">Needs your Google account connected. Reads the doc’s naskah into the platform.</p>
             </div>
+          )}
+          {mode === 'knowledge' && (
+            <KnowledgeSelector
+              onSelect={(item) => {
+                setText((prev) => (prev ? `${prev}\n\n--- ${item.title} ---\n${item.content}` : `--- ${item.title} ---\n${item.content}`))
+              }}
+            />
           )}
 
           <button onClick={extract} disabled={extracting}

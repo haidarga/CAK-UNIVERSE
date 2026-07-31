@@ -8,7 +8,9 @@ export const BlockInputSchema = z.object({
   shot_no: z.number().int().min(1),
   line_no: z.number().int().min(1),
   speaker: z.string().max(60).nullable().optional(),
-  timestamp_range: z.string().max(30).nullable().optional(),
+  timestamp_range: z.string().max(50).nullable().optional(), // Timeline code e.g. "00:00 - 00:05"
+  location: z.string().max(300).nullable().optional(),        // Lokasi + Lighting e.g. "Dapur Rumah - Soft Daylight"
+  wardrobe: z.string().max(300).nullable().optional(),        // Outfit e.g. "Kaos Santai Nude & Apron Memasak"
   text: z.string().min(1).max(2000),
   visual_note: z.string().max(500).nullable().optional(),
 })

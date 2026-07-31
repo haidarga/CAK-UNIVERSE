@@ -128,6 +128,12 @@ export interface Shot {
   visual_notes: string;
   capcut_transition: string;
   audio_notes: string;
+  /** e.g. "Dapur Rumah Minimalis - Soft Daylight from Left Window" */
+  location?: string;
+  /** Timeline timecode range, e.g. "00:00 - 00:05" */
+  timestamp_range?: string;
+  /** Wardrobe description, e.g. "Kaos putih polos + apron hitam" */
+  wardrobe?: string;
 }
 
 export interface ContentPipeline {

@@ -124,12 +124,41 @@ export function IdeaGenerator({ personas, briefs, batches }: {
               </div>
               <p className="text-sm font-medium text-text">{a.one_liner}</p>
               <p className="mt-1.5 text-xs text-mutedText">{a.why_it_works}</p>
-              {briefId && (
-                <button onClick={() => promote(a.angle_no)} disabled={promoting === a.angle_no}
-                  className="mt-3 rounded-md border border-primary px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50 cursor-pointer">
-                  {promoting === a.angle_no ? 'Promoting…' : 'Promote to full naskah'}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {briefId && (
+                  <button onClick={() => promote(a.angle_no)} disabled={promoting === a.angle_no}
+                    className="rounded-md border border-primary px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50 cursor-pointer">
+                    {promoting === a.angle_no ? 'Promoting…' : '🚀 Promote to Full Naskah'}
+                  </button>
+                )}
+                <button
+                  onClick={async () => {
+                    const name = prompt('Simpan Idea Angle ini ke Knowledge Base as:', `Idea: ${a.hook_label}`)
+                    if (!name?.trim()) return
+                    try {
+                      const content = `Hook Label: ${a.hook_label}\nOne Liner: ${a.one_liner}\nWhy It Works: ${a.why_it_works}`
+                      const res = await fetch('/api/knowledge', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          title: name.trim(),
+                          content,
+                          source_type: 'manual',
+                          tags: ['idea', a.hook_slug],
+                        })
+                      })
+                      const data = await res.json()
+                      if (data.ok) alert('✅ Idea saved to Knowledge!')
+                      else alert(data.error || 'Gagal menyimpan knowledge')
+                    } catch {
+                      alert('Network error')
+                    }
+                  }}
+                  className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20 cursor-pointer"
+                >
+                  🧠 Knowledge
                 </button>
-              )}
+              </div>
             </div>
           ))}
         </div>

@@ -173,6 +173,12 @@ export function buildGenerationPrompt(opts: {
     'Break the naskah into shots; each shot may have multiple lines/blocks. Number shot_no and',
     'line_no sequentially starting at 1. Use section_key to label structural parts (e.g. "hook",',
     '"body", "cta").',
+    '',
+    '## SHOT DETAILS (location, timestamp_range, wardrobe)',
+    '- timestamp_range: Write the timeline code for each shot e.g. "00:00 - 00:05", "00:05 - 00:12".',
+    '- location: Specify the physical setting AND lighting environment e.g. "Dapur Rumah Minimalis - Soft Daylight from Window", "Studio Softbox Lighting".',
+    '- wardrobe: Specify the persona outfit / costume e.g. "Kaos Santai Nude & Apron Memasak", "Blazer Formal Beige".',
+    '- CRITICAL: If WRITER STEERING below specifies duration/timestamp, wardrobe, or location, follow steering strictly. If not specified, auto-generate cohesive, realistic defaults.',
     daySection,
     // Writer steering ("arahan"): unlike persona/brief data, this is a
     // directive the writer typed to shape THIS generation — present it as an

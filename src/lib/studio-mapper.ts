@@ -19,6 +19,9 @@ type StudioShot = {
   speaker: string | null
   visual_note: string
   chars_in_shot: string[]
+  timestamp_range?: string | null
+  location?: string | null
+  wardrobe?: string | null
 }
 
 // Map section_key → scene_type (best-effort heuristic)
@@ -71,16 +74,25 @@ export function blocksToStudioShots(blocks: Block[]): StudioShot[] {
 
     const dialogue = dialogueLines.join('\n')
 
-    // Extract visual notes
-    const visualNotes = sorted
-      .map(b => b.visual_note)
-      .filter(Boolean)
+    // Extract visual notes, location, wardrobe, timestamp
+    const visualNotes = sorted.map(b => b.visual_note).filter(Boolean)
+    const locations = sorted.map(b => b.location).filter(Boolean)
+    const wardrobes = sorted.map(b => b.wardrobe).filter(Boolean)
+    const timestamps = sorted.map(b => b.timestamp_range).filter(Boolean)
 
     const visualNote = visualNotes.join('. ')
+    const location = locations.length > 0 ? locations[0] : null
+    const wardrobe = wardrobes.length > 0 ? wardrobes[0] : null
+    const timestampRange = timestamps.length > 0 ? timestamps[0] : null
 
-    // Build image_prompt from visual_note (if available) or from text context
-    const imagePrompt = visualNote
-      || `Scene matching dialogue: ${dialogue.slice(0, 100)}`
+    // Build image_prompt enriched with location + wardrobe + visual_note
+    const promptParts = []
+    if (location) promptParts.push(`Setting/Lighting: ${location}`)
+    if (wardrobe) promptParts.push(`Outfit: ${wardrobe}`)
+    if (visualNote) promptParts.push(visualNote)
+    if (promptParts.length === 0) promptParts.push(`Scene matching dialogue: ${dialogue.slice(0, 100)}`)
+
+    const imagePrompt = promptParts.join('. ')
 
     // Get speakers
     const speakers = [...new Set(
@@ -104,6 +116,9 @@ export function blocksToStudioShots(blocks: Block[]): StudioShot[] {
       speaker: speakers.length > 0 ? speakers[0] : null,
       visual_note: visualNote,
       chars_in_shot: speakers.length > 0 ? speakers : ['Subject'],
+      timestamp_range: timestampRange,
+      location: location,
+      wardrobe: wardrobe,
     })
   }
 
@@ -121,8 +136,11 @@ export function blocksToRawText(blocks: Block[]): string {
     .sort((a, b) => (a.shot_no || 0) - (b.shot_no || 0) || (a.line_no || 0) - (b.line_no || 0))
     .map(b => {
       const speaker = b.speaker ? `${b.speaker}: ` : ''
-      const visual = b.visual_note ? `\n[${b.visual_note}]` : ''
-      return `${speaker}${b.text}${visual}`
+      const ts = b.timestamp_range ? ` [${b.timestamp_range}]` : ''
+      const loc = b.location ? `\n📍 Lokasi & Lighting: ${b.location}` : ''
+      const ward = b.wardrobe ? `\n👔 Wardrobe: ${b.wardrobe}` : ''
+      const visual = b.visual_note ? `\n🎬 Visual: ${b.visual_note}` : ''
+      return `${speaker}${b.text}${ts}${loc}${ward}${visual}`
     })
-    .join('\n')
+    .join('\n\n')
 }
