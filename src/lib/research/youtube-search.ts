@@ -10,6 +10,7 @@
 // ============================================================
 import type { ResearchItem } from "./index";
 import { parseCount } from "../integrations/scrapers/util";
+import { regionToLang } from "./regions";
 
 const SEARCH_URL = "https://www.googleapis.com/youtube/v3/search";
 const VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos";
@@ -82,11 +83,13 @@ export async function searchYouTube(topic: string, limit = 12, region = 'ID'): P
 
   const maxResults = Math.min(Math.max(limit, 1), 50);
 
-  // 1) search.list — top videos by view count for the topic
-  const regionParam = region && region !== 'ALL' ? `&regionCode=${encodeURIComponent(region)}` : '';
+  // 1) search.list — top videos by view count for the topic, scoped to region & language
+  const lang = regionToLang(region);
+  const regionParam = region && region !== 'ALL' ? `&regionCode=${encodeURIComponent(region.toUpperCase())}` : '';
+  const langParam = lang ? `&relevanceLanguage=${encodeURIComponent(lang)}` : '';
   const searchUrl =
     `${SEARCH_URL}?part=snippet&type=video&order=viewCount` +
-    `&maxResults=${maxResults}&q=${encodeURIComponent(q)}${regionParam}&key=${key}`;
+    `&maxResults=${maxResults}&q=${encodeURIComponent(q)}${regionParam}${langParam}&key=${key}`;
   const search = await getJson<SearchResponse>(searchUrl);
   if (!search?.items?.length) return [];
 

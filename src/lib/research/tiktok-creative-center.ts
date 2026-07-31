@@ -33,10 +33,11 @@ function str(v: unknown): string | undefined {
  * Fetch top trending TikTok hashtags for the configured country. Returns items
  * shaped for the orchestrator (score 0 — it scores/ranks by topic relevance).
  */
-export async function tiktokCreativeCenterHashtags(limit = 20): Promise<ResearchItem[]> {
+export async function tiktokCreativeCenterHashtags(limit = 20, region = "ID"): Promise<ResearchItem[]> {
+  const countryCode = region && region !== "ALL" ? region.toUpperCase() : (process.env.TIKTOK_CC_COUNTRY || "ID");
   const url =
     `${BASE}?page=1&limit=${Math.min(limit, 50)}&period=${PERIOD}` +
-    `&country_code=${encodeURIComponent(COUNTRY)}&sort_by=popular`;
+    `&country_code=${encodeURIComponent(countryCode)}&sort_by=popular`;
   try {
     const res = await fetch(url, {
       headers: {

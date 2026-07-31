@@ -4,15 +4,15 @@ import { z } from 'zod'
 // types alone are not enough, model output must be verified, never trusted).
 
 export const BlockInputSchema = z.object({
-  section_key: z.string().min(1).max(60),
-  shot_no: z.number().int().min(1),
-  line_no: z.number().int().min(1),
-  speaker: z.string().max(60).nullable().optional(),
-  timestamp_range: z.string().max(50).nullable().optional(), // Timeline code e.g. "00:00 - 00:05"
-  location: z.string().max(300).nullable().optional(),        // Lokasi + Lighting e.g. "Dapur Rumah - Soft Daylight"
-  wardrobe: z.string().max(300).nullable().optional(),        // Outfit e.g. "Kaos Santai Nude & Apron Memasak"
-  text: z.string().min(1).max(2000),
-  visual_note: z.string().max(500).nullable().optional(),
+  section_key: z.string().min(1).max(80),
+  shot_no: z.coerce.number().int().min(1),
+  line_no: z.coerce.number().int().min(1),
+  speaker: z.string().max(100).nullable().optional(),
+  timestamp_range: z.string().max(100).nullable().optional(),
+  location: z.string().max(1000).nullable().optional(),
+  wardrobe: z.string().max(1000).nullable().optional(),
+  text: z.string().min(1).max(4000),
+  visual_note: z.string().max(1500).nullable().optional(),
 })
 export type BlockInput = z.infer<typeof BlockInputSchema>
 
@@ -23,16 +23,16 @@ export const BlockSchema = BlockInputSchema.extend({
 export type Block = z.infer<typeof BlockSchema>
 
 export const FormatMetaSchema = z.object({
-  platform: z.string().min(1).max(40),
-  target_duration_s: z.number().int().min(3).max(600),
-  aspect_ratio: z.string().max(10),
+  platform: z.string().min(1).max(60),
+  target_duration_s: z.coerce.number().int().min(1).max(1800),
+  aspect_ratio: z.string().max(20),
 })
 
 export const GenerationOutputSchema = z.object({
   hook_type: z.string().min(1),
-  hook_justification: z.string().min(1).max(1000),
+  hook_justification: z.string().min(1).max(3000),
   format_meta: FormatMetaSchema,
-  body: z.array(BlockInputSchema).min(1).max(60),
+  body: z.array(BlockInputSchema).min(1).max(100),
 })
 export type GenerationOutput = z.infer<typeof GenerationOutputSchema>
 

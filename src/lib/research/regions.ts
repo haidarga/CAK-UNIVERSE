@@ -19,3 +19,18 @@ export function getRegionLabel(code?: string): string {
   const match = SUPPORTED_REGIONS.find((r) => r.code.toUpperCase() === code.toUpperCase())
   return match ? `${match.flag} ${match.label}` : '🌐 Global'
 }
+
+export function regionToLang(code?: string): string | undefined {
+  if (!code || code.toUpperCase() === 'ALL') return undefined
+  const c = code.toUpperCase()
+  switch (c) {
+    case 'ID': return 'id'
+    case 'US': return 'en'
+    case 'MY': return 'ms'
+    case 'SG': return 'en'
+    case 'JP': return 'ja'
+    case 'GB': return 'en'
+    default: return undefined
+  }
+}
+

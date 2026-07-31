@@ -512,6 +512,8 @@ export const GENERATION_RESPONSE_SCHEMA = {
           line_no: { type: 'INTEGER' },
           speaker: { type: 'STRING', nullable: true },
           timestamp_range: { type: 'STRING', nullable: true },
+          location: { type: 'STRING', nullable: true },
+          wardrobe: { type: 'STRING', nullable: true },
           text: { type: 'STRING' },
           visual_note: { type: 'STRING', nullable: true },
         },

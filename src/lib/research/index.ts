@@ -152,7 +152,7 @@ async function fromTikTok(tag: string, topic: string, region = "ID"): Promise<Re
     const via = await scTikTok(searchQuery);
     if (via.length > 0) return via;
   }
-  return await tiktokCreativeCenterHashtags(PER_PLATFORM_LIMIT);
+  return await tiktokCreativeCenterHashtags(PER_PLATFORM_LIMIT, region);
 }
 
 async function fromInstagram(tag: string): Promise<ResearchItem[]> {
