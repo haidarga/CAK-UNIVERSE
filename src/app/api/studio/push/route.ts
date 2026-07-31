@@ -196,9 +196,6 @@ export async function POST(req: Request) {
   const ingestItems = []
   const errors: Array<{ naskah_id: string; error: string }> = []
 
-  // Unique push batch ID per brief/topic for clean grouping in Studio Inbox
-  const batchMapByBrief = new Map<string, { id: string; title: string }>()
-
   for (const n of approvedNaskah) {
     const version = versionByNaskah.get(n.id)
     if (!version?.body) {
@@ -206,25 +203,12 @@ export async function POST(req: Request) {
       continue
     }
 
-    // Allow re-pushing any selected naskah
-
-    // Extract day string or day number (e.g. Hari 1/3, Hari 2/3) from title or day_no column
-    const dayMatch = n.title?.match(/Hari \d+(?:\/\d+)?/i)?.[0] || (n.day_no ? `Hari ${n.day_no}` : '')
-    const briefId = n.brief_id || n.title?.split('·')[0]?.trim() || 'general'
-    const briefKey = dayMatch ? `${briefId}_${dayMatch.toLowerCase().replace(/[^a-z0-9]/g, '_')}` : briefId
-
-    if (!batchMapByBrief.has(briefKey)) {
-      const brief = briefById.get(n.brief_id)
-      const topicTitle = brief?.title || brief?.product || n.title?.split('·')[0]?.trim() || 'Content Plan'
-      const cleanSlug = topicTitle.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 30)
-      const daySuffix = dayMatch ? dayMatch.replace(/\s+/g, '') : ''
-      const pBatchId = n.brief_id
-        ? `batch_${n.brief_id}_${daySuffix.toLowerCase()}`
-        : `batch_${cleanSlug}_${daySuffix.toLowerCase()}`
-      const fullTitle = dayMatch ? `${topicTitle} · ${dayMatch}` : topicTitle
-      batchMapByBrief.set(briefKey, { id: pBatchId, title: fullTitle })
+    // We group by Caketing batch_id so that 1 Caketing generation = 1 Studio Inbox card.
+    // If n.batch_id is missing, fallback to brief_id or 'general'.
+    const bInfo = {
+      id: n.batch_id || n.brief_id || 'batch_general',
+      title: n.batch_id ? batchById.get(n.batch_id)?.name || 'Content Plan' : 'General Batch'
     }
-    const bInfo = batchMapByBrief.get(briefKey)!
 
     const blocks = version.body
     const persona = n.personas as { id: string; name: string }
