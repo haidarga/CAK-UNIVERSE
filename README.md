@@ -1,137 +1,58 @@
-# CAK AI Ecosystem
+# Caketing (CAK AI Ecosystem)
 
-An internal operations platform for an AI-powered UGC marketing agency. Every role in the agency — strategist, scriptwriter, creator, QC, account monitor, lead — is a real job, **enhanced, automated, and sped up by AI**. Work that used to take weeks (a content plan, a batch of scripts, a performance decision) happens in hours, with everything wired through one shared brain.
+Welcome to **Caketing**! This is the core operations platform for our AI-powered UGC marketing agency. It acts as a central hub connecting Strategists, Scriptwriters, Creators, and QC (Quality Control) into one seamless, automated pipeline powered by AI (LLMs like Claude and Gemini).
 
-> **Stack:** Next.js 15 (App Router) · TypeScript · Tailwind ("Ethereal Glass" design system) · Supabase (Postgres) · Vercel · LLM is provider-agnostic (**Claude or Gemini**, defaults to Gemini free tier).
-
----
-
-## What it does
-
-One connected workflow, not a bag of separate features:
-
-```
-BRAND  (the foundation — every agent reads this)
-  │
-  ▼
-STRATEGIST ── trend research (TikTok · YouTube · SGE) + SGE Viral Lab ("bisa viral gak + why")
-  │            + 30-day content calendar → pushes directions into the pipeline
-  ▼
-SCRIPT WRITER ── "Jebret AI": one click turns a direction into a full brand-voice script
-  │               (guardrail-checked for prohibited claims)
-  ▼
-CREATOR ── turns the script into a shot-by-shot production plan for the AI video generator
-  │
-  ▼
-HEAD OF CREATOR (QC) ── script executability review + final video QC (hook / brand / visual)
-  │
-  ▼
-ACCOUNT MONITOR ── warmup phases, anomaly detection, Telegram alerts
-  │
-  ▼
-LEAD ── executive reports + a decision-maker that diagnoses problems and decides how to solve them
-```
-
-Everything is glued by the **`content_pipeline`** table: each piece of content is a row that moves through stages (`briefed → direction_set → scripted → script_reviewed → qc_passed → posted`), handed off between roles. The shared **Brand** record gives every agent the same voice, guardrails, products, and KPI targets.
+> **Stack:** Next.js 15 (App Router) · TypeScript · Tailwind · Supabase (Postgres) · Vercel
 
 ---
 
-## Roles, agents & tools
+## 🌟 Highlight Feature: Deep Autofix & Google Sheets Sync
 
-| Role | Agent | What it does | Key tools |
-|------|-------|--------------|-----------|
-| **Strategist** | `StrategyAgent` | 30-day content calendar from brand + trends | Trend research (TikTok/YouTube/SGE), **SGE Viral Lab** (`viral_check`), `strategy_suggest` |
-| **Script Writer** | `ScriptWriterAgent` | "Jebret" — full script in brand voice | guardrails, persona, top hooks, `script_enhance`, `script_hook` |
-| **Creator** | `CreatorAgent` | Script → shot-by-shot production plan | video-generation params |
-| **Head of Creator** | `HeadOfCreatorAgent` | Script executability + video QC | guardrails, `qc_explain` |
-| **Account Monitor** | `AccountMonitorAgent` | Warmup phases + anomaly alerts | KPI metrics, Telegram |
-| **Lead** | `LeadAgent` | Executive reports + **decision-maker** | KPI/pipeline aggregation, `DECISION_SYSTEM` |
+One of the most powerful features in Caketing is the **Intelligent Feedback Sync Engine** (`sync-feedback`).
 
-Shared AI layer: `aiAssist` (provider-agnostic LLM presets — `script_enhance`, `viral_check`, `brand_extract`, `decision`, etc.) + **deterministic guardrails** (regex claim-checking, not the LLM) so brand-unsafe content never ships.
+When a client reviews a script in Google Sheets and leaves a comment (e.g., *"bikin lebih santai"*), the Scriptwriter doesn't need to manually rewrite it:
+1. **Pull Feedback**: Caketing pulls the client's revision comments directly from Google Sheets.
+2. **Contextual AI Rewrite**: Caketing's AI engine automatically rewrites the script block to incorporate the client's feedback.
+3. **Deep Autofix (QC Integration)**: Before the AI rewrites the script, the system pulls all **active QC blockers** (e.g., missing required persona words like *"jurnal"* or *"schedule"*). It injects these blockers into the AI prompt so the LLM fixes both the client's feedback AND the internal QC errors simultaneously.
+4. **Auto QC Re-run**: After the AI generates the new script version, the system automatically re-runs the rule-based QC to verify the blockers were actually fixed, updating the UI instantly without needing a manual refresh.
 
 ---
 
-## Key surfaces
+## 🏗️ Architecture & How It Works
 
-- **Brands** — create/edit a brand + all its context (voice, pillars, guardrails, approved claims, products, KPI). Or **AI-extract** a brand profile from a pasted brief / Google Doc.
-- **Strategy studio** — realtime trend research, **SGE Viral Lab** (collapsible), content calendar, and inline **Docs & Sheets** (paste a Google link → view/edit/sync the whole document right there).
-- **Script studio** — content plan → **Jebret AI** (1-click script) or manual editor with inline AI + live guardrail check, plus the same inline Docs & Sheets.
-- **QC station, Accounts, Pipeline, Reports** (incl. the Lead decision-maker), **Tasks / Team / Activity**, **Integrations**, **Dev Board**.
+The platform uses a role-based workflow driven by the `content_pipeline` table. Content moves through stages: 
+`briefed` → `direction_set` → `scripted` → `script_reviewed` → `qc_passed` → `posted`.
 
-Role-based access (`src/lib/access.ts`) gates which surfaces each role sees.
-
----
-
-## Run it locally
-
-Three services run together (a one-click `START.cmd` on Windows starts all of them):
-
-| Service | Port | Purpose |
-|---------|------|---------|
-| Next app | 3000 | the platform |
-| Scraper sidecar (Python) | 8900 | TikTok + Instagram |
-| Headless Chrome (CDP) | 9222 | SGE Pro + Google-doc browser flows |
-
-```bash
-# 1. install + env
-npm install
-cp .env.example .env.local   # fill in the values (see below)
-
-# 2. database
-# apply supabase/migrations/*.sql to your Supabase project, then:
-npm run seed                 # demo brands, accounts, pipeline, KPIs
-
-# 3. run
-npm run dev                  # → http://localhost:3000
-# (start the scraper sidecar + a Chrome on :9222 for TikTok/SGE — see scraper-service/README.md / START.cmd)
-```
-
-### Environment variables (`.env.local`)
-```
-LLM_PROVIDER=gemini                 # or anthropic
-GEMINI_API_KEY= / ANTHROPIC_API_KEY=
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-GOOGLE_CLIENT_ID= / GOOGLE_CLIENT_SECRET= / GOOGLE_REDIRECT_URI=   # Docs/Sheets sync
-YOUTUBE_API_KEY=
-SCRAPER_SERVICE_URL=  / SCRAPER_SERVICE_TOKEN=                     # → scraper sidecar
-LIGHTPANDA_CDP_URL=                                               # → Chrome CDP (e.g. http://127.0.0.1:9222)
-TELEGRAM_BOT_TOKEN= / TELEGRAM_ALERT_CHAT_ID=                     # alerts
-POSTIZ_API_URL= / POSTIZ_API_KEY=                                # publishing
-CRON_SECRET=
-```
+### Core Modules
+- **Triage Queue (`TriageQueue.tsx`)**: The UI where the Head of Creator / QC reviews scripts, checks for rule-based flags (Blockers/Warnings), and syncs client feedback.
+- **Sync Feedback API (`sync-feedback/route.ts`)**: The backend engine responsible for fetching Google Sheets data, matching rows, and executing the Deep Autofix AI revisions.
+- **Rule-Based QC (`qc-rules.ts`)**: A deterministic engine that scans scripts for banned words, required persona vocabulary, and structural formatting (so brand-unsafe content never ships).
 
 ---
 
-## Deploy to the cloud
+## 🚀 Running Locally
 
-See **[DEPLOY.md](DEPLOY.md)** for the full runbook, including a **100% free stack** (Vercel + Supabase + Gemini free tier + a worker box via free Cloudflare Tunnel or Oracle Always-Free). YouTube, Google Docs/Sheets, Brand, Script, QC, Lead, and notifications run on Vercel directly; TikTok/IG/SGE need the worker box.
+1. **Install dependencies:**
+   ```bash
+   npm install
+   ```
 
----
+2. **Environment Variables (`.env.local`):**
+   Copy `.env.example` to `.env.local` and fill in your Supabase and LLM API keys:
+   ```env
+   LLM_PROVIDER=gemini # or anthropic
+   GEMINI_API_KEY=your_api_key
+   NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+   SUPABASE_SERVICE_ROLE_KEY=your_service_key
+   ```
 
-## Project structure
-
-```
-src/
-  app/(dash)/...        role surfaces (brands, studio/*, accounts, pipeline, reports, …)
-  app/api/...           agent triggers + CRUD + research/docs/sge endpoints
-  lib/agents/           the six role agents (+ BaseAgent)
-  lib/research/         trend-research orchestrator (TikTok/YouTube/SGE/IG)
-  lib/integrations/     google (docs/sheets sync), scrapers, telegram, postiz, registry
-  components/           studio UI, docs panel, brand manager, lead decisions, …
-scraper-service/        Python sidecar (TikTok + Instagram)
-supabase/migrations/    schema
-tests/                  vitest regression locks (pure lib logic)
-```
-
-## Testing
-```
-npm test          # vitest run
-npm run typecheck # tsc --noEmit
-```
-Regression locks cover pure logic: brand-input sanitization, topic→tag derivation, Google-link detection, prompt sanitization, warmup planning, guardrails, and more.
+3. **Start the development server:**
+   ```bash
+   npm run dev
+   ```
+   Open [http://localhost:3000](http://localhost:3000) to view the app.
 
 ---
 
-_Internal tool. Single-org trust model — all authenticated members can manage all brands._
+*Built with ❤️ for internal operations.*

@@ -7,7 +7,25 @@ import { runLLM } from '@/lib/llm'
 import { runRuleBasedQc } from '@/lib/cakgpt/qc-rules'
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SYNC FEEDBACK FROM GOOGLE SHEET — v3 (definitive rewrite)
+// SYNC FEEDBACK FROM GOOGLE SHEET — v3 (definitive rewrite + Deep Autofix)
+//
+// WHAT THIS FILE DOES (ARCHITECTURE OVERVIEW):
+// This is the core engine for syncing client feedback from Google Sheets back into
+// the Caketing platform. When a user clicks "Sync Feedback" in the UI:
+//
+// 1. DATA EXTRACTION: It connects to the Google Sheets API and dynamically finds
+//    the first active sheet (bypassing hardcoded "Sheet1" bugs).
+// 2. ROW MATCHING: It matches the rows in the sheet to our database (`sw_naskah`)
+//    using a stable unique identifier (the UUID at the end of the sheet row).
+// 3. DEEP AUTOFIX (THE MAGIC): 
+//    - It fetches any active "QC Blockers" (e.g. missing required words, banned words).
+//    - It sends the client's comment AND the QC blockers to the AI (LLM).
+//    - The AI rewrites the script block to address both issues simultaneously.
+// 4. AUTO QC VERIFICATION: After the AI generates the new script, it runs the
+//    rule-based QC engine (`runRuleBasedQc`) on the new text. If the AI successfully
+//    fixed the blockers, they are cleared. If not, they are re-logged.
+// 5. DB UPDATE: Finally, it saves the new version to the database and updates
+//    the UI so the user sees the revised script immediately.
 //
 // ROOT CAUSES FOUND & FIXED:
 //
