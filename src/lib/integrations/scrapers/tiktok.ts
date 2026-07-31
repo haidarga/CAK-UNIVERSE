@@ -83,10 +83,11 @@ export async function scrapeTikTokHashtag(tag: string, limit = 15): Promise<TikT
   const rapidApiKey = process.env.RAPIDAPI_KEY || process.env.NEXT_PUBLIC_RAPIDAPI_KEY;
   if (rapidApiKey) {
     try {
-      const res = await fetch(`https://tiktok-scraper-7.p.rapidapi.com/feed/search?keywords=${encodeURIComponent(cleanTag)}&count=${limit}`, {
+      const host = process.env.RAPIDAPI_TIKTOK_HOST || 'tiktok-scraper7.p.rapidapi.com';
+      const res = await fetch(`https://${host}/feed/search?keywords=${encodeURIComponent(cleanTag)}&count=${limit}`, {
         headers: {
           'x-rapidapi-key': rapidApiKey,
-          'x-rapidapi-host': 'tiktok-scraper-7.p.rapidapi.com',
+          'x-rapidapi-host': host,
         },
       });
       const data = await res.json();
