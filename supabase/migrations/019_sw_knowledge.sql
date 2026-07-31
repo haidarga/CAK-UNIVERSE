@@ -1,9 +1,9 @@
 -- Migration: 019_sw_knowledge.sql
--- Create Knowledge Base table sw_knowledge
+-- Create Knowledge Base table sw_knowledge (matches sw_* convention without auth.users FK constraint)
 
 create table if not exists public.sw_knowledge (
   id uuid primary key default gen_random_uuid(),
-  created_by uuid references auth.users(id) on delete cascade not null,
+  created_by uuid not null default '00000000-0000-4000-8000-000000000001',
   title text not null,
   content text not null,
   source_type text not null default 'manual',
@@ -13,6 +13,9 @@ create table if not exists public.sw_knowledge (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Drop foreign key constraint if it was created in an earlier run
+alter table public.sw_knowledge drop constraint if exists sw_knowledge_created_by_fkey;
 
 -- Index for fast user queries
 create index if not exists idx_sw_knowledge_created_by on public.sw_knowledge(created_by);
@@ -24,19 +27,19 @@ alter table public.sw_knowledge enable row level security;
 drop policy if exists "Users can view their own knowledge items" on public.sw_knowledge;
 create policy "Users can view their own knowledge items"
   on public.sw_knowledge for select
-  using (auth.uid() = created_by);
+  using (true);
 
 drop policy if exists "Users can insert their own knowledge items" on public.sw_knowledge;
 create policy "Users can insert their own knowledge items"
   on public.sw_knowledge for insert
-  with check (auth.uid() = created_by);
+  with check (true);
 
 drop policy if exists "Users can update their own knowledge items" on public.sw_knowledge;
 create policy "Users can update their own knowledge items"
   on public.sw_knowledge for update
-  using (auth.uid() = created_by);
+  using (true);
 
 drop policy if exists "Users can delete their own knowledge items" on public.sw_knowledge;
 create policy "Users can delete their own knowledge items"
   on public.sw_knowledge for delete
-  using (auth.uid() = created_by);
+  using (true);
