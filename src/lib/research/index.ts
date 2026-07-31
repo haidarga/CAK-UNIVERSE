@@ -124,34 +124,35 @@ function finalize(item: ResearchItem, keywords: string[]): ResearchItem {
 
 async function fromTikTok(tag: string, topic: string, region = "ID"): Promise<ResearchItem[]> {
   // Priority:
-  //  1. Python sidecar (self-hosted, if configured)
-  //  2. EnsembleData keyword search
-  //  3. ScrapeCreators keyword search
-  //  4. Creative Center trending hashtags
-  //  5. RapidAPI / Lightpanda hashtag scrape
+  //  1. RapidAPI TikTok Search (supports topic & region!)
+  //  2. Python sidecar / EnsembleData / ScrapeCreators (if configured)
+  //  3. Creative Center trending hashtags (fallback)
+  const searchQuery = (topic || tag).trim();
+  const raw = await scrapeTikTokHashtag(searchQuery, PER_PLATFORM_LIMIT, region);
+  if (raw.length > 0) {
+    return raw.map((it) => ({
+      platform: "tiktok" as const,
+      url: it.url,
+      title: it.title,
+      views: it.views,
+      thumbnail: it.thumbnail,
+      score: 0,
+    }));
+  }
+
   if (scraperServiceEnabled()) {
-    const svc = await svcTikTokSearch(topic || tag);
+    const svc = await svcTikTokSearch(searchQuery);
     if (svc.length > 0) return svc;
   }
   if (ensembleDataEnabled()) {
-    const via = await edTikTokKeyword(topic || tag);
+    const via = await edTikTokKeyword(searchQuery);
     if (via.length > 0) return via;
   }
   if (scrapeCreatorsEnabled()) {
-    const via = await scTikTok(topic || tag);
+    const via = await scTikTok(searchQuery);
     if (via.length > 0) return via;
   }
-  const trending = await tiktokCreativeCenterHashtags(PER_PLATFORM_LIMIT);
-  if (trending.length > 0) return trending;
-
-  const raw = await scrapeTikTokHashtag(tag, PER_PLATFORM_LIMIT, region);
-  return raw.map((it) => ({
-    platform: "tiktok" as const,
-    url: it.url,
-    views: it.views,
-    thumbnail: it.thumbnail,
-    score: 0,
-  }));
+  return await tiktokCreativeCenterHashtags(PER_PLATFORM_LIMIT);
 }
 
 async function fromInstagram(tag: string): Promise<ResearchItem[]> {

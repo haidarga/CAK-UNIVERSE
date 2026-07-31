@@ -168,8 +168,6 @@ export function BriefImport({ clients, personas }: {
   function personasForCluster(cluster: string | null | undefined, byCluster: Map<string, string[]>): number {
     const key = cluster?.trim().toLowerCase()
     const clusterMatches = key ? byCluster.get(key) || [] : []
-    const checkedMatches = selectedPersonaIds.filter((id) => clusterMatches.includes(id))
-    if (checkedMatches.length > 0) return checkedMatches.length
     if (selectedPersonaIds.length > 0) return selectedPersonaIds.length
     if (clusterMatches.length > 0) return clusterMatches.length
     return 1
@@ -299,10 +297,8 @@ export function BriefImport({ clients, personas }: {
       for (const { id: briefId, cluster } of committed) {
         const clusterKey = cluster?.trim().toLowerCase()
         const clusterMatches = clusterKey ? personasByCluster.get(clusterKey) || [] : []
-        const checkedMatches = selectedPersonaIds.filter((id) => clusterMatches.includes(id))
         const resolved: Array<string | null> =
-          checkedMatches.length > 0 ? checkedMatches
-          : selectedPersonaIds.length > 0 ? selectedPersonaIds
+          selectedPersonaIds.length > 0 ? selectedPersonaIds
           : clusterMatches.length > 0 ? clusterMatches
           : [null]
         for (const personaId of resolved) {
