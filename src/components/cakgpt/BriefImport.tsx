@@ -2,7 +2,7 @@
 
 import { useRef, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Upload, ClipboardPaste, FileText, X, Sparkles, Loader2, ExternalLink, Brain } from 'lucide-react'
+import { Upload, ClipboardPaste, FileText, X, Sparkles, Loader2, ExternalLink, Brain, CheckSquare, Square, Trash2 } from 'lucide-react'
 import { uploadFileForImport, MAX_IMPORT_UPLOAD_BYTES } from '@/lib/cakgpt/upload-client'
 import { MAX_DAY_TOTAL, MAX_FANOUT_ITEMS, MAX_SOURCES } from '@/lib/cakgpt/schemas'
 
