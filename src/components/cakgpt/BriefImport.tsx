@@ -89,7 +89,12 @@ export function BriefImport({ clients, personas }: {
           body: JSON.stringify({ sources: uploadedSources, hint }),
         })
       } else {
-        const payload = mode === 'text' ? { text, hint } : { google_doc: gdoc, hint }
+        const payload =
+          mode === 'text'
+            ? { text, hint }
+            : mode === 'knowledge'
+            ? { text, hint, mode: 'knowledge' }
+            : { google_doc: gdoc, hint }
         res = await fetch('/api/scriptwriter/briefs/import', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
         })

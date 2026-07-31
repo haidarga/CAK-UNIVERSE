@@ -27,6 +27,28 @@ import {
 
 export type SourceKind = 'spreadsheet' | 'pdf' | 'docx' | 'text'
 
+export interface KnowledgeInputItem {
+  id?: string
+  title: string
+  content: string
+  source_type?: string
+}
+
+/**
+ * Format selected Knowledge items into a clean, structured source text
+ * that Gemini can read as both primary source material & template design.
+ */
+export function formatKnowledgeAsSourceText(items: KnowledgeInputItem[]): string {
+  if (!items || items.length === 0) return ''
+
+  return items
+    .map((item, idx) => {
+      const srcType = item.source_type ? ` [Source: ${item.source_type}]` : ''
+      return `=== KNOWLEDGE REFERENCE ${idx + 1}: ${item.title.trim()}${srcType} ===\n${item.content.trim()}`
+    })
+    .join('\n\n')
+}
+
 // Route a filename/mime to a parser kind. Returns null for unsupported types.
 export function detectSourceKind(filename: string, mime: string): SourceKind | null {
   const ext = filename.toLowerCase().split('.').pop() || ''

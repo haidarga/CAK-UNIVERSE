@@ -5,7 +5,7 @@ import { getActiveClientId } from '@/lib/cakgpt/active-client'
 import { getGeminiApiKey } from '@/lib/cakgpt/settings'
 import { getValidAccessToken } from '@/lib/cakgpt/google-oauth'
 import { getDoc } from '@/lib/cakgpt/google-docs'
-import { extractBriefsFromText, extractBriefsFromInstruction, extractHooksFromText, detectFileRole, type FileRole } from '@/lib/cakgpt/brief-extract'
+import { extractBriefsFromText, extractBriefsFromInstruction, extractHooksFromText, detectFileRole, formatKnowledgeAsSourceText, type FileRole } from '@/lib/cakgpt/brief-extract'
 import { readSourceFromStorage } from '@/lib/cakgpt/import-storage'
 import { MAX_SOURCES, type HookBankItem } from '@/lib/cakgpt/schemas'
 import { withDeadline, DeadlineExceededError } from '@/lib/cakgpt/deadline'
@@ -138,12 +138,14 @@ async function handleImport(req: Request) {
         // Function request-body cap (a hard 4.5 MB platform limit) entirely, so
         // much larger files (bucket allows up to 10 MB) work fine.
         const text = await withDeadline(readSourceFromStorage(service, body.storage_path), PARSE_DEADLINE_MS, 'parsing the file')
-        sources.push({ label: typeof body.filename === 'string' ? body.filename : 'file', text, roleFromClient: false })
+      } else if (Array.isArray(body.knowledge_items) && body.knowledge_items.length > 0) {
+        const formatted = formatKnowledgeAsSourceText(body.knowledge_items)
+        sources.push({ label: 'Knowledge Base', text: formatted, role: 'topics', roleFromClient: true })
       } else if (typeof body.text === 'string' && body.text.trim()) {
         if (body.text.length > MAX_TEXT_CHARS) return NextResponse.json({ ok: false, error: 'pasted text too large (max 200k chars)' }, { status: 413 })
-        // Pasted text and Google Docs are always the plan — the writer picked
+        // Pasted text, Knowledge Base, and Google Docs are always the plan — the writer picked
         // that tab explicitly, so there is nothing to guess.
-        sources.push({ label: 'pasted text', text: body.text, role: 'topics', roleFromClient: true })
+        sources.push({ label: body.mode === 'knowledge' ? 'Knowledge Base' : 'pasted text', text: body.text, role: 'topics', roleFromClient: true })
       } else if (typeof body.google_doc === 'string' && body.google_doc.trim()) {
         const docId = parseGoogleDocId(body.google_doc)
         if (!docId) return NextResponse.json({ ok: false, error: 'could not read a Google Doc id from that input' }, { status: 400 })
@@ -156,7 +158,7 @@ async function handleImport(req: Request) {
         const doc = await getDoc(accessToken, docId)
         sources.push({ label: 'Google Doc', text: docToPlainText(doc).slice(0, MAX_TEXT_CHARS), role: 'topics', roleFromClient: true })
       } else {
-        return NextResponse.json({ ok: false, error: 'provide a file, text, or google_doc' }, { status: 400 })
+        return NextResponse.json({ ok: false, error: 'provide a file, text, google_doc, or select a knowledge item' }, { status: 400 })
       }
     }
   } catch (e) {
