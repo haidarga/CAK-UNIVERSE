@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { Search, TrendingUp, ExternalLink, Copy, Check, Loader2, Lightbulb } from 'lucide-react'
+import { Search, TrendingUp, ExternalLink, Copy, Check, Loader2, Lightbulb, Globe } from 'lucide-react'
 import { fmtCompact } from '@/lib/utils'
+import { SUPPORTED_REGIONS } from '@/lib/research/regions'
 
 // Mirrors ResearchItem from @/lib/research (kept local to avoid importing a
 // server lib into a client component).
@@ -35,6 +36,7 @@ const PLATFORM_BADGE: Record<Platform, string> = {
 export function TrendSearch({ onUseIdea }: { onUseIdea?: (seed: string) => void }) {
   const [topic, setTopic] = useState('')
   const [active, setActive] = useState<Set<Platform>>(new Set(PLATFORMS.map((p) => p.id)))
+  const [selectedRegion, setSelectedRegion] = useState('ID')
   const [loading, setLoading] = useState(false)
   const [items, setItems] = useState<TrendItem[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -60,7 +62,7 @@ export function TrendSearch({ onUseIdea }: { onUseIdea?: (seed: string) => void 
       const res = await fetch('/api/scriptwriter/trends', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ topic: q, platforms: Array.from(active) }),
+        body: JSON.stringify({ topic: q, platforms: Array.from(active), region: selectedRegion }),
       })
       const json = await res.json()
       if (json?.success) {
@@ -118,6 +120,30 @@ export function TrendSearch({ onUseIdea }: { onUseIdea?: (seed: string) => void 
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 mr-2">
+            <span className="text-xs font-bold text-text flex items-center gap-1">
+              <Globe size={13} className="text-emerald-400" /> Region:
+            </span>
+            <div className="flex flex-wrap items-center gap-1">
+              {SUPPORTED_REGIONS.map((r) => (
+                <button
+                  key={r.code}
+                  type="button"
+                  onClick={() => setSelectedRegion(r.code)}
+                  className={`rounded-md border px-2 py-0.5 text-xs font-semibold transition-all ${
+                    selectedRegion === r.code
+                      ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400 shadow-sm'
+                      : 'border-border bg-surface text-mutedText hover:text-text'
+                  }`}
+                >
+                  {r.flag} {r.code}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="h-4 w-px bg-border my-auto hidden sm:block" />
+
           {PLATFORMS.map((p) => {
             const on = active.has(p.id)
             return (

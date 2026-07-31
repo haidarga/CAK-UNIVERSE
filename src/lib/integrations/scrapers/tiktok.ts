@@ -75,7 +75,7 @@ export async function scrapeTikTokProfile(username: string): Promise<TikTokProfi
  * Best-effort scrape of a hashtag page for video links + view counts.
  * Returns [] on any failure. `limit` caps the number of items returned.
  */
-export async function scrapeTikTokHashtag(tag: string, limit = 15): Promise<TikTokHashtagItem[]> {
+export async function scrapeTikTokHashtag(tag: string, limit = 15, region = 'ID'): Promise<TikTokHashtagItem[]> {
   const cleanTag = tag.replace(/^#/, "").trim();
   if (!cleanTag) return [];
 
@@ -84,7 +84,8 @@ export async function scrapeTikTokHashtag(tag: string, limit = 15): Promise<TikT
   if (rapidApiKey) {
     try {
       const host = process.env.RAPIDAPI_TIKTOK_HOST || 'tiktok-scraper7.p.rapidapi.com';
-      const res = await fetch(`https://${host}/feed/search?keywords=${encodeURIComponent(cleanTag)}&count=${limit}`, {
+      const regionParam = region && region !== 'ALL' ? `&region=${encodeURIComponent(region)}` : '';
+      const res = await fetch(`https://${host}/feed/search?keywords=${encodeURIComponent(cleanTag)}&count=${limit}${regionParam}`, {
         headers: {
           'x-rapidapi-key': rapidApiKey,
           'x-rapidapi-host': host,

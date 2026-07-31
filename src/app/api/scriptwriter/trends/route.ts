@@ -22,6 +22,7 @@ interface Body {
   topic?: string;
   platforms?: string[];
   limit?: number;
+  region?: string;
 }
 
 /** Keep only valid platform names from caller input. */
@@ -47,8 +48,9 @@ export async function POST(req: Request) {
     const platforms = coercePlatforms(body.platforms);
     const limit =
       typeof body.limit === "number" && body.limit > 0 ? Math.min(body.limit, 48) : undefined;
+    const region = typeof body.region === "string" ? body.region.trim().toUpperCase() : "ID";
 
-    const { items, errors } = await researchTopic(topic, { platforms, limit });
+    const { items, errors } = await researchTopic(topic, { platforms, limit, region });
     return ok({ topic, items, errors });
   } catch (e) {
     return err(e instanceof Error ? e.message : "research failed", 500);

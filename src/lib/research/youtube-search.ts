@@ -73,7 +73,7 @@ function pickThumbnail(snippet?: VideoSnippet): string | undefined {
  * ResearchItem with view/like counts. Returns [] if YOUTUBE_API_KEY is unset
  * or any request fails. Never throws.
  */
-export async function searchYouTube(topic: string, limit = 12): Promise<ResearchItem[]> {
+export async function searchYouTube(topic: string, limit = 12, region = 'ID'): Promise<ResearchItem[]> {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) return [];
 
@@ -83,9 +83,10 @@ export async function searchYouTube(topic: string, limit = 12): Promise<Research
   const maxResults = Math.min(Math.max(limit, 1), 50);
 
   // 1) search.list — top videos by view count for the topic
+  const regionParam = region && region !== 'ALL' ? `&regionCode=${encodeURIComponent(region)}` : '';
   const searchUrl =
     `${SEARCH_URL}?part=snippet&type=video&order=viewCount` +
-    `&maxResults=${maxResults}&q=${encodeURIComponent(q)}&key=${key}`;
+    `&maxResults=${maxResults}&q=${encodeURIComponent(q)}${regionParam}&key=${key}`;
   const search = await getJson<SearchResponse>(searchUrl);
   if (!search?.items?.length) return [];
 

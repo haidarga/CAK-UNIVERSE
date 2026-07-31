@@ -122,14 +122,13 @@ function finalize(item: ResearchItem, keywords: string[]): ResearchItem {
 
 // --- per-platform adapters (each maps to ResearchItem; never throws) ---
 
-async function fromTikTok(tag: string, topic: string): Promise<ResearchItem[]> {
+async function fromTikTok(tag: string, topic: string, region = "ID"): Promise<ResearchItem[]> {
   // Priority:
   //  1. Python sidecar (self-hosted, if configured)
-  //  2. EnsembleData keyword search — FREE 50 units/day (recurring, resets
-  //     daily), real topic search, no browser needed (opt-in, needs token)
-  //  3. ScrapeCreators keyword search — paid-after-free-100 (opt-in, needs key)
-  //  4. Creative Center trending hashtags — FREE, keyless, no login
-  //  5. Lightpanda/CDP hashtag scrape (needs a browser endpoint)
+  //  2. EnsembleData keyword search
+  //  3. ScrapeCreators keyword search
+  //  4. Creative Center trending hashtags
+  //  5. RapidAPI / Lightpanda hashtag scrape
   if (scraperServiceEnabled()) {
     const svc = await svcTikTokSearch(topic || tag);
     if (svc.length > 0) return svc;
@@ -145,7 +144,7 @@ async function fromTikTok(tag: string, topic: string): Promise<ResearchItem[]> {
   const trending = await tiktokCreativeCenterHashtags(PER_PLATFORM_LIMIT);
   if (trending.length > 0) return trending;
 
-  const raw = await scrapeTikTokHashtag(tag, PER_PLATFORM_LIMIT);
+  const raw = await scrapeTikTokHashtag(tag, PER_PLATFORM_LIMIT, region);
   return raw.map((it) => ({
     platform: "tiktok" as const,
     url: it.url,
@@ -156,8 +155,6 @@ async function fromTikTok(tag: string, topic: string): Promise<ResearchItem[]> {
 }
 
 async function fromInstagram(tag: string): Promise<ResearchItem[]> {
-  // Priority: Python sidecar → ScrapeCreators (opt-in, the only for-everyone
-  // path) → Lightpanda/CDP scraper (needs IG_SESSIONID; self-host only).
   if (scraperServiceEnabled()) {
     const svc = await svcInstagramHashtag(tag);
     if (svc.length > 0) return svc;
@@ -178,8 +175,8 @@ async function fromInstagram(tag: string): Promise<ResearchItem[]> {
   }));
 }
 
-async function fromYouTube(topic: string): Promise<ResearchItem[]> {
-  return searchYouTube(topic, PER_PLATFORM_LIMIT);
+async function fromYouTube(topic: string, region = "ID"): Promise<ResearchItem[]> {
+  return searchYouTube(topic, PER_PLATFORM_LIMIT, region);
 }
 
 async function fromSGE(topic: string): Promise<ResearchItem[]> {
@@ -211,12 +208,13 @@ export interface ResearchResult {
  */
 export async function researchTopic(
   topic: string,
-  opts?: { platforms?: Platform[]; limit?: number },
+  opts?: { platforms?: Platform[]; limit?: number; region?: string },
 ): Promise<ResearchResult> {
   const platforms = (opts?.platforms ?? ALL_PLATFORMS).filter((p): p is Platform =>
     ALL_PLATFORMS.includes(p),
   );
   const limit = opts?.limit ?? DEFAULT_LIMIT;
+  const region = opts?.region || "ID";
   const errors: Record<string, string> = {};
 
   const tags = topicToTags(topic);
@@ -227,11 +225,11 @@ export async function researchTopic(
   const tasks = platforms.map((platform): Promise<ResearchItem[]> => {
     switch (platform) {
       case "tiktok":
-        return fromTikTok(primaryTag, topic);
+        return fromTikTok(primaryTag, topic, region);
       case "instagram":
         return fromInstagram(primaryTag);
       case "youtube":
-        return fromYouTube(topic);
+        return fromYouTube(topic, region);
       case "sge":
         return fromSGE(topic);
     }
