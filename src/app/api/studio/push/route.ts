@@ -196,6 +196,9 @@ export async function POST(req: Request) {
   const ingestItems = []
   const errors: Array<{ naskah_id: string; error: string }> = []
 
+  // Unique Push Execution ID per HTTP push request (1 click "Push to Studio" = 1 unique batch of 8 naskahs)
+  const pushExecutionId = `push_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+
   for (const n of approvedNaskah) {
     const version = versionByNaskah.get(n.id)
     if (!version?.body) {
@@ -206,10 +209,9 @@ export async function POST(req: Request) {
     // Group by topic title (e.g. "Why Susu Segar?" extracted from "Why Susu Segar? - PersonaName")
     const rawTitle = n.title || 'Content Plan'
     const topicTitle = rawTitle.split(' - ')[0]?.trim() || rawTitle.split('·')[0]?.trim() || 'Content Plan'
-    const topicBatchId = n.batch_id || `topic_${topicTitle.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
 
     const bInfo = {
-      id: topicBatchId,
+      id: n.batch_id || pushExecutionId,
       title: n.batch_id ? (batchById.get(n.batch_id)?.name || topicTitle) : topicTitle
     }
 
