@@ -17,7 +17,6 @@ export async function DELETE(
     .from('sw_knowledge')
     .delete()
     .eq('id', id)
-    .eq('created_by', user.id)
 
   if (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
@@ -54,7 +53,6 @@ export async function PATCH(
     .from('sw_knowledge')
     .update(patch)
     .eq('id', id)
-    .eq('created_by', user.id)
     .select('*')
     .single()
 

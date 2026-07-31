@@ -665,7 +665,7 @@ export function KnowledgeSelector({ onSelect }: { onSelect: (item: { title: stri
   const [items, setItems] = useState<Array<{ id: string; title: string; content: string; source_type: string; tags: string[] }>>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   useEffect(() => {
     fetch('/api/knowledge')
@@ -677,6 +677,23 @@ export function KnowledgeSelector({ onSelect }: { onSelect: (item: { title: stri
       .finally(() => setLoading(false))
   }, [])
 
+  async function handleDeleteItem(id: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!confirm('Hapus item knowledge ini?')) return
+    try {
+      const res = await fetch(`/api/knowledge/${id}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (data.ok) {
+        setItems((prev) => prev.filter((i) => i.id !== id))
+        setSelectedIds((prev) => prev.filter((i) => i !== id))
+      } else {
+        alert(data.error || 'Gagal menghapus')
+      }
+    } catch {
+      alert('Gagal menghapus')
+    }
+  }
+
   const filtered = items.filter(
     (it) => it.title.toLowerCase().includes(search.toLowerCase()) || (it.tags || []).some((t) => t.toLowerCase().includes(search.toLowerCase()))
   )
@@ -687,7 +704,9 @@ export function KnowledgeSelector({ onSelect }: { onSelect: (item: { title: stri
         <label className="text-xs font-bold text-text flex items-center gap-1.5">
           <Brain size={14} className="text-emerald-400" /> Pilih Knowledge Base Item
         </label>
-        <span className="text-[10px] text-mutedText">{items.length} items tersedia</span>
+        <span className="text-[10px] text-mutedText">
+          {selectedIds.length > 0 ? `${selectedIds.length} dipilih` : `${items.length} items tersedia`}
+        </span>
       </div>
 
       <input
@@ -705,29 +724,50 @@ export function KnowledgeSelector({ onSelect }: { onSelect: (item: { title: stri
           {items.length === 0 ? 'Belum ada knowledge tersimpan. Simpan dari Content Translator atau Trend Radar terlebih dahulu.' : 'Tidak ada knowledge yang cocok.'}
         </div>
       ) : (
-        <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-          {filtered.map((it) => (
-            <div
-              key={it.id}
-              onClick={() => {
-                setSelectedId(it.id)
-                onSelect(it)
-              }}
-              className={`p-2 rounded border text-xs cursor-pointer transition-colors flex items-center justify-between ${
-                selectedId === it.id
-                  ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-300 font-bold'
-                  : 'border-border bg-surface hover:border-primary/50 text-text'
-              }`}
-            >
-              <div>
-                <div className="font-semibold">{it.title}</div>
-                <div className="text-[10px] text-mutedText truncate max-w-xs">{it.content.slice(0, 80)}...</div>
+        <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1">
+          {filtered.map((it) => {
+            const isSelected = selectedIds.includes(it.id)
+            return (
+              <div
+                key={it.id}
+                onClick={() => {
+                  if (!isSelected) {
+                    setSelectedIds((prev) => [...prev, it.id])
+                  } else {
+                    setSelectedIds((prev) => prev.filter((i) => i !== it.id))
+                  }
+                  onSelect(it)
+                }}
+                className={`p-2 rounded border text-xs cursor-pointer transition-colors flex items-center justify-between group ${
+                  isSelected
+                    ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-300 font-bold'
+                    : 'border-border bg-surface hover:border-primary/50 text-text'
+                }`}
+              >
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <div className="shrink-0 text-mutedText">
+                    {isSelected ? <CheckSquare size={14} className="text-emerald-400" /> : <Square size={14} />}
+                  </div>
+                  <div className="truncate">
+                    <div className="font-semibold truncate">{it.title}</div>
+                    <div className="text-[10px] text-mutedText truncate max-w-xs">{it.content.slice(0, 70)}...</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 ml-2">
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] text-mutedText uppercase font-mono">
+                    {it.source_type}
+                  </span>
+                  <button
+                    onClick={(e) => handleDeleteItem(it.id, e)}
+                    className="p-1 text-mutedText hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Hapus Knowledge"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
               </div>
-              <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] text-mutedText uppercase font-mono">
-                {it.source_type}
-              </span>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

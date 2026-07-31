@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Brain, Search, Plus, Trash2, ExternalLink, Sparkles, Tag, Clock } from 'lucide-react'
+import { Brain, Search, Plus, Trash2, ExternalLink, Sparkles, Tag, Clock, Pencil, CheckSquare, Square, X, Loader2 } from 'lucide-react'
 
 type KnowledgeItem = {
   id: string
@@ -25,6 +25,16 @@ export function KnowledgeManager() {
   const [tagsInput, setTagsInput] = useState('')
   const [saving, setSaving] = useState(false)
 
+  // Edit Modal State
+  const [editItem, setEditItem] = useState<KnowledgeItem | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editContent, setEditContent] = useState('')
+  const [editTagsInput, setEditTagsInput] = useState('')
+  const [updating, setUpdating] = useState(false)
+
+  // Multi-select State
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+
   const [activeItem, setActiveItem] = useState<KnowledgeItem | null>(null)
 
   useEffect(() => {
@@ -43,6 +53,42 @@ export function KnowledgeManager() {
       // ignore
     } finally {
       setLoading(false)
+    }
+  }
+
+  function openEditModal(it: KnowledgeItem) {
+    setEditItem(it)
+    setEditTitle(it.title)
+    setEditContent(it.content)
+    setEditTagsInput((it.tags || []).join(', '))
+  }
+
+  async function handleUpdate() {
+    if (!editItem || !editTitle.trim() || !editContent.trim()) return
+    setUpdating(true)
+    try {
+      const tags = editTagsInput.split(',').map((t) => t.trim()).filter(Boolean)
+      const res = await fetch(`/api/knowledge/${editItem.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editTitle.trim(),
+          content: editContent.trim(),
+          tags,
+        }),
+      })
+      const data = await res.json()
+      if (data.ok && data.item) {
+        setItems((prev) => prev.map((i) => (i.id === editItem.id ? data.item : i)))
+        if (activeItem?.id === editItem.id) setActiveItem(data.item)
+        setEditItem(null)
+      } else {
+        alert(data.error || 'Gagal memperbarui knowledge')
+      }
+    } catch {
+      alert('Gagal menghubungi server')
+    } finally {
+      setUpdating(false)
     }
   }
 
@@ -85,6 +131,7 @@ export function KnowledgeManager() {
       const data = await res.json()
       if (data.ok) {
         setItems((prev) => prev.filter((i) => i.id !== id))
+        setSelectedIds((prev) => prev.filter((i) => i !== id))
         if (activeItem?.id === id) setActiveItem(null)
       } else {
         alert(data.error || 'Gagal menghapus')
@@ -92,6 +139,24 @@ export function KnowledgeManager() {
     } catch {
       alert('Gagal menghapus')
     }
+  }
+
+  async function handleBatchDelete() {
+    if (selectedIds.length === 0) return
+    if (!confirm(`Hapus ${selectedIds.length} item knowledge yang dipilih?`)) return
+    try {
+      await Promise.all(selectedIds.map((id) => fetch(`/api/knowledge/${id}`, { method: 'DELETE' })))
+      setItems((prev) => prev.filter((i) => !selectedIds.includes(i.id)))
+      if (activeItem && selectedIds.includes(activeItem.id)) setActiveItem(null)
+      setSelectedIds([])
+    } catch {
+      alert('Gagal menghapus beberapa item')
+    }
+  }
+
+  function toggleSelect(id: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]))
   }
 
   const filtered = items.filter((it) => {
@@ -153,6 +218,29 @@ export function KnowledgeManager() {
         </div>
       </div>
 
+      {/* Batch Select Controls */}
+      {selectedIds.length > 0 && (
+        <div className="flex items-center justify-between rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 animate-in fade-in">
+          <span className="text-xs font-bold text-emerald-300">
+            {selectedIds.length} item knowledge dipilih
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedIds([])}
+              className="px-2.5 py-1 text-xs text-mutedText hover:text-text"
+            >
+              Batal
+            </button>
+            <button
+              onClick={handleBatchDelete}
+              className="inline-flex items-center gap-1.5 rounded-md bg-destructive px-3 py-1 text-xs font-bold text-white hover:bg-destructive/90"
+            >
+              <Trash2 size={13} /> Hapus Terpilih ({selectedIds.length})
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         {/* Left Column: List */}
@@ -164,35 +252,47 @@ export function KnowledgeManager() {
               Tidak ada knowledge item.
             </div>
           ) : (
-            filtered.map((it) => (
-              <div
-                key={it.id}
-                onClick={() => setActiveItem(it)}
-                className={`p-3.5 rounded-xl border text-left cursor-pointer transition-all ${
-                  activeItem?.id === it.id
-                    ? 'border-emerald-500/60 bg-emerald-500/10 text-text ring-1 ring-emerald-500/50 shadow-md'
-                    : 'border-border bg-surface hover:border-border/80 text-mutedText hover:text-text'
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <h3 className="font-bold text-xs text-text line-clamp-1">{it.title}</h3>
-                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[9px] font-mono text-mutedText uppercase">
-                    {it.source_type}
-                  </span>
-                </div>
-                <p className="text-[11px] text-mutedText line-clamp-2 mt-1">{it.content}</p>
-                <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-border/40 text-[10px] text-mutedText">
-                  <span className="flex items-center gap-1">
-                    <Clock size={11} /> {new Date(it.created_at).toLocaleDateString('id-ID')}
-                  </span>
-                  {it.tags.length > 0 && (
-                    <span className="flex items-center gap-1 font-mono text-emerald-400">
-                      <Tag size={10} /> #{it.tags[0]}
+            filtered.map((it) => {
+              const isSelected = selectedIds.includes(it.id)
+              return (
+                <div
+                  key={it.id}
+                  onClick={() => setActiveItem(it)}
+                  className={`p-3.5 rounded-xl border text-left cursor-pointer transition-all relative group ${
+                    activeItem?.id === it.id
+                      ? 'border-emerald-500/60 bg-emerald-500/10 text-text ring-1 ring-emerald-500/50 shadow-md'
+                      : 'border-border bg-surface hover:border-border/80 text-mutedText hover:text-text'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => toggleSelect(it.id, e)}
+                        className="text-mutedText hover:text-emerald-400 transition-colors"
+                        title={isSelected ? 'Batal pilih' : 'Pilih item'}
+                      >
+                        {isSelected ? <CheckSquare size={15} className="text-emerald-400" /> : <Square size={15} />}
+                      </button>
+                      <h3 className="font-bold text-xs text-text line-clamp-1">{it.title}</h3>
+                    </div>
+                    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[9px] font-mono text-mutedText uppercase">
+                      {it.source_type}
                     </span>
-                  )}
+                  </div>
+                  <p className="text-[11px] text-mutedText line-clamp-2 mt-1 pl-6">{it.content}</p>
+                  <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-border/40 text-[10px] text-mutedText pl-6">
+                    <span className="flex items-center gap-1">
+                      <Clock size={11} /> {new Date(it.created_at).toLocaleDateString('id-ID')}
+                    </span>
+                    {it.tags.length > 0 && (
+                      <span className="flex items-center gap-1 font-mono text-emerald-400">
+                        <Tag size={10} /> #{it.tags[0]}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))
+              )
+            })
           )}
         </div>
 
@@ -210,13 +310,22 @@ export function KnowledgeManager() {
                     <span>Dibuat: {new Date(activeItem.created_at).toLocaleString('id-ID')}</span>
                   </div>
                 </div>
-                <button
-                  onClick={() => handleDelete(activeItem.id)}
-                  className="p-1.5 text-mutedText hover:text-destructive transition-colors rounded-md hover:bg-muted"
-                  title="Hapus Knowledge"
-                >
-                  <Trash2 size={16} />
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => openEditModal(activeItem)}
+                    className="p-1.5 text-mutedText hover:text-emerald-400 transition-colors rounded-md hover:bg-muted"
+                    title="Edit Knowledge"
+                  >
+                    <Pencil size={16} />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(activeItem.id)}
+                    className="p-1.5 text-mutedText hover:text-destructive transition-colors rounded-md hover:bg-muted"
+                    title="Hapus Knowledge"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
 
               {activeItem.tags.length > 0 && (
@@ -310,6 +419,70 @@ export function KnowledgeManager() {
                 className="rounded-md bg-emerald-500 px-4 py-2 text-xs font-bold text-black hover:bg-emerald-400 disabled:opacity-50"
               >
                 {saving ? 'Menyimpan...' : 'Simpan Knowledge'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {editItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-xl border border-border bg-surface p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in duration-150">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-text flex items-center gap-2">
+                <Pencil size={18} className="text-emerald-400" />
+                Edit Knowledge Item
+              </h3>
+              <button onClick={() => setEditItem(null)} className="text-mutedText hover:text-text">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-text mb-1">Judul Knowledge / Referensi:</label>
+              <input
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-text outline-none focus:border-primary"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-text mb-1">Konten / Insight Referensi:</label>
+              <textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                rows={8}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-xs text-text outline-none focus:border-primary font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-text mb-1">Tags (pisahkan koma):</label>
+              <input
+                type="text"
+                value={editTagsInput}
+                onChange={(e) => setEditTagsInput(e.target.value)}
+                className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-xs text-text outline-none focus:border-primary"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+              <button
+                onClick={() => setEditItem(null)}
+                className="rounded-md border border-border px-4 py-2 text-xs font-semibold text-mutedText hover:bg-muted"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleUpdate}
+                disabled={updating || !editTitle.trim() || !editContent.trim()}
+                className="inline-flex items-center gap-1.5 rounded-md bg-emerald-500 px-4 py-2 text-xs font-bold text-black hover:bg-emerald-400 disabled:opacity-50"
+              >
+                {updating ? <Loader2 size={13} className="animate-spin" /> : null}
+                {updating ? 'Menyimpan Perubahan...' : 'Simpan Perubahan'}
               </button>
             </div>
           </div>
