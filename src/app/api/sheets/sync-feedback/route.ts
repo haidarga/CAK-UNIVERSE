@@ -1,10 +1,71 @@
 import { createServerClient, createServiceClient } from '@/lib/cakgpt/supabase/server'
 import { requireUser } from '@/lib/cakgpt/auth'
 import { NextResponse } from 'next/server'
-import { parseClientFeedbackDelta } from '@/lib/sheets-helpers'
 import { getValidAccessToken } from '@/lib/cakgpt/google-oauth'
 import { getValuesFromGoogleSheet } from '@/lib/cakgpt/google-sheets'
 import { parseGoogleDocId } from '@/lib/cakgpt/google-docs'
+import { runLLM } from '@/lib/llm'
+
+// AI Helper to rewrite script blocks according to client feedback/revision requests
+async function applyAiRevisionToBlocks(
+  currentBlocks: any[],
+  clientInstruction: string,
+  personaName?: string
+): Promise<any[]> {
+  if (!clientInstruction?.trim()) return currentBlocks
+
+  const systemPrompt = `You are an expert AI script editor for viral short-form videos (TikTok, Reels, Shorts).
+Your task is to revise and rewrite the provided video script blocks based strictly on the client's revision feedback instruction.
+Rules:
+1. Maintain the exact same JSON array schema of blocks:
+   [{ "block_id": "...", "section_key": "hook"|"body"|"cta", "shot_no": 1, "line_no": 1, "speaker": "...", "text": "...", "visual_note": "..." }]
+2. Apply the client's revision feedback directly into the script dialogue ("text") and visual notes ("visual_note").
+3. Do NOT remove block_ids or change the number of blocks unless requested.
+4. Output ONLY valid JSON array of block objects. No markdown fences or commentary.`
+
+  const userPrompt = `Persona: ${personaName || 'Speaker'}
+Client Revision Feedback Instruction:
+"${clientInstruction.trim()}"
+
+Original Script Blocks:
+${JSON.stringify(currentBlocks, null, 2)}
+
+Rewrite the script blocks incorporating the client revision feedback.`
+
+  try {
+    const res = await runLLM({
+      system: systemPrompt,
+      prompt: userPrompt,
+      json: true,
+      temperature: 0.7,
+    })
+
+    const raw = res.text.trim().replace(/^```json\s*/i, '').replace(/\s*```$/, '')
+    const parsed = JSON.parse(raw)
+
+    if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].text) {
+      return parsed.map((p, idx) => ({
+        block_id: p.block_id || currentBlocks[idx]?.block_id || `blk_${Date.now()}_${idx}`,
+        section_key: p.section_key || currentBlocks[idx]?.section_key || 'body',
+        shot_no: p.shot_no || currentBlocks[idx]?.shot_no || idx + 1,
+        line_no: p.line_no || currentBlocks[idx]?.line_no || idx + 1,
+        speaker: p.speaker || personaName || currentBlocks[idx]?.speaker || '',
+        text: p.text || currentBlocks[idx]?.text || '',
+        visual_note: p.visual_note || currentBlocks[idx]?.visual_note || '',
+      }))
+    }
+  } catch (e) {
+    console.warn('AI script revision LLM call failed, falling back to direct block text update:', e)
+  }
+
+  // Fallback if LLM unavailable or fails: append client instruction to first and last block
+  return currentBlocks.map((b, idx) => {
+    if (idx === 0 || b.section_key === 'hook') {
+      return { ...b, text: `${b.text} [Revisi: ${clientInstruction}]` }
+    }
+    return b
+  })
+}
 
 export async function POST(req: Request) {
   const supabase = await createServerClient()
@@ -24,7 +85,8 @@ export async function POST(req: Request) {
   let targetNaskah: any[] = []
   const nIds = Array.isArray(naskah_ids) && naskah_ids.length > 0 ? naskah_ids : []
 
-  let query = supabase.from('sw_naskah').select('id, title, persona_id, day_no, current_version_id, sw_personas(id, name)')
+  // Always fetch all naskah in batch or list to ensure full matching capability
+  let query = supabase.from('sw_naskah').select('id, title, persona_id, day_no, current_version_id, batch_id, sw_personas(id, name)')
   if (nIds.length > 0) {
     query = query.in('id', nIds)
   } else if (batch_id) {
@@ -39,7 +101,7 @@ export async function POST(req: Request) {
     isSwTable = true
   } else {
     // Fallback legacy table
-    let legQuery = supabase.from('naskah').select('id, title, persona_id, day_no, current_version_id, personas(id, name)')
+    let legQuery = supabase.from('naskah').select('id, title, persona_id, day_no, current_version_id, batch_id, personas(id, name)')
     if (nIds.length > 0) legQuery = legQuery.in('id', nIds)
     else if (batch_id) legQuery = legQuery.eq('batch_id', batch_id)
     const { data: legList } = await legQuery
@@ -118,6 +180,8 @@ export async function POST(req: Request) {
 
       if (!matchingNaskah) continue
 
+      const personaDisplayName = Array.isArray(matchingNaskah.sw_personas) ? matchingNaskah.sw_personas[0]?.name : matchingNaskah.sw_personas?.name
+
       const hasComment = !!commentCell.trim()
       const isApproved = statusCell.toLowerCase().includes('approve')
 
@@ -146,19 +210,30 @@ export async function POST(req: Request) {
       }
 
       if (hasComment) {
-        const currentBlocks = curVer?.body || [
-          { block_id: `blk_${Date.now()}`, section_key: 'hook', shot_no: 1, line_no: 1, text: hookCell || matchingNaskah.title },
-          { block_id: `blk_${Date.now()+1}`, section_key: 'body', shot_no: 2, line_no: 2, text: bodyCell || 'Naskah body' },
+        const changeSummaryNote = `Client Feedback: "${commentCell.trim()}"`
+
+        // Check if this exact client feedback has already been synced to current version
+        if (curVer?.change_summary === changeSummaryNote) {
+          syncedCount++
+          continue
+        }
+
+        const baseBlocks = curVer?.body || [
+          { block_id: `blk_${Date.now()}`, section_key: 'hook', shot_no: 1, line_no: 1, text: hookCell || matchingNaskah.title, visual_note: '' },
+          { block_id: `blk_${Date.now()+1}`, section_key: 'body', shot_no: 2, line_no: 2, text: bodyCell || 'Naskah body', visual_note: '' },
         ]
+
+        // Execute AI Auto-Rewrite on blocks to implement client revision instruction directly into script text & visual notes!
+        const revisedBlocks = await applyAiRevisionToBlocks(baseBlocks, commentCell, personaDisplayName)
 
         if (isSwTable) {
           const nextVersionNo = (curVer?.version_no || 1) + 1
           const { data: newVer, error: verErr } = await supabase.from('sw_naskah_versions').insert({
             naskah_id: matchingNaskah.id,
             version_no: nextVersionNo,
-            body: currentBlocks,
+            body: revisedBlocks,
             created_via: 'writer_edit',
-            change_summary: `Client Feedback: "${commentCell.trim()}"`,
+            change_summary: changeSummaryNote,
             created_by: user.id,
           }).select().single()
 
@@ -172,8 +247,8 @@ export async function POST(req: Request) {
           const { data: legVer, error: legErr } = await supabase.from('naskah_versions').insert({
             naskah_id: matchingNaskah.id,
             version_number: (curVer?.version_number || 1) + 1,
-            body: currentBlocks,
-            notes: `Client Feedback: "${commentCell.trim()}"`,
+            body: revisedBlocks,
+            notes: changeSummaryNote,
           }).select().single()
 
           if (legVer) {
