@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/cakgpt/supabase/server'
 import { requireUser } from '@/lib/cakgpt/auth'
+import { BrandContextSchema } from '@/lib/cakgpt/brand-context'
 
-// PATCH /api/clients/[id] — edit a client (name/notes) or soft-delete it
+// PATCH /api/clients/[id] — edit a client (name/notes/brand_context) or soft-delete it
 // (is_active=false). No hard delete: briefs/batches FK to clients with
 // ON DELETE RESTRICT, and there's no delete RLS policy — soft-disable is the
 // removal path (the client just disappears from the active list).
@@ -20,6 +21,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const patch: Record<string, unknown> = {}
   for (const field of PATCHABLE_FIELDS) if (field in body) patch[field] = body[field]
   if (typeof patch.name === 'string' && !patch.name.trim()) return NextResponse.json({ ok: false, error: 'name cannot be empty' }, { status: 400 })
+
+  // brand_context is schema-checked rather than copied through: it lands in the
+  // generation prompt and its list fields become QC blockers, so an arbitrary
+  // blob here would reach both.
+  if ('brand_context' in body) {
+    const parsedContext = BrandContextSchema.safeParse(body.brand_context ?? {})
+    if (!parsedContext.success) {
+      return NextResponse.json({ ok: false, error: `brand_context invalid: ${parsedContext.error.message}` }, { status: 400 })
+    }
+    patch.brand_context = parsedContext.data
+  }
   if (Object.keys(patch).length === 0) return NextResponse.json({ ok: false, error: 'no valid fields to update' }, { status: 400 })
 
   const { data, error } = await supabase

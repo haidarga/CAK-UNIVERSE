@@ -8,6 +8,7 @@
 // to follow, and strip control characters / cap length before interpolation.
 
 import { steeringMentions } from '@/lib/cakgpt/steering'
+import { brandContextSection, type BrandContext } from '@/lib/cakgpt/brand-context'
 
 const MAX_FIELD_LEN = 4000
 
@@ -115,6 +116,8 @@ export function buildGenerationPrompt(opts: {
   dayNo?: number
   dayTotal?: number
   assignedHook?: string
+  brandContext?: BrandContext | null
+  brandName?: string | null
 }): string {
   // One hook, CHOSEN BY THE CALLER (see pickHookForNaskah in generation.ts) —
   // not a menu for the model to pick from. The bank is a pool drawn per persona
@@ -202,6 +205,10 @@ export function buildGenerationPrompt(opts: {
     'persona below, strictly serving the brief below. Output a shot-by-shot breakdown as blocks.',
     '',
     steeringSection,
+    // Brand rules sit between the writer's steering and the brief: they are a
+    // standing contract with the client, so a single brief must not quietly
+    // contradict them — but the writer still gets the final say per naskah.
+    brandContextSection(opts.brandContext, opts.brandName || ''),
     personaSection(opts.persona),
     '',
     briefSection(opts.brief),

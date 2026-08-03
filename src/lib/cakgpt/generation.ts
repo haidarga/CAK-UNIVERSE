@@ -12,6 +12,7 @@ import { CriticOutputSchema, GenerationOutputSchema, type Block } from '@/lib/ca
 import { runRuleBasedQc } from '@/lib/cakgpt/qc-rules'
 import { getGeminiApiKey } from '@/lib/cakgpt/settings'
 import { parseSteeringDurationS } from '@/lib/cakgpt/steering'
+import { brandQcWords, parseBrandContext, type BrandContext } from '@/lib/cakgpt/brand-context'
 
 export type GenerateNaskahParams = {
   supabase: SupabaseClient // service-role client — system-initiated writes
@@ -156,11 +157,24 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
   // every row fetch must explicitly filter by created_by = createdBy.
   const { data: brief, error: briefErr } = await supabase
     .from('sw_strategist_briefs')
-    .select('id, title, product, platform, persona_id, fields, created_by')
+    .select('id, title, product, platform, persona_id, client_id, fields, created_by')
     .eq('id', params.briefId)
     .eq('created_by', createdBy)
     .maybeSingle()
   if (briefErr || !brief) return { ok: false, error: 'brief not found' }
+
+  // Brand & Market Context — the client's standing rules. Absent for a brief
+  // with no client, or for a client whose context was never filled in; both are
+  // normal and simply produce no brand section and no extra QC words.
+  const brandClient = brief.client_id
+    ? (await supabase
+        .from('sw_clients')
+        .select('name, brand_context')
+        .eq('id', brief.client_id)
+        .eq('created_by', createdBy)
+        .maybeSingle()).data
+    : null
+  const brandContext = parseBrandContext(brandClient?.brand_context)
 
   const personaId = params.personaIdOverride || brief.persona_id
   if (!personaId) return { ok: false, error: 'no persona specified (brief has no default persona)' }
@@ -220,6 +234,8 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
       platform,
       targetDurationS,
       aspectRatio,
+      brandContext,
+      brandName: brandClient?.name || null,
       extraContext: params.extraContext,
       dayNo: params.dayNo,
       dayTotal: params.dayTotal,
@@ -302,7 +318,7 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
   })
   if (versionErr || !version) return { ok: false, error: `failed to create naskah version: ${versionErr?.message}` }
 
-  const flagCounts = await runAutoQc({ supabase, apiKey, naskahId: naskahRow.id, versionId: version.id, persona, brief, blocks, skipCritic: params.skipCritic })
+  const flagCounts = await runAutoQc({ supabase, apiKey, naskahId: naskahRow.id, versionId: version.id, persona, brief, blocks, brandContext, skipCritic: params.skipCritic })
   return { ok: true, naskahId: naskahRow.id, versionId: version.id, flagCounts }
 }
 
@@ -314,6 +330,9 @@ export async function runAutoQc(opts: {
   persona: { name: string; tone: unknown; diction_quirks: unknown; banned_words: string[]; required_words: string[]; sample_lines: unknown; red_flags: unknown }
   brief: { title: string; product: string | null; platform: string | null; fields: Record<string, unknown> }
   blocks: Block[]
+  // The client's Brand & Market Context. Optional: callers that have no client
+  // (or predate the feature) keep the persona-only behavior unchanged.
+  brandContext?: BrandContext | null
   skipCritic?: boolean // bulk fast-path: run only the (free) rule-based pass, skip the LLM critic call
 }): Promise<{ blocker: number; warning: number; nit: number }> {
   const { supabase, apiKey, naskahId, versionId, persona, brief, blocks } = opts
@@ -333,7 +352,14 @@ export async function runAutoQc(opts: {
   const flagRows: FlagRow[] = []
 
   // Pass 1 — deterministic, always trusted as blocker-tier.
-  const ruleFlags = runRuleBasedQc({ blocks, bannedWords: persona.banned_words, requiredWords: persona.required_words })
+  const brandWords = brandQcWords(opts.brandContext)
+  const ruleFlags = runRuleBasedQc({
+    blocks,
+    bannedWords: persona.banned_words,
+    requiredWords: persona.required_words,
+    brandBannedWords: brandWords.banned,
+    brandRequiredWords: brandWords.required,
+  })
   for (const f of ruleFlags) {
     const block = blockById.get(f.block_id)
     if (!block) continue

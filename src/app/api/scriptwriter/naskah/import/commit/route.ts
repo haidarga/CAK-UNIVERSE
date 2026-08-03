@@ -5,6 +5,7 @@ import { NaskahImportCommitSchema, type Block } from '@/lib/cakgpt/schemas'
 import { generateBlockId } from '@/lib/cakgpt/block-id'
 import { runAutoQc } from '@/lib/cakgpt/generation'
 import { getGeminiApiKey } from '@/lib/cakgpt/settings'
+import { parseBrandContext, type BrandContext } from '@/lib/cakgpt/brand-context'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -43,10 +44,14 @@ export async function POST(req: Request) {
 
   // Ownership: client (optional).
   let clientId: string | null = null
+  // Brand rules apply to imported scripts too — a doc written outside the tool
+  // is exactly where a forbidden claim tends to slip in.
+  let brandContext: BrandContext | null = null
   if (parsed.data.client_id) {
-    const { data: client } = await authClient.from('sw_clients').select('id').eq('id', parsed.data.client_id).eq('created_by', user.id).eq('is_active', true).maybeSingle()
+    const { data: client } = await authClient.from('sw_clients').select('id, brand_context').eq('id', parsed.data.client_id).eq('created_by', user.id).eq('is_active', true).maybeSingle()
     if (!client) return NextResponse.json({ ok: false, error: 'client not found' }, { status: 400 })
     clientId = client.id
+    brandContext = parseBrandContext(client.brand_context)
   }
 
   const service = createServiceClient()
@@ -111,7 +116,7 @@ export async function POST(req: Request) {
         })
         if (vErr || !version) throw new Error(vErr?.message || 'failed to create version')
 
-        await runAutoQc({ supabase: service, apiKey, naskahId: naskahRow.id, versionId: version.id, persona: personaForQc, brief: briefForQc, blocks })
+        await runAutoQc({ supabase: service, apiKey, naskahId: naskahRow.id, versionId: version.id, persona: personaForQc, brief: briefForQc, blocks, brandContext })
         results.push({ title: item.title, ok: true, naskah_id: naskahRow.id })
       } catch (e) {
         results.push({ title: item.title, ok: false, error: e instanceof Error ? e.message : 'import failed' })

@@ -5,6 +5,7 @@ import { getValidAccessToken } from '@/lib/cakgpt/google-oauth'
 import { getDoc, parseDocIntoSections, reconstructBlocksFromLines } from '@/lib/cakgpt/google-docs'
 import { runAutoQc } from '@/lib/cakgpt/generation'
 import { getGeminiApiKey } from '@/lib/cakgpt/settings'
+import { loadBrandContextForBrief } from '@/lib/cakgpt/brand-context'
 import type { Block } from '@/lib/cakgpt/schemas'
 
 // POST /api/batches/[id]/google-doc/pull — reads the writer's edits back out
@@ -86,7 +87,13 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
         .eq('id', naskah.brief_id).eq('created_by', user.id).maybeSingle()
 
       if (persona && brief) {
-        await runAutoQc({ supabase: service, apiKey, naskahId: naskah.id, versionId: version.id, persona, brief, blocks: reconstructed as Block[] })
+        await runAutoQc({
+          supabase: service, apiKey, naskahId: naskah.id, versionId: version.id, persona, brief,
+          blocks: reconstructed as Block[],
+          // Text pulled back from the Doc was edited by the client, so it can
+          // easily contain something the brand forbids.
+          brandContext: await loadBrandContextForBrief(authClient, naskah.brief_id, user.id),
+        })
       }
 
       results.push({ naskah_id: naskah.id, changed: true })

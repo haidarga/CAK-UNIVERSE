@@ -3,6 +3,7 @@ import { createServerClient, createServiceClient } from '@/lib/cakgpt/supabase/s
 import { requireUser } from '@/lib/cakgpt/auth'
 import { BlockSchema } from '@/lib/cakgpt/schemas'
 import { MAX_EDITED_BLOCKS } from '@/lib/cakgpt/blocks'
+import { brandQcWords, loadBrandContextForBrief } from '@/lib/cakgpt/brand-context'
 import { z } from 'zod'
 import { runRuleBasedQc } from '@/lib/cakgpt/qc-rules'
 
@@ -47,8 +48,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!parsed.success) return NextResponse.json({ ok: false, error: parsed.error.message }, { status: 400 })
 
   const { data: naskah } = await authClient
-    .from('sw_naskah').select('id, persona_id, current_version_id').eq('id', id).eq('created_by', user.id).maybeSingle()
+    .from('sw_naskah').select('id, persona_id, brief_id, current_version_id').eq('id', id).eq('created_by', user.id).maybeSingle()
   if (!naskah) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 })
+
+  // Brand rules apply to hand-edited text too — otherwise a writer could type a
+  // DILARANG word straight past the check that generation enforces.
+  const brandContext = await loadBrandContextForBrief(authClient, naskah.brief_id, user.id)
 
   const { data: currentVersion } = await authClient
     .from('sw_naskah_versions').select('hook_rubric_id, hook_justification, format_meta, generation_meta')
@@ -71,8 +76,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   })
   if (versionErr || !version) return NextResponse.json({ ok: false, error: versionErr?.message || 'failed to create version' }, { status: 500 })
 
-  if (persona) {
-    const ruleFlags = runRuleBasedQc({ blocks: parsed.data.body, bannedWords: persona.banned_words || [], requiredWords: persona.required_words || [] })
+  const brandWords = brandQcWords(brandContext)
+  if (persona || brandWords.banned.length || brandWords.required.length) {
+    const ruleFlags = runRuleBasedQc({
+      blocks: parsed.data.body,
+      bannedWords: persona?.banned_words || [],
+      requiredWords: persona?.required_words || [],
+      brandBannedWords: brandWords.banned,
+      brandRequiredWords: brandWords.required,
+    })
     if (ruleFlags.length > 0) {
       const blockById = new Map(parsed.data.body.map((b) => [b.block_id, b]))
       await service.from('sw_qc_flags').insert(ruleFlags.map((f) => {

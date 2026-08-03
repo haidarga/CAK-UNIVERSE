@@ -3,6 +3,7 @@ import { createServerClient, createServiceClient } from '@/lib/cakgpt/supabase/s
 import { requireUser } from '@/lib/cakgpt/auth'
 import { runAutoQc } from '@/lib/cakgpt/generation'
 import { getGeminiApiKey } from '@/lib/cakgpt/settings'
+import { loadBrandContextForBrief } from '@/lib/cakgpt/brand-context'
 import type { Block } from '@/lib/cakgpt/schemas'
 
 // Manual escape hatch for when the critic pass failed/was skipped (e.g. a
@@ -49,6 +50,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     persona,
     brief,
     blocks: version.body as Block[],
+    brandContext: await loadBrandContextForBrief(authClient, naskah.brief_id, user.id),
   })
 
   return NextResponse.json({ ok: true, flag_counts: flagCounts })

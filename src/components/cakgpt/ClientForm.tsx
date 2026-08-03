@@ -2,11 +2,14 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { BrandContextEditor } from '@/components/cakgpt/BrandContextEditor'
+import { EMPTY_BRAND_CONTEXT, isBrandContextEmpty, type BrandContext } from '@/lib/cakgpt/brand-context'
 
 export function ClientForm() {
   const router = useRouter()
   const [name, setName] = useState('')
   const [notes, setNotes] = useState('')
+  const [brandContext, setBrandContext] = useState<BrandContext>(EMPTY_BRAND_CONTEXT)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -19,11 +22,17 @@ export function ClientForm() {
       const res = await fetch('/api/scriptwriter/clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, notes: notes || null }),
+        body: JSON.stringify({
+          name,
+          notes: notes || null,
+          // Sent only when it has content, so a client created without brand
+          // rules stores {} rather than nine empty strings.
+          brand_context: isBrandContextEmpty(brandContext) ? {} : brandContext,
+        }),
       })
       const data = await res.json()
       if (!data.ok) throw new Error(data.error || 'failed to save')
-      setName(''); setNotes('')
+      setName(''); setNotes(''); setBrandContext(EMPTY_BRAND_CONTEXT)
       router.refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'network error')
@@ -44,10 +53,14 @@ export function ClientForm() {
 
       <div>
         <label htmlFor="client-notes" className="mb-1 block text-xs font-medium text-text">
-          Notes <span className="font-normal text-mutedText">(brand voice, do's and don'ts, anything the writer should remember)</span>
+          Notes <span className="font-normal text-mutedText">(catatan bebas buat penulis — TIDAK dibaca AI)</span>
         </label>
-        <textarea id="client-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
+        <textarea id="client-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
           className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-text focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring" />
+      </div>
+
+      <div className="border-t border-border pt-4">
+        <BrandContextEditor brandName={name} value={brandContext} onChange={setBrandContext} />
       </div>
 
       {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
