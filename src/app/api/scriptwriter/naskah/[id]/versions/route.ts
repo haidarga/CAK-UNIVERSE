@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient, createServiceClient } from '@/lib/cakgpt/supabase/server'
 import { requireUser } from '@/lib/cakgpt/auth'
 import { BlockSchema } from '@/lib/cakgpt/schemas'
+import { MAX_EDITED_BLOCKS } from '@/lib/cakgpt/blocks'
 import { z } from 'zod'
 import { runRuleBasedQc } from '@/lib/cakgpt/qc-rules'
 
@@ -21,7 +22,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 }
 
 const ManualEditBody = z.object({
-  body: z.array(BlockSchema).min(1).max(60),
+  // Raised 60 -> MAX_EDITED_BLOCKS (100) to match what generation itself can
+  // emit (GenerationOutputSchema.body max 100). The old 60 meant a long
+  // generated naskah could be opened in the editor but not saved back, and now
+  // that the writer can ADD shots the cap has to be the same number the UI
+  // stops at — otherwise "Add shot" succeeds and Save fails.
+  body: z.array(BlockSchema).min(1).max(MAX_EDITED_BLOCKS),
   change_summary: z.string().max(500).optional(),
 })
 

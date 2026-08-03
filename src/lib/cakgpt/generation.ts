@@ -11,6 +11,7 @@ import {
 import { CriticOutputSchema, GenerationOutputSchema, type Block } from '@/lib/cakgpt/schemas'
 import { runRuleBasedQc } from '@/lib/cakgpt/qc-rules'
 import { getGeminiApiKey } from '@/lib/cakgpt/settings'
+import { parseSteeringDurationS } from '@/lib/cakgpt/steering'
 
 export type GenerateNaskahParams = {
   supabase: SupabaseClient // service-role client — system-initiated writes
@@ -202,7 +203,12 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
   }
 
   const platform = brief.platform || 'tiktok'
-  const targetDurationS = resolveTargetDurationS(brief.fields)
+  // Writer steering outranks the brief. The prompt states the target duration
+  // as a hard number, so a steered "10 detik" has to actually replace that
+  // number — asking the model in prose to prefer the steering loses to the
+  // explicit contradicting figure and it kept writing the brief's 30s.
+  const steeredDurationS = parseSteeringDurationS(params.extraContext)
+  const targetDurationS = steeredDurationS ?? resolveTargetDurationS(brief.fields)
   const aspectRatio = '9:16'
 
   let generation

@@ -103,6 +103,19 @@ type RenderedNaskah = {
   noteRanges: Array<{ start: number; end: number }> // "   [visual note]"
 }
 
+// Shot details are prefixed with an icon rather than a "Location:" label: the
+// Doc is what the CLIENT reads, and a glyph column scans far faster than three
+// more words of scaffolding per shot. The icons double as the parse key on the
+// way back in (DETAIL_LINE_RE), so the rendered form stays machine-readable
+// without reintroducing the "N.N (section):" prefix writers hated.
+const DETAIL_ICONS = { location: '📍', wardrobe: '👔', visual_note: '🎬' } as const
+
+// Exported for the round-trip test — pushNaskahToDoc is a network call, so the
+// pure render is what can actually be asserted against reconstructBlocksFromLines.
+export function renderNaskahForDoc(n: NaskahForDoc): RenderedNaskah {
+  return renderNaskah(n)
+}
+
 function renderNaskah(n: NaskahForDoc): RenderedNaskah {
   const speakerRanges: RenderedNaskah['speakerRanges'] = []
   const noteRanges: RenderedNaskah['noteRanges'] = []
@@ -133,6 +146,14 @@ function renderNaskah(n: NaskahForDoc): RenderedNaskah {
     if (prevSection !== null && block.section_key !== prevSection) text += '\n'
     prevSection = block.section_key
 
+    // Timecode leads the line so the client can see the beat structure without
+    // reading the dialogue — muted, since it is production metadata, not copy.
+    if (block.timestamp_range?.trim()) {
+      const tsStart = text.length
+      text += `[${block.timestamp_range.trim()}] `
+      noteRanges.push({ start: tsStart, end: text.length - 1 }) // exclude the trailing space
+    }
+
     if (block.speaker) {
       const speakerStart = text.length
       text += `${block.speaker}: `
@@ -141,10 +162,15 @@ function renderNaskah(n: NaskahForDoc): RenderedNaskah {
 
     text += `${block.text}\n`
 
-    if (block.visual_note) {
-      const noteStart = text.length
-      text += `   [${block.visual_note}]\n`
-      noteRanges.push({ start: noteStart, end: text.length - 1 }) // exclude the trailing \n
+    // Location / wardrobe / visual note, one indented muted line each. Blank
+    // and whitespace-only values are skipped rather than rendered as a lone
+    // icon — an empty "📍" reads as missing data the writer must go fix.
+    for (const key of ['location', 'wardrobe', 'visual_note'] as const) {
+      const value = block[key]
+      if (typeof value !== 'string' || !value.trim()) continue
+      const detailStart = text.length
+      text += `   ${DETAIL_ICONS[key]} ${value.trim()}\n`
+      noteRanges.push({ start: detailStart, end: text.length - 1 }) // exclude the trailing \n
     }
   }
   return { text: text + '\n', headingEnd, speakerRanges, noteRanges }
@@ -236,6 +262,17 @@ type ParsedSection = { naskahId: string; lines: string[] }
 const HEADING_ID_RE = /\[\[id:([0-9a-fA-F-]{36})\]\]/
 const STRUCTURED_LINE_RE = /^(\d+)\.(\d+)\s*\(([^)]+)\):\s*(?:([^:]+):\s*)?(.*)$/
 const VISUAL_NOTE_RE = /^\s*\[(.+)\]\s*$/
+// The shot-detail lines push now writes. Without these, pull would not
+// recognise them and each one would come back as a NEW block whose spoken text
+// is the location/wardrobe — the naskah would grow three fake lines of
+// dialogue per shot on every push→pull cycle.
+const DETAIL_LINE_RE = /^\s*(📍|👔|🎬)\s*(.+?)\s*$/
+const DETAIL_KEY_BY_ICON: Record<string, 'location' | 'wardrobe' | 'visual_note'> = {
+  '📍': 'location', '👔': 'wardrobe', '🎬': 'visual_note',
+}
+// Leading "[00:00 - 00:05] " on a dialogue line. Anchored to digits so a line
+// that merely opens with a bracket (a writer's aside) is not mistaken for one.
+const LEADING_TIMECODE_RE = /^\[(\d{1,2}:\d{2}(?:\s*[-–—]\s*\d{1,2}:\d{2})?)\]\s*/
 
 // Reads the Doc and splits it into per-naskah raw text sections keyed by
 // which naskah's named range each HEADING_1 paragraph falls inside. Falls
@@ -301,6 +338,18 @@ export function reconstructBlocksFromLines(lines: string[]): Block[] {
   let autoLine = 0
 
   for (const line of lines) {
+    // Shot detail (📍/👔/🎬) — folds into the block it annotates. Dropped when
+    // it has no block to attach to rather than becoming a block of its own,
+    // which would read as the persona speaking the word "Laboratorium".
+    const detailMatch = line.match(DETAIL_LINE_RE)
+    if (detailMatch) {
+      if (blocks.length > 0) {
+        const key = DETAIL_KEY_BY_ICON[detailMatch[1]]
+        blocks[blocks.length - 1] = { ...blocks[blocks.length - 1], [key]: detailMatch[2] }
+      }
+      continue
+    }
+
     const visualMatch = line.match(VISUAL_NOTE_RE)
     if (visualMatch && blocks.length > 0) {
       blocks[blocks.length - 1] = { ...blocks[blocks.length - 1], visual_note: visualMatch[1] }
@@ -320,7 +369,18 @@ export function reconstructBlocksFromLines(lines: string[]): Block[] {
       : (() => {
           autoShot += 1
           autoLine = 1
-          return { shot_no: autoShot, line_no: autoLine, section_key: 'body', speaker: null, timestamp_range: null, text: line }
+          // Strip the "[00:00 - 00:05] " push writes ahead of the dialogue and
+          // put it back in the field it came from, instead of leaving the
+          // timecode embedded in the spoken text.
+          const timecode = line.match(LEADING_TIMECODE_RE)
+          return {
+            shot_no: autoShot,
+            line_no: autoLine,
+            section_key: 'body',
+            speaker: null,
+            timestamp_range: timecode ? timecode[1] : null,
+            text: timecode ? line.slice(timecode[0].length) : line,
+          }
         })()
 
     blocks.push({ ...input, block_id: generateBlockId() })

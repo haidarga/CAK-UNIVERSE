@@ -1,8 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Check, X, Sparkles, RefreshCw, FileUp, FileDown, ExternalLink, Pencil, Save, RotateCcw, ShieldCheck, ChevronDown, Link2, Zap, FileSpreadsheet } from 'lucide-react'
+import { Check, X, Sparkles, RefreshCw, FileUp, FileDown, ExternalLink, Pencil, Save, RotateCcw, ShieldCheck, ChevronDown, Link2, Zap, FileSpreadsheet, Plus, Trash2 } from 'lucide-react'
 import { MAX_DAY_TOTAL, MAX_FANOUT_ITEMS } from '@/lib/cakgpt/schemas'
+import { deleteBlockAt, insertBlockAfter, MAX_EDITED_BLOCKS } from '@/lib/cakgpt/blocks'
 
 type QueueItem = {
   naskah_id: string
@@ -23,6 +24,10 @@ type Block = {
   line_no: number
   speaker?: string | null
   timestamp_range?: string | null
+  // Generated since the shot-details change but never surfaced here, which is
+  // why a wrong setting/outfit could only be fixed by regenerating the naskah.
+  location?: string | null
+  wardrobe?: string | null
   text: string
   visual_note?: string | null
 }
@@ -350,8 +355,24 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
     setEditing(true)
   }
 
-  function updateBlock(blockId: string, patch: Partial<Pick<Block, 'text' | 'visual_note'>>) {
+  function updateBlock(
+    blockId: string,
+    patch: Partial<Pick<Block, 'text' | 'visual_note' | 'location' | 'wardrobe' | 'timestamp_range'>>,
+  ) {
     setEditedBlocks((prev) => prev && prev.map((b) => (b.block_id === blockId ? { ...b, ...patch } : b)))
+  }
+
+  // Structural edits stay inside the open edit session: they change the working
+  // copy only, and Save commits the whole reshaped body as ONE new version. So
+  // add/delete feel immediate (no extra dialog, no separate save), while the
+  // pre-edit body remains recoverable from the version history if a shot turns
+  // out to have been deleted by mistake.
+  function addShotAfter(blockId: string | null) {
+    setEditedBlocks((prev) => prev && insertBlockAfter(prev, blockId))
+  }
+
+  function removeShot(blockId: string) {
+    setEditedBlocks((prev) => prev && deleteBlockAt(prev, blockId))
   }
 
   async function saveEdits() {
@@ -1012,6 +1033,12 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
                         <>
                           <p className="mt-2 text-[15px] leading-relaxed text-text">{block.speaker ? <span className="font-semibold text-primary">{block.speaker}: </span> : null}{block.text}</p>
                           {block.visual_note && <p className="mt-1.5 text-xs italic text-mutedText">▸ {block.visual_note}</p>}
+                          {(block.location || block.wardrobe) && (
+                            <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px]">
+                              {block.location && <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-600 dark:text-emerald-400">📍 {block.location}</span>}
+                              {block.wardrobe && <span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-violet-600 dark:text-violet-400">👔 {block.wardrobe}</span>}
+                            </div>
+                          )}
                         </>
                       ) : (
                         <div className="mt-1.5 space-y-1.5">
@@ -1030,6 +1057,50 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
                             aria-label={`Visual note for shot ${block.shot_no} line ${block.line_no}`}
                             className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs italic text-mutedText focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
                           />
+                          {/* Shot details are what the Studio storyboards against and what the
+                              client reads in the Doc/Sheet — they were generated but never
+                              editable, so a wrong setting could only be fixed by regenerating. */}
+                          <div className="grid gap-1.5 sm:grid-cols-3">
+                            <input
+                              value={block.timestamp_range || ''}
+                              onChange={(e) => updateBlock(block.block_id, { timestamp_range: e.target.value || null })}
+                              placeholder="⏱ 00:00 - 00:05"
+                              aria-label={`Timecode for shot ${block.shot_no}`}
+                              className="w-full rounded-md border border-border bg-background px-2 py-1 font-data text-xs text-mutedText focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+                            />
+                            <input
+                              value={block.location || ''}
+                              onChange={(e) => updateBlock(block.block_id, { location: e.target.value || null })}
+                              placeholder="📍 lokasi & lighting"
+                              aria-label={`Location for shot ${block.shot_no}`}
+                              className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs text-mutedText focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+                            />
+                            <input
+                              value={block.wardrobe || ''}
+                              onChange={(e) => updateBlock(block.block_id, { wardrobe: e.target.value || null })}
+                              placeholder="👔 wardrobe"
+                              aria-label={`Wardrobe for shot ${block.shot_no}`}
+                              className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs text-mutedText focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+                            />
+                          </div>
+                          <div className="flex justify-end gap-1.5 pt-0.5">
+                            <button
+                              onClick={() => addShotAfter(block.block_id)}
+                              disabled={(editedBlocks?.length ?? 0) >= MAX_EDITED_BLOCKS}
+                              title={(editedBlocks?.length ?? 0) >= MAX_EDITED_BLOCKS ? `Max ${MAX_EDITED_BLOCKS} shot per naskah` : 'Tambah shot di bawah ini'}
+                              className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-text hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+                            >
+                              <Plus size={12} aria-hidden /> Shot di bawah
+                            </button>
+                            <button
+                              onClick={() => removeShot(block.block_id)}
+                              disabled={(editedBlocks?.length ?? 0) <= 1}
+                              title={(editedBlocks?.length ?? 0) <= 1 ? 'Naskah harus punya minimal 1 shot' : 'Hapus shot ini'}
+                              className="flex items-center gap-1 rounded-md border border-danger/30 px-2 py-1 text-[11px] font-medium text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+                            >
+                              <Trash2 size={12} aria-hidden /> Hapus
+                            </button>
+                          </div>
                         </div>
                       )}
                       {!editing && blockFlags.map((f) => (

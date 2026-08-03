@@ -7,6 +7,8 @@
 // instruction that content between them is data to react to, never commands
 // to follow, and strip control characters / cap length before interpolation.
 
+import { steeringMentions } from '@/lib/cakgpt/steering'
+
 const MAX_FIELD_LEN = 4000
 
 // ASCII control chars, zero-width chars, and bidi-override chars — all ways
@@ -157,10 +159,49 @@ export function buildGenerationPrompt(opts: {
         'be part of a series, not a fragment.',
       ].join('\n')
     : ''
+  // Writer steering ("arahan"): unlike persona/brief data, this is a directive
+  // the writer typed to shape THIS generation — presented as an instruction to
+  // follow (still sanitized: control/hidden chars stripped, length capped)
+  // rather than untrusted data to merely react to.
+  //
+  // It is placed ABOVE the brief and format sections, and its precedence is
+  // stated explicitly, because the model previously read the brief-derived
+  // "Target duration: 30s" line as authoritative and ignored a steering that
+  // said 10 detik. (The number itself is now resolved from the steering before
+  // it ever reaches this function — see parseSteeringDurationS — so the two can
+  // no longer disagree; this section stops the model second-guessing the rest.)
+  const steer = steeringMentions(opts.extraContext)
+  const steeringSection = opts.extraContext
+    ? [
+        '## WRITER STEERING — HIGHEST PRIORITY, OVERRIDES THE BRIEF',
+        'The writer typed this to steer THIS specific naskah. Where it conflicts with the brief, the',
+        'persona defaults, or your own judgement, THE STEERING WINS. Do not soften it, do not treat',
+        'it as a suggestion, and do not average it with the brief.',
+        sanitizeUntrusted(opts.extraContext),
+        '',
+      ].join('\n')
+    : ''
+
+  // Each field the writer pinned is escalated from "invent a sensible default"
+  // to "obey", named individually so the model can't satisfy one and quietly
+  // improvise the others (it kept the steered duration but relocated the shoot).
+  const lockedLines = [
+    steer.duration
+      ? `- DURATION IS LOCKED at ${opts.targetDurationS}s by the steering. The LAST shot must END at or before ${formatTimecode(opts.targetDurationS)}. Write fewer, tighter shots to fit — do NOT overrun and do NOT pad to a longer runtime.`
+      : '',
+    steer.location
+      ? '- LOCATION IS LOCKED by the steering. Every shot happens at the location the writer named. Do NOT relocate mid-script, and do NOT add a second setting the writer did not ask for.'
+      : '',
+    steer.wardrobe
+      ? '- WARDROBE IS LOCKED by the steering. The persona wears what the writer named in every shot. Do NOT change outfits between shots.'
+      : '',
+  ].filter(Boolean)
+
   return [
     'You are writing a short-form video naskah (script) in Indonesian, in the exact voice of the',
     'persona below, strictly serving the brief below. Output a shot-by-shot breakdown as blocks.',
     '',
+    steeringSection,
     personaSection(opts.persona),
     '',
     briefSection(opts.brief),
@@ -170,26 +211,33 @@ export function buildGenerationPrompt(opts: {
     '',
     '## FORMAT / STRUCTURE REQUIREMENTS',
     `Platform: ${opts.platform}. Target duration: ${opts.targetDurationS}s. Aspect ratio: ${opts.aspectRatio}.`,
+    `The whole naskah must fit inside ${opts.targetDurationS} seconds of screen time — that is the`,
+    'total for ALL shots combined, not per shot. Budget roughly 2-3 spoken seconds per short line and',
+    'cut content until it fits, rather than writing long and letting it overrun.',
     'Break the naskah into shots; each shot may have multiple lines/blocks. Number shot_no and',
     'line_no sequentially starting at 1. Use section_key to label structural parts (e.g. "hook",',
     '"body", "cta").',
     '',
     '## SHOT DETAILS (location, timestamp_range, wardrobe)',
-    '- timestamp_range: Write the timeline code for each shot e.g. "00:00 - 00:05", "00:05 - 00:12".',
-    '- location: Specify the physical setting AND lighting environment e.g. "Dapur Rumah Minimalis - Soft Daylight from Window", "Studio Softbox Lighting".',
-    '- wardrobe: Specify the persona outfit / costume e.g. "Kaos Santai Nude & Apron Memasak", "Blazer Formal Beige".',
-    '- CRITICAL: If WRITER STEERING below specifies duration/timestamp, wardrobe, or location, follow steering strictly. If not specified, auto-generate cohesive, realistic defaults.',
+    `- timestamp_range: The timeline code for each shot e.g. "00:00 - 00:05". These must run in order,`,
+    `  must not overlap, and the final shot must not end after ${formatTimecode(opts.targetDurationS)}.`,
+    '- location: The physical setting AND lighting environment e.g. "Dapur Rumah Minimalis - Soft Daylight from Window", "Laboratorium Nutrisi - Cool White Lighting".',
+    '- wardrobe: The persona outfit / costume e.g. "Kaos Santai Nude & Apron Memasak", "Jas Lab Putih & Name Tag".',
+    '- Fill all three on EVERY block. If the steering did not pin them, invent cohesive, realistic',
+    '  defaults that stay consistent across the whole naskah.',
+    ...lockedLines,
     daySection,
-    // Writer steering ("arahan"): unlike persona/brief data, this is a
-    // directive the writer typed to shape THIS generation — present it as an
-    // instruction to follow (still sanitized: control/hidden chars stripped,
-    // length capped) rather than untrusted data to merely react to.
-    opts.extraContext
-      ? `\n## WRITER STEERING — follow this direction for this naskah\n${sanitizeUntrusted(opts.extraContext)}`
-      : '',
     '',
     'Respond ONLY with JSON matching the required schema.',
   ].filter(Boolean).join('\n')
+}
+
+// mm:ss for the duration ceiling quoted to the model — "00:10" reads as the end
+// of a timeline in the same shape as the timestamp_range values it must emit,
+// where a bare "10s" invited it to keep counting past the limit.
+function formatTimecode(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds))
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
 }
 
 export function buildCriticPrompt(opts: {

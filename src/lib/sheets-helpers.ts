@@ -22,8 +22,20 @@ export function formatNaskahForSheetsExport(naskahList: any[]) {
         if (text) bodyParts.push(lineText.trim())
       }
 
-      if (b.visual_note?.trim()) {
-        visualParts.push(`${shotLabel} ${b.visual_note.trim()}`)
+      // Location / wardrobe / timecode ride in the SAME "Visual & Direction
+      // Notes" column rather than getting columns of their own — the client's
+      // sheet already has filters and formulas bound to this layout, and adding
+      // columns would shift every one of them. The visual note stays first so
+      // the cell still opens with what it always did.
+      const directionParts = [
+        b.visual_note?.trim(),
+        b.location?.trim() ? `📍 ${b.location.trim()}` : '',
+        b.wardrobe?.trim() ? `👔 ${b.wardrobe.trim()}` : '',
+        b.timestamp_range?.trim() ? `⏱ ${b.timestamp_range.trim()}` : '',
+      ].filter(Boolean)
+
+      if (directionParts.length > 0) {
+        visualParts.push(`${shotLabel} ${directionParts.join(' · ')}`)
       }
     })
 

@@ -25,6 +25,51 @@ describe('Google Sheets Export & Feedback Sync Helper', () => {
     expect(exported[0].visual_notes).toContain('[Shot 1] Emma ekspresi bingung')
   })
 
+  it('merges location, wardrobe and timecode into the direction notes column', () => {
+    // Deliberately merged instead of given their own columns: the client sheet
+    // has filters/formulas bound to the existing column order.
+    const exported = formatNaskahForSheetsExport([{
+      id: 'naskah_1',
+      title: 'Nutrisi Anak · Fajar Sondang',
+      persona_name: 'Fajar Sondang',
+      body: [{
+        block_id: 'b1', section_key: 'hook', shot_no: 1, line_no: 1,
+        speaker: 'Fajar Sondang', text: 'Lihat anak ini...',
+        visual_note: 'Talking head, close-up',
+        location: 'Laboratorium Nutrisi - Cool White',
+        wardrobe: 'Jas Lab Putih',
+        timestamp_range: '00:00 - 00:05',
+      }],
+    }])
+
+    const notes = exported[0].visual_notes
+    expect(notes).toContain('[Shot 1] Talking head, close-up')
+    expect(notes).toContain('📍 Laboratorium Nutrisi - Cool White')
+    expect(notes).toContain('👔 Jas Lab Putih')
+    expect(notes).toContain('⏱ 00:00 - 00:05')
+  })
+
+  it('still emits direction notes when only location/wardrobe exist', () => {
+    // A visual-only b-roll shot has no visual_note but does have a setting —
+    // it used to vanish from the column entirely.
+    const exported = formatNaskahForSheetsExport([{
+      id: 'naskah_2', title: 'X', persona_name: 'P',
+      body: [{
+        block_id: 'b1', section_key: 'body', shot_no: 2, line_no: 2,
+        text: 'Halo', visual_note: null, location: 'Dapur', wardrobe: 'Apron',
+      }],
+    }])
+    expect(exported[0].visual_notes).toContain('[Shot 2] 📍 Dapur · 👔 Apron')
+  })
+
+  it('leaves the column as "-" when a naskah carries no direction data at all', () => {
+    const exported = formatNaskahForSheetsExport([{
+      id: 'naskah_3', title: 'X', persona_name: 'P',
+      body: [{ block_id: 'b1', section_key: 'body', shot_no: 1, line_no: 1, text: 'Halo' }],
+    }])
+    expect(exported[0].visual_notes).toBe('-')
+  })
+
   it('detects direct cell edit feedback from client', () => {
     const delta = parseClientFeedbackDelta({
       naskah_id: 'naskah_123',
