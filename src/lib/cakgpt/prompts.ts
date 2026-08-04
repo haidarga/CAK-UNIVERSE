@@ -9,6 +9,7 @@
 
 import { steeringMentions } from '@/lib/cakgpt/steering'
 import { brandContextSection, type BrandContext } from '@/lib/cakgpt/brand-context'
+import { contentFormatSection, type ContentFormat } from '@/lib/cakgpt/content-formats'
 
 const MAX_FIELD_LEN = 4000
 
@@ -118,6 +119,7 @@ export function buildGenerationPrompt(opts: {
   assignedHook?: string
   brandContext?: BrandContext | null
   brandName?: string | null
+  contentFormat?: ContentFormat | null
 }): string {
   // One hook, CHOSEN BY THE CALLER (see pickHookForNaskah in generation.ts) —
   // not a menu for the model to pick from. The bank is a pool drawn per persona
@@ -205,6 +207,11 @@ export function buildGenerationPrompt(opts: {
     'persona below, strictly serving the brief below. Output a shot-by-shot breakdown as blocks.',
     '',
     steeringSection,
+    // Content format decides the SHAPE of the video (who is on camera, whether
+    // the camera moves, how many speakers), so it has to be read before the
+    // brief describes what to say — a brief read first pulls every naskah back
+    // toward the same directed product demo regardless of the format asked for.
+    contentFormatSection(opts.contentFormat || null),
     // Brand rules sit between the writer's steering and the brief: they are a
     // standing contract with the client, so a single brief must not quietly
     // contradict them — but the writer still gets the final say per naskah.
@@ -232,6 +239,12 @@ export function buildGenerationPrompt(opts: {
     '- wardrobe: The persona outfit / costume e.g. "Kaos Santai Nude & Apron Memasak", "Jas Lab Putih & Name Tag".',
     '- Fill all three on EVERY block. If the steering did not pin them, invent cohesive, realistic',
     '  defaults that stay consistent across the whole naskah.',
+    // Without this, the per-shot location/wardrobe instructions above read as
+    // permission to keep changing sets — which is the grammar of a directed
+    // piece and directly contradicts a locked Talking Head ("one location").
+    opts.contentFormat
+      ? '- These three fields describe the shoot; they must OBEY the locked content format above. If the format fixes the setting or keeps the persona off camera, follow the format — do not invent variety it forbids.'
+      : '',
     ...lockedLines,
     daySection,
     '',

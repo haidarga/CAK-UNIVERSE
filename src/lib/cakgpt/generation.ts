@@ -13,6 +13,7 @@ import { runRuleBasedQc } from '@/lib/cakgpt/qc-rules'
 import { getGeminiApiKey } from '@/lib/cakgpt/settings'
 import { parseSteeringDurationS } from '@/lib/cakgpt/steering'
 import { brandQcWords, parseBrandContext, type BrandContext } from '@/lib/cakgpt/brand-context'
+import { resolveContentFormat } from '@/lib/cakgpt/content-formats'
 
 export type GenerateNaskahParams = {
   supabase: SupabaseClient // service-role client — system-initiated writes
@@ -22,6 +23,8 @@ export type GenerateNaskahParams = {
   personaIdOverride?: string
   hookRubricIdOverride?: string
   extraContext?: string
+  // Locked content format (preset key or the writer's own free text).
+  contentFormat?: string | null
   // Multi-day fan-out: which day of how many this naskah covers for the topic.
   // Omitted = single-day (unchanged behavior).
   dayNo?: number
@@ -138,6 +141,11 @@ export function composeNaskahTitle(
   // topic × persona. Without it they'd all share one title and be impossible to
   // tell apart in the triage queue.
   day?: { no?: number; total?: number },
+  // Content format label. Included because a fan-out across formats produces
+  // several naskah for the SAME topic × persona — without it the queue shows
+  // duplicate-looking rows and the writer cannot tell the talking head from the
+  // vlog until they open both.
+  formatLabel?: string | null,
 ): string {
   const fields = brief.fields || {}
   const topic = fieldLookup(fields, /\b(topic|topik|tema|subject)\b/i) || brief.title
@@ -147,7 +155,7 @@ export function composeNaskahTitle(
   // Only shown when the run actually spans multiple days — a 1-day run keeps
   // the exact title format it had before this feature existed.
   const daySuffix = day?.no && (day.total ?? 1) > 1 ? `Hari ${day.no}${day.total ? `/${day.total}` : ''}` : ''
-  return [prefix, topic, personaName, daySuffix].filter(Boolean).join(' · ')
+  return [prefix, topic, personaName, daySuffix, formatLabel?.trim() || ''].filter(Boolean).join(' · ')
 }
 
 export async function generateNaskah(params: GenerateNaskahParams): Promise<GenerateNaskahResult> {
@@ -221,6 +229,7 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
   // as a hard number, so a steered "10 detik" has to actually replace that
   // number — asking the model in prose to prefer the steering loses to the
   // explicit contradicting figure and it kept writing the brief's 30s.
+  const contentFormat = resolveContentFormat(params.contentFormat)
   const steeredDurationS = parseSteeringDurationS(params.extraContext)
   const targetDurationS = steeredDurationS ?? resolveTargetDurationS(brief.fields)
   const aspectRatio = '9:16'
@@ -237,6 +246,7 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
       brandContext,
       brandName: brandClient?.name || null,
       extraContext: params.extraContext,
+      contentFormat,
       dayNo: params.dayNo,
       dayTotal: params.dayTotal,
       assignedHook: pickHookForNaskah({
@@ -291,11 +301,12 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
       persona_id: personaId,
       // Readable, scannable title (week · day · topic · persona) so the fan-out
       // doesn't produce a queue full of "Untitled naskah".
-      title: composeNaskahTitle(brief, persona.name, { no: params.dayNo, total: params.dayTotal }),
+      title: composeNaskahTitle(brief, persona.name, { no: params.dayNo, total: params.dayTotal }, contentFormat?.label),
       // Stored as a real column (not just inside the title) so lists can ORDER
       // BY it — jobs finish out of order, so any timestamp sort scrambles a
       // series. Null for single-day naskah.
       day_no: params.dayNo ?? null,
+      content_format: params.contentFormat || null,
       status: 'draft',
       source: params.sourceIdeaSessionId ? 'promoted_from_idea' : 'generated',
       source_idea_session_id: params.sourceIdeaSessionId || null,

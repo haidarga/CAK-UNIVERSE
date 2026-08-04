@@ -79,6 +79,11 @@ export const GenerateBatchItemSchema = z.object({
   // Optional writer steering ("arahan") applied to this fan-out item — shapes
   // how the naskah turns out. Empty/omitted = plain direct generate.
   extra_context: z.string().max(4000).nullable().optional(),
+  // Content format ("tipe konten") for this naskah — a preset key
+  // ('talking_head', 'vlog', …) or free text the writer invented. Unlike
+  // extra_context this is a LOCKED constraint, not a hint: format asked for as
+  // steering prose was reliably ignored, which is why it has its own field.
+  content_format: z.string().max(120).nullable().optional(),
   // Multi-day fan-out: which day of how many this naskah is for. Both null
   // (the default) = the original one-naskah-per-(brief x persona) behavior.
   // Capped so one click can't quietly enqueue a month-per-topic run.

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Check, X, Sparkles, RefreshCw, FileUp, FileDown, ExternalLink, Pencil, Save, RotateCcw, ShieldCheck, ChevronDown, Link2, Zap, FileSpreadsheet, Plus, Trash2 } from 'lucide-react'
 import { MAX_DAY_TOTAL, MAX_FANOUT_ITEMS } from '@/lib/cakgpt/schemas'
 import { deleteBlockAt, insertBlockAfter, MAX_EDITED_BLOCKS } from '@/lib/cakgpt/blocks'
+import { ContentFormatPicker } from '@/components/cakgpt/ContentFormatPicker'
 
 type QueueItem = {
   naskah_id: string
@@ -73,6 +74,9 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
   // Optional writer steering ("arahan") applied to this fan-out — empty = plain
   // direct generate (decision #2 + steering feature).
   const [steering, setSteering] = useState('')
+  // Content format ('tipe konten') — a LOCKED constraint, unlike the free
+  // steering above. Several selected = one naskah per format.
+  const [activeFormats, setActiveFormats] = useState<string[]>([])
   // Multi-day fan-out: naskah per (brief × persona). 1 = original behavior.
   const [days, setDays] = useState(1)
   const clampDays = (d: number) => Math.max(1, Math.min(MAX_DAY_TOTAL, d))
@@ -317,13 +321,18 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
       setGenProgress(`Kebanyakan: ${fanoutCount.toLocaleString('id-ID')} naskah (maks ${MAX_FANOUT_ITEMS.toLocaleString('id-ID')}/run) — kurangi hari/persona/brief.`)
       return
     }
+    // Content format is the fourth fan-out dimension. No selection sends no
+    // format field, keeping an unconstrained run identical to before.
+    const formats: Array<string | undefined> = activeFormats.length > 0 ? activeFormats : [undefined]
     const genItems = selectedBriefIds.flatMap((briefId) =>
       personaIds.flatMap((personaId) =>
-        dayTotal === 1
-          ? [{ brief_id: briefId, persona_id: personaId, extra_context: arahan }]
-          : Array.from({ length: dayTotal }, (_, i) => ({
-              brief_id: briefId, persona_id: personaId, extra_context: arahan, day_no: i + 1, day_total: dayTotal,
-            })),
+        formats.flatMap((content_format) =>
+          dayTotal === 1
+            ? [{ brief_id: briefId, persona_id: personaId, extra_context: arahan, content_format }]
+            : Array.from({ length: dayTotal }, (_, i) => ({
+                brief_id: briefId, persona_id: personaId, extra_context: arahan, content_format, day_no: i + 1, day_total: dayTotal,
+              })),
+        ),
       ),
     )
     setGenerating(true)
@@ -700,7 +709,7 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
 
   // Same clamp the request uses, so the button label can never disagree with
   // what actually gets enqueued.
-  const fanoutCount = selectedBriefIds.length * (selectedPersonaIds.length || 1) * clampDays(days)
+  const fanoutCount = selectedBriefIds.length * (selectedPersonaIds.length || 1) * clampDays(days) * Math.max(1, activeFormats.length)
   const displayBlocks = editing ? (editedBlocks || []) : (detail?.naskah.current_version?.body || [])
 
   return (
@@ -861,6 +870,10 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
                   placeholder="mis. Bikin lebih santai & lucu, buka pakai pertanyaan, sisipin CTA follow di akhir, hindari kata 'guys'…"
                   className="w-full resize-y rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-text outline-none placeholder:text-mutedText focus:border-primary"
                 />
+              </div>
+
+              <div className="pt-0.5">
+                <ContentFormatPicker value={activeFormats} onChange={setActiveFormats} disabled={generating} />
               </div>
 
               <div className="flex items-center gap-2 pt-0.5">
