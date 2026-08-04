@@ -1,5 +1,6 @@
 import type { Platform, ScrapedAccount, ScrapedPost, ScraperProvider } from '@/lib/cakgpt/strategist/types'
 import { ScraperError } from '@/lib/cakgpt/strategist/errors'
+import { pull, num, str, truthy, toIso, normalizeAccount } from '@/lib/cakgpt/strategist/providers/normalize'
 
 // RapidAPI scraper adapter — concrete per-platform because the two subscribed
 // APIs differ in method, params, and response shape, and neither returns
@@ -28,119 +29,8 @@ const IG_PROVIDER = (process.env.RAPIDAPI_INSTAGRAM_PROVIDER || 'statistics').to
 const POST_COUNT = 30 // TikTok: recent videos to pull
 const IG_POST_LIMIT = 30 // IG: recent posts to keep (Statistics /posts returns up to ~280)
 
-// ── Defensive field pickers ──────────────────────────────────────────────────
-function pull(obj: unknown, paths: string[]): unknown {
-  for (const path of paths) {
-    let cur: unknown = obj
-    let ok = true
-    for (const seg of path.split('.')) {
-      if (cur && typeof cur === 'object' && seg in (cur as Record<string, unknown>)) {
-        cur = (cur as Record<string, unknown>)[seg]
-      } else {
-        ok = false
-        break
-      }
-    }
-    if (ok && cur !== undefined && cur !== null) return cur
-  }
-  return undefined
-}
-
-function num(v: unknown): number | null {
-  if (typeof v === 'number' && Number.isFinite(v)) return v
-  if (typeof v === 'string') {
-    const n = Number(v.replace(/[, ]/g, ''))
-    if (Number.isFinite(n)) return n
-  }
-  return null
-}
-
-function str(v: unknown): string | null {
-  return typeof v === 'string' && v.trim() ? v.trim() : null
-}
-
-// Providers report verification as true | "true" | 1 — normalize them all.
-function truthy(v: unknown): boolean {
-  return v === true || v === 1 || v === 'true' || v === '1'
-}
-
-function toIso(v: unknown): string | null {
-  const n = num(v)
-  if (n !== null && n > 0) {
-    // Heuristic: 13-digit = ms epoch, else seconds.
-    const ms = n > 1e12 ? n : n * 1000
-    const d = new Date(ms)
-    if (!Number.isNaN(d.getTime())) return d.toISOString()
-  }
-  const s = str(v)
-  if (s) {
-    const d = new Date(s)
-    if (!Number.isNaN(d.getTime())) return d.toISOString()
-  }
-  return null
-}
-
-// ── Normalizers (shared across platforms via broad candidate paths) ──────────
-function normalizePosts(raw: unknown): ScrapedPost[] {
-  const list = pull(raw, [
-    'data.videos', 'videos', // tiktok-scraper7
-    'data.items', 'items', 'result.items', 'result', // instagram120 variants
-    'data.data.items', 'data.posts', 'posts', 'aweme_list',
-    'data.user.edge_owner_to_timeline_media.edges', 'edges', // IG GraphQL
-  ]) as unknown[]
-  if (!Array.isArray(list)) return []
-  return list
-    .map((entry): ScrapedPost | null => {
-      // IG GraphQL wraps each post in { node: {...} } — unwrap it.
-      const item =
-        entry && typeof entry === 'object' && 'node' in (entry as Record<string, unknown>)
-          ? (entry as Record<string, unknown>).node
-          : entry
-      const likes = num(pull(item, ['digg_count', 'like_count', 'likes', 'statistics.digg_count', 'edge_liked_by.count', 'edge_media_preview_like.count']))
-      const comments = num(pull(item, ['comment_count', 'comments', 'statistics.comment_count', 'edge_media_to_comment.count']))
-      if (likes === null && comments === null) return null
-      return {
-        id: str(pull(item, ['id', 'aweme_id', 'pk', 'video_id', 'shortcode', 'code'])),
-        views: num(pull(item, ['play_count', 'view_count', 'views', 'statistics.play_count', 'video_view_count', 'ig_play_count'])),
-        likes,
-        comments,
-        shares: num(pull(item, ['share_count', 'shares', 'statistics.share_count', 'reshare_count'])),
-        saves: num(pull(item, ['collect_count', 'save_count', 'saved'])),
-        takenAt: toIso(pull(item, ['create_time', 'created_at', 'taken_at', 'taken_at_timestamp', 'timestamp', 'device_timestamp'])),
-        caption: str(pull(item, ['desc', 'caption', 'title', 'caption.text', 'edge_media_to_caption.edges.0.node.text'])),
-      }
-    })
-    .filter((p): p is ScrapedPost => p !== null)
-}
-
-function normalizeAccount(platform: Platform, handle: string, accountRaw: unknown, postsRaw: unknown): ScrapedAccount {
-  const followers = num(
-    pull(accountRaw, [
-      'data.stats.followerCount', 'stats.followerCount', // tiktok-scraper7
-      'follower_count', 'data.follower_count',
-      'edge_followed_by.count', 'user.edge_followed_by.count', 'data.user.edge_followed_by.count',
-      'result.user.edge_followed_by.count', 'graphql.user.edge_followed_by.count', // IG variants
-      'usersCount', 'data.usersCount', 'followers',
-    ]),
-  )
-  if (followers === null) {
-    throw new ScraperError('Data akun nggak kebaca — kemungkinan akun privat, nggak ada, atau format response provider berbeda.')
-  }
-  return {
-    platform,
-    handle,
-    displayName: str(pull(accountRaw, ['data.user.nickname', 'user.nickname', 'nickname', 'full_name', 'data.full_name', 'data.user.full_name', 'result.user.full_name', 'user.full_name', 'name', 'screenName'])),
-    bio: str(pull(accountRaw, ['data.user.signature', 'user.signature', 'signature', 'biography', 'data.biography', 'data.user.biography', 'result.user.biography', 'user.biography', 'description'])),
-    followers,
-    following: num(pull(accountRaw, ['data.stats.followingCount', 'following_count', 'edge_follow.count', 'user.edge_follow.count'])),
-    totalPosts: num(pull(accountRaw, ['data.stats.videoCount', 'media_count', 'edge_owner_to_timeline_media.count', 'data.user.edge_owner_to_timeline_media.count', 'result.user.edge_owner_to_timeline_media.count', 'aweme_count'])),
-    verified: truthy(pull(accountRaw, ['data.user.verified', 'is_verified', 'verified', 'data.user.is_verified', 'user.is_verified', 'result.user.is_verified'])),
-    avatarUrl: str(pull(accountRaw, ['data.user.avatarLarger', 'profile_pic_url_hd', 'profile_pic_url', 'avatar_url', 'data.user.profile_pic_url', 'result.user.profile_pic_url', 'hd_profile_pic_url_info.url', 'image'])),
-    recentPosts: normalizePosts(postsRaw),
-    scrapedAt: new Date().toISOString(),
-    provider: 'rapidapi',
-  }
-}
+// Field pickers and normalizers now live in ./normalize.ts, shared with the
+// Zapi adapter — two copies of the candidate-path lists would drift apart.
 
 // ── HTTP ─────────────────────────────────────────────────────────────────────
 async function rapidFetch(host: string, path: string, init?: RequestInit): Promise<unknown> {
@@ -188,7 +78,7 @@ async function scrapeTikTok(handle: string): Promise<ScrapedAccount> {
     rapidFetch(TIKTOK_HOST, `/user/info?unique_id=${enc(handle)}`),
     rapidFetch(TIKTOK_HOST, `/user/posts?unique_id=${enc(handle)}&count=${POST_COUNT}&cursor=0`),
   ])
-  return normalizeAccount('tiktok', handle, info, posts)
+  return normalizeAccount('tiktok', handle, info, posts, 'rapidapi')
 }
 
 // instagram120: raw posts (2 calls). Kept as a fallback — rate-limits fast on the free tier.
@@ -197,7 +87,7 @@ async function scrapeInstagram120(handle: string): Promise<ScrapedAccount> {
     rapidFetch(IG_HOST, '/api/instagram/userInfo', { method: 'POST', body: JSON.stringify({ username: handle }) }),
     rapidFetch(IG_HOST, '/api/instagram/posts', { method: 'POST', body: JSON.stringify({ username: handle, maxId: '' }) }),
   ])
-  return normalizeAccount('instagram', handle, info, posts)
+  return normalizeAccount('instagram', handle, info, posts, 'rapidapi')
 }
 
 // Instagram Statistics API. Two endpoints, both verified live:

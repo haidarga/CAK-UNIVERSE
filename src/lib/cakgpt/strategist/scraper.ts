@@ -1,6 +1,8 @@
 import type { Platform, ScrapedAccount, ScraperProvider } from '@/lib/cakgpt/strategist/types'
 import { ScraperError } from '@/lib/cakgpt/strategist/errors'
 import { rapidApiProvider } from '@/lib/cakgpt/strategist/providers/rapidapi'
+import { zapiProvider } from '@/lib/cakgpt/strategist/providers/zapi'
+import { zapiConfigured } from '@/lib/integrations/scrapers/zapi'
 
 export { ScraperError }
 
@@ -62,16 +64,39 @@ const mockProvider: ScraperProvider = {
   },
 }
 
-function selectProvider(): ScraperProvider {
-  const choice = (process.env.STRATEGIST_SCRAPER || 'rapidapi').toLowerCase()
+export function selectProvider(): ScraperProvider {
+  const choice = (process.env.STRATEGIST_SCRAPER || (zapiConfigured() ? 'zapi' : 'rapidapi')).toLowerCase()
   if (choice === 'mock') return mockProvider
+  if (choice === 'zapi') return zapiProvider
   if (choice === 'rapidapi') return rapidApiProvider
-  throw new ScraperError(`Unknown STRATEGIST_SCRAPER: "${choice}" (expected "rapidapi" or "mock")`)
+  throw new ScraperError(`Unknown STRATEGIST_SCRAPER: "${choice}" (expected "zapi", "rapidapi" or "mock")`)
+}
+
+// The provider to try when the primary one fails. Only ever a DIFFERENT real
+// provider — falling back to mock would silently replace a failed scrape with
+// invented numbers, which is the one thing Strategist Mode must never do.
+export function selectFallbackProvider(primary: ScraperProvider): ScraperProvider | null {
+  if (primary.name === 'zapi' && process.env.RAPIDAPI_KEY) return rapidApiProvider
+  if (primary.name === 'rapidapi' && zapiConfigured()) return zapiProvider
+  return null
 }
 
 export async function scrapeAccount(platform: Platform, handle: string): Promise<ScrapedAccount> {
   const provider = selectProvider()
-  const account = await provider.scrape(platform, handle)
+  let account: ScrapedAccount
+  try {
+    account = await provider.scrape(platform, handle)
+  } catch (primaryErr) {
+    // Automatic failover: a provider outage, rate limit, or plan gate should
+    // not take the feature down when a second key is configured.
+    const fallback = selectFallbackProvider(provider)
+    if (!fallback) throw primaryErr
+    console.warn(`[strategist] ${provider.name} failed, falling back to ${fallback.name}:`, primaryErr instanceof Error ? primaryErr.message : primaryErr)
+    account = await fallback.scrape(platform, handle)
+  }
+
+  // An account with no analysable posts is not a provider failure — retrying on
+  // the fallback would just burn a second quota for the same empty answer.
   if (!account.recentPosts || account.recentPosts.length === 0) {
     throw new ScraperError('Akun ditemukan tapi nggak ada post publik yang bisa dianalisis.')
   }

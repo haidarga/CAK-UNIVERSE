@@ -24,6 +24,7 @@
 // ============================================================
 import { scrapeTikTokHashtag } from "../integrations/scrapers/tiktok";
 import { scrapeInstagramHashtag, instagramSessionConfigured } from "../integrations/scrapers/instagram";
+import { enrichInstagramItems } from "../integrations/scrapers/zapi";
 import { searchYouTube } from "./youtube-search";
 import { searchSGE } from "../integrations/scrapers/sge";
 import {
@@ -165,7 +166,7 @@ async function fromInstagram(tag: string): Promise<ResearchItem[]> {
     if (via.length > 0) return via;
   }
   const raw = await scrapeInstagramHashtag(tag, PER_PLATFORM_LIMIT);
-  return raw.map((it) => ({
+  const items = raw.map((it) => ({
     platform: "instagram" as const,
     url: it.url,
     title: it.caption,
@@ -174,6 +175,11 @@ async function fromInstagram(tag: string): Promise<ResearchItem[]> {
     thumbnail: it.thumbnail,
     score: 0,
   }));
+  // This path reads counts off the rendered DOM, so a post whose numbers did
+  // not parse looks like it has zero reach and sinks in a ranking that sorts by
+  // views. Zapi returns them as integers. Best-effort and quota-free when the
+  // scrape already worked — see enrichInstagramItems.
+  return enrichInstagramItems(items);
 }
 
 async function fromYouTube(topic: string, region = "ID"): Promise<ResearchItem[]> {
