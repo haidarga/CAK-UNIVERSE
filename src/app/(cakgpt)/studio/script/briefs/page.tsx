@@ -43,7 +43,7 @@ export default async function BriefsPage() {
               <p className="text-sm text-mutedText">No briefs yet. Add the first one on the right.</p>
             </div>
           ) : (
-            <BriefsManager briefs={briefs} clientNames={clientNames} personaNames={personaNames} />
+            <BriefsManager briefs={briefs} clientNames={clientNames} personaNames={personaNames} personas={personas || []} activeClientId={activeClient} />
           )}
         </div>
 
