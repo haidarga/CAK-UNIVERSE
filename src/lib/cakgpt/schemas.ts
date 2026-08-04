@@ -84,6 +84,8 @@ export const GenerateBatchItemSchema = z.object({
   // extra_context this is a LOCKED constraint, not a hint: format asked for as
   // steering prose was reliably ignored, which is why it has its own field.
   content_format: z.string().max(120).nullable().optional(),
+  // Which Script Pakem (brand house structure) to build this naskah against.
+  pakem_id: z.string().uuid().nullable().optional(),
   // Multi-day fan-out: which day of how many this naskah is for. Both null
   // (the default) = the original one-naskah-per-(brief x persona) behavior.
   // Capped so one click can't quietly enqueue a month-per-topic run.

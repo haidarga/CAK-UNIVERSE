@@ -14,6 +14,7 @@ import { getGeminiApiKey } from '@/lib/cakgpt/settings'
 import { parseSteeringDurationS } from '@/lib/cakgpt/steering'
 import { brandQcWords, parseBrandContext, type BrandContext } from '@/lib/cakgpt/brand-context'
 import { resolveContentFormat } from '@/lib/cakgpt/content-formats'
+import { parsePakemStructure } from '@/lib/cakgpt/script-pakem'
 
 export type GenerateNaskahParams = {
   supabase: SupabaseClient // service-role client — system-initiated writes
@@ -25,6 +26,8 @@ export type GenerateNaskahParams = {
   extraContext?: string
   // Locked content format (preset key or the writer's own free text).
   contentFormat?: string | null
+  // Which Script Pakem (brand house structure) to build against.
+  pakemId?: string | null
   // Multi-day fan-out: which day of how many this naskah covers for the topic.
   // Omitted = single-day (unchanged behavior).
   dayNo?: number
@@ -230,6 +233,17 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
   // number — asking the model in prose to prefer the steering loses to the
   // explicit contradicting figure and it kept writing the brief's 30s.
   const contentFormat = resolveContentFormat(params.contentFormat)
+  // Loaded by id rather than passed inline so an edit to the pakem applies to
+  // jobs already queued against it — the queue can sit for minutes.
+  const pakemRow = params.pakemId
+    ? (await supabase
+        .from('sw_script_pakem')
+        .select('name, structure')
+        .eq('id', params.pakemId)
+        .eq('created_by', createdBy)
+        .maybeSingle()).data
+    : null
+  const pakem = parsePakemStructure(pakemRow?.structure)
   const steeredDurationS = parseSteeringDurationS(params.extraContext)
   const targetDurationS = steeredDurationS ?? resolveTargetDurationS(brief.fields)
   const aspectRatio = '9:16'
@@ -247,6 +261,8 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
       brandName: brandClient?.name || null,
       extraContext: params.extraContext,
       contentFormat,
+      pakem,
+      pakemName: pakemRow?.name ?? null,
       dayNo: params.dayNo,
       dayTotal: params.dayTotal,
       assignedHook: pickHookForNaskah({
@@ -307,6 +323,7 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
       // series. Null for single-day naskah.
       day_no: params.dayNo ?? null,
       content_format: params.contentFormat || null,
+      pakem_id: params.pakemId || null,
       status: 'draft',
       source: params.sourceIdeaSessionId ? 'promoted_from_idea' : 'generated',
       source_idea_session_id: params.sourceIdeaSessionId || null,

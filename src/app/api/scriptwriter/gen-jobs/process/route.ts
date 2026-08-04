@@ -37,7 +37,7 @@ export async function POST(req: Request) {
   // sw_claim_gen_jobs `returns setof sw_gen_jobs` (returning g.*), so columns
   // added to the table — day_no/day_total here — flow through with no RPC change.
   const jobs = (claimed || []) as Array<{
-    id: string; brief_id: string; persona_id: string | null; extra_context: string | null; content_format: string | null
+    id: string; brief_id: string; persona_id: string | null; extra_context: string | null; content_format: string | null; pakem_id: string | null
     day_no: number | null; day_total: number | null; attempts: number
   }>
   let done = 0
@@ -53,6 +53,7 @@ export async function POST(req: Request) {
         personaIdOverride: job.persona_id || undefined,
         extraContext: job.extra_context || undefined,
         contentFormat: job.content_format,
+        pakemId: job.pakem_id,
         dayNo: job.day_no ?? undefined,
         dayTotal: job.day_total ?? undefined,
         skipCritic: true, // bulk fast-path: rule-QC now, full critic on demand via /qc/rerun

@@ -5,6 +5,7 @@ import { Check, X, Sparkles, RefreshCw, FileUp, FileDown, ExternalLink, Pencil, 
 import { MAX_DAY_TOTAL, MAX_FANOUT_ITEMS } from '@/lib/cakgpt/schemas'
 import { deleteBlockAt, insertBlockAfter, MAX_EDITED_BLOCKS } from '@/lib/cakgpt/blocks'
 import { ContentFormatPicker } from '@/components/cakgpt/ContentFormatPicker'
+import { PakemPicker } from '@/components/cakgpt/PakemPicker'
 
 type QueueItem = {
   naskah_id: string
@@ -77,6 +78,7 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
   // Content format ('tipe konten') — a LOCKED constraint, unlike the free
   // steering above. Several selected = one naskah per format.
   const [activeFormats, setActiveFormats] = useState<string[]>([])
+  const [pakemId, setPakemId] = useState<string | null>(null)
   // Multi-day fan-out: naskah per (brief × persona). 1 = original behavior.
   const [days, setDays] = useState(1)
   const clampDays = (d: number) => Math.max(1, Math.min(MAX_DAY_TOTAL, d))
@@ -328,9 +330,9 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
       personaIds.flatMap((personaId) =>
         formats.flatMap((content_format) =>
           dayTotal === 1
-            ? [{ brief_id: briefId, persona_id: personaId, extra_context: arahan, content_format }]
+            ? [{ brief_id: briefId, persona_id: personaId, extra_context: arahan, content_format, pakem_id: pakemId || undefined }]
             : Array.from({ length: dayTotal }, (_, i) => ({
-                brief_id: briefId, persona_id: personaId, extra_context: arahan, content_format, day_no: i + 1, day_total: dayTotal,
+                brief_id: briefId, persona_id: personaId, extra_context: arahan, content_format, pakem_id: pakemId || undefined, day_no: i + 1, day_total: dayTotal,
               })),
         ),
       ),
@@ -874,6 +876,10 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
 
               <div className="pt-0.5">
                 <ContentFormatPicker value={activeFormats} onChange={setActiveFormats} disabled={generating} />
+              </div>
+
+              <div className="pt-0.5">
+                <PakemPicker clientId={batchClientId} value={pakemId} onChange={setPakemId} selectedFormats={activeFormats} disabled={generating} />
               </div>
 
               <div className="flex items-center gap-2 pt-0.5">

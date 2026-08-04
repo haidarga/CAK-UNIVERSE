@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Pencil, Trash2, Check, X, Wand2, Loader2 } from 'lucide-react'
 import { BrandContextEditor } from '@/components/cakgpt/BrandContextEditor'
+import { PakemManager } from '@/components/cakgpt/PakemManager'
 import {
   EMPTY_BRAND_CONTEXT,
   isBrandContextEmpty,
@@ -80,6 +81,12 @@ export function ClientsManager({ clients, briefCounts }: {
 
                 <div className="border-t border-border pt-3">
                   <BrandContextEditor brandName={name} value={brandContext} onChange={setBrandContext} />
+                </div>
+
+                {/* Pakem rows FK to the client, so this is edit-only — a brand
+                    being created has no id to attach them to yet. */}
+                <div className="border-t border-border pt-3">
+                  <PakemManager clientId={c.id} clientName={c.name} />
                 </div>
 
                 <div className="flex gap-2">

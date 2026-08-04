@@ -10,6 +10,7 @@
 import { steeringMentions } from '@/lib/cakgpt/steering'
 import { brandContextSection, type BrandContext } from '@/lib/cakgpt/brand-context'
 import { contentFormatSection, type ContentFormat } from '@/lib/cakgpt/content-formats'
+import { pakemSection, type PakemStructure } from '@/lib/cakgpt/script-pakem'
 
 const MAX_FIELD_LEN = 4000
 
@@ -120,6 +121,8 @@ export function buildGenerationPrompt(opts: {
   brandContext?: BrandContext | null
   brandName?: string | null
   contentFormat?: ContentFormat | null
+  pakem?: PakemStructure | null
+  pakemName?: string | null
 }): string {
   // One hook, CHOSEN BY THE CALLER (see pickHookForNaskah in generation.ts) —
   // not a menu for the model to pick from. The bank is a pool drawn per persona
@@ -212,6 +215,10 @@ export function buildGenerationPrompt(opts: {
     // brief describes what to say — a brief read first pulls every naskah back
     // toward the same directed product demo regardless of the format asked for.
     contentFormatSection(opts.contentFormat || null),
+    // Below the content format on purpose: format decides the KIND of video, the
+    // pakem shapes it. When the two disagree the format wins and the pakem still
+    // supplies beat order, pacing and voice.
+    pakemSection(opts.pakem, opts.pakemName),
     // Brand rules sit between the writer's steering and the brief: they are a
     // standing contract with the client, so a single brief must not quietly
     // contradict them — but the writer still gets the final say per naskah.
