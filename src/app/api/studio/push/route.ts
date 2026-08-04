@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/cakgpt/supabase/server'
 import { requireUser } from '@/lib/cakgpt/auth'
 import { blocksToStudioShots, blocksToRawText } from '@/lib/studio-mapper'
 import { NextResponse } from 'next/server'
+import { isVideoOutput } from '@/lib/cakgpt/output-types'
 
 const MAX_PUSH_PER_REQUEST = 100
 
@@ -63,7 +64,7 @@ export async function POST(req: Request) {
   const { data: swNaskah } = await supabase
     .from('sw_naskah')
     .select(`
-      id, title, status, batch_id, brief_id, persona_id, studio_handoff,
+      id, title, status, batch_id, brief_id, persona_id, studio_handoff, output_type,
       current_version_id,
       sw_personas!inner(id, name)
     `)
@@ -78,7 +79,7 @@ export async function POST(req: Request) {
     const { data: legacyNaskah } = await supabase
       .from('naskah')
       .select(`
-        id, title, status, batch_id, brief_id, persona_id, studio_handoff,
+        id, title, status, batch_id, brief_id, persona_id, studio_handoff, output_type,
         current_version_id,
         personas!inner(id, name)
       `)
@@ -88,6 +89,19 @@ export async function POST(req: Request) {
 
   if (!naskahRows || naskahRows.length === 0) {
     return NextResponse.json({ ok: false, error: 'Failed to fetch naskah items' }, { status: 404 })
+  }
+
+  // Authoritative guard: the Video Studio renders SHOTS. A carousel or an
+  // article has no shots, so pushing one would spend fal.ai render quota
+  // producing nonsense. The UI disables the button too, but this is what
+  // actually enforces it — a direct API call must not get through.
+  const nonVideo = naskahRows.filter((n) => !isVideoOutput((n as { output_type?: string | null }).output_type))
+  if (nonVideo.length > 0) {
+    return NextResponse.json({
+      ok: false,
+      error: `${nonVideo.length} naskah bukan tipe video (slideshow/artikel) — gak bisa masuk Video Studio. Pakai Push ke Docs atau Spreadsheet.`,
+      non_video_ids: nonVideo.map((n) => n.id),
+    }, { status: 400 })
   }
 
   // If any pushed naskah are still in draft, auto-approve them on push

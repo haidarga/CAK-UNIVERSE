@@ -15,6 +15,7 @@ import { parseSteeringDurationS } from '@/lib/cakgpt/steering'
 import { brandQcWords, parseBrandContext, type BrandContext } from '@/lib/cakgpt/brand-context'
 import { resolveContentFormat } from '@/lib/cakgpt/content-formats'
 import { parsePakemStructure } from '@/lib/cakgpt/script-pakem'
+import { resolveOutputType } from '@/lib/cakgpt/output-types'
 
 export type GenerateNaskahParams = {
   supabase: SupabaseClient // service-role client — system-initiated writes
@@ -28,6 +29,8 @@ export type GenerateNaskahParams = {
   contentFormat?: string | null
   // Which Script Pakem (brand house structure) to build against.
   pakemId?: string | null
+  // 'video' | 'slideshow' | 'article'. Null = video.
+  outputType?: string | null
   // Multi-day fan-out: which day of how many this naskah covers for the topic.
   // Omitted = single-day (unchanged behavior).
   dayNo?: number
@@ -244,6 +247,7 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
         .maybeSingle()).data
     : null
   const pakem = parsePakemStructure(pakemRow?.structure)
+  const outputType = resolveOutputType(params.outputType)
   const steeredDurationS = parseSteeringDurationS(params.extraContext)
   const targetDurationS = steeredDurationS ?? resolveTargetDurationS(brief.fields)
   const aspectRatio = '9:16'
@@ -263,6 +267,7 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
       contentFormat,
       pakem,
       pakemName: pakemRow?.name ?? null,
+      outputType,
       dayNo: params.dayNo,
       dayTotal: params.dayTotal,
       assignedHook: pickHookForNaskah({
@@ -324,6 +329,7 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
       day_no: params.dayNo ?? null,
       content_format: params.contentFormat || null,
       pakem_id: params.pakemId || null,
+      output_type: params.outputType || null,
       status: 'draft',
       source: params.sourceIdeaSessionId ? 'promoted_from_idea' : 'generated',
       source_idea_session_id: params.sourceIdeaSessionId || null,

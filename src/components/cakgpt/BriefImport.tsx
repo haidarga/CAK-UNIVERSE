@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { Upload, ClipboardPaste, FileText, X, Sparkles, Loader2, ExternalLink, Brain, CheckSquare, Square, Trash2 } from 'lucide-react'
 import { ContentFormatPicker } from '@/components/cakgpt/ContentFormatPicker'
 import { PakemPicker } from '@/components/cakgpt/PakemPicker'
+import { OutputTypePicker } from '@/components/cakgpt/OutputTypePicker'
+import { resolveOutputType } from '@/lib/cakgpt/output-types'
 import { uploadFileForImport, MAX_IMPORT_UPLOAD_BYTES } from '@/lib/cakgpt/upload-client'
 import { MAX_DAY_TOTAL, MAX_FANOUT_ITEMS, MAX_SOURCES } from '@/lib/cakgpt/schemas'
 
@@ -56,6 +58,7 @@ export function BriefImport({ clients, personas }: {
   const [activeFormats, setActiveFormats] = useState<string[]>([])
   // Brand house structure to build against. Null = unconstrained, as before.
   const [pakemId, setPakemId] = useState<string | null>(null)
+  const [outputType, setOutputType] = useState<string>('video')
   // Multi-day fan-out: how many naskah to generate per (brief × persona).
   // 1 = the original behavior.
   const [days, setDays] = useState(1)
@@ -198,7 +201,7 @@ export function BriefImport({ clients, personas }: {
   function reset() {
     setBriefs(null); setText(''); setGdoc(''); setHint(''); setFileName(null); setSelectedPersonaIds([])
     setCommittedBriefs(null); setCreatedBatchId(null); setError(null); setProgress(null); setSteering(''); setDays(1)
-    setActiveFormats([]); setPakemId(null)
+    setActiveFormats([]); setPakemId(null); setOutputType('video')
     setHooks([]); setDetected([]); setHookNotice(null)
     if (fileRef.current) fileRef.current.value = ''
   }
@@ -302,7 +305,7 @@ export function BriefImport({ clients, personas }: {
       const personasByCluster = buildPersonasByCluster()
       const arahan = steering.trim() || undefined
       const dayTotal = clampDays(days)
-      const items: Array<{ brief_id: string; persona_id: string | null; extra_context?: string; content_format?: string; pakem_id?: string; day_no?: number; day_total?: number }> = []
+      const items: Array<{ brief_id: string; persona_id: string | null; extra_context?: string; content_format?: string; pakem_id?: string; output_type?: string; day_no?: number; day_total?: number }> = []
       const pakem_id = pakemId || undefined
       // Fourth dimension: content format. An empty selection sends no format
       // field at all, so a run without one is byte-identical to the old payload.
@@ -320,10 +323,10 @@ export function BriefImport({ clients, personas }: {
             // dayTotal === 1 sends no day fields at all, so a single-day run is
             // byte-identical to the pre-feature payload.
             if (dayTotal === 1) {
-              items.push({ brief_id: briefId, persona_id: personaId, extra_context: arahan, content_format, pakem_id })
+              items.push({ brief_id: briefId, persona_id: personaId, extra_context: arahan, content_format, pakem_id, output_type: outputType })
             } else {
               for (let d = 1; d <= dayTotal; d++) {
-                items.push({ brief_id: briefId, persona_id: personaId, extra_context: arahan, content_format, pakem_id, day_no: d, day_total: dayTotal })
+                items.push({ brief_id: briefId, persona_id: personaId, extra_context: arahan, content_format, pakem_id, output_type: outputType, day_no: d, day_total: dayTotal })
               }
             }
           }
@@ -639,7 +642,13 @@ export function BriefImport({ clients, personas }: {
             />
           </div>
 
-          <ContentFormatPicker value={activeFormats} onChange={setActiveFormats} disabled={disabled} />
+          <OutputTypePicker value={outputType} onChange={setOutputType} disabled={disabled} />
+
+          {/* Content format describes a kind of VIDEO — hidden once the artifact
+              is a carousel or an article. */}
+          {resolveOutputType(outputType).supportsContentFormat && (
+            <ContentFormatPicker value={activeFormats} onChange={setActiveFormats} disabled={disabled} />
+          )}
 
           <PakemPicker clientId={clientId || null} value={pakemId} onChange={setPakemId} selectedFormats={activeFormats} disabled={disabled} />
 

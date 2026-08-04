@@ -6,6 +6,8 @@ import { MAX_DAY_TOTAL, MAX_FANOUT_ITEMS } from '@/lib/cakgpt/schemas'
 import { deleteBlockAt, insertBlockAfter, MAX_EDITED_BLOCKS } from '@/lib/cakgpt/blocks'
 import { ContentFormatPicker } from '@/components/cakgpt/ContentFormatPicker'
 import { PakemPicker } from '@/components/cakgpt/PakemPicker'
+import { OutputTypePicker } from '@/components/cakgpt/OutputTypePicker'
+import { resolveOutputType, isVideoOutput } from '@/lib/cakgpt/output-types'
 
 type QueueItem = {
   naskah_id: string
@@ -15,6 +17,7 @@ type QueueItem = {
   persona_name: string | null
   hook_type: string | null
   hook_name: string | null
+  output_type?: string | null
   flag_counts: { blocker: number; warning: number; nit: number }
   has_open_blockers: boolean
 }
@@ -45,7 +48,7 @@ type Flag = {
 }
 
 type NaskahDetail = {
-  naskah: { id: string; title: string | null; status: string; current_version: { body: Block[]; hook_justification: string | null } }
+  naskah: { id: string; title: string | null; status: string; output_type?: string | null; current_version: { body: Block[]; hook_justification: string | null } }
   flags: Flag[]
 }
 
@@ -79,6 +82,8 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
   // steering above. Several selected = one naskah per format.
   const [activeFormats, setActiveFormats] = useState<string[]>([])
   const [pakemId, setPakemId] = useState<string | null>(null)
+  // What artifact to produce. Video keeps every pre-existing behavior.
+  const [outputType, setOutputType] = useState<string>('video')
   // Multi-day fan-out: naskah per (brief × persona). 1 = original behavior.
   const [days, setDays] = useState(1)
   const clampDays = (d: number) => Math.max(1, Math.min(MAX_DAY_TOTAL, d))
@@ -330,9 +335,9 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
       personaIds.flatMap((personaId) =>
         formats.flatMap((content_format) =>
           dayTotal === 1
-            ? [{ brief_id: briefId, persona_id: personaId, extra_context: arahan, content_format, pakem_id: pakemId || undefined }]
+            ? [{ brief_id: briefId, persona_id: personaId, extra_context: arahan, content_format, pakem_id: pakemId || undefined, output_type: outputType }]
             : Array.from({ length: dayTotal }, (_, i) => ({
-                brief_id: briefId, persona_id: personaId, extra_context: arahan, content_format, pakem_id: pakemId || undefined, day_no: i + 1, day_total: dayTotal,
+                brief_id: briefId, persona_id: personaId, extra_context: arahan, content_format, pakem_id: pakemId || undefined, output_type: outputType, day_no: i + 1, day_total: dayTotal,
               })),
         ),
       ),
@@ -713,6 +718,12 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
   // what actually gets enqueued.
   const fanoutCount = selectedBriefIds.length * (selectedPersonaIds.length || 1) * clampDays(days) * Math.max(1, activeFormats.length)
   const displayBlocks = editing ? (editedBlocks || []) : (detail?.naskah.current_version?.body || [])
+  // The batch-level push covers every approved naskah in it, so it is only
+  // offered when the whole batch is video. The server enforces this too — a
+  // disabled button is convenience, not the guard.
+  const batchIsVideo = items.length === 0 || items.every((i) => isVideoOutput(i.output_type))
+  // What one block is called here — "shot" is wrong for a carousel or article.
+  const unitLabel = resolveOutputType(detail?.naskah.output_type).unit
 
   return (
     <div className="flex h-dvh flex-col">
@@ -767,8 +778,10 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
             </button>
           )}
           <div className="mx-1 h-5 w-px bg-border" />
-          <button onClick={() => pushToStudio()} disabled={studioPushing}
-            title="Push approved naskah to CAK Video Studio as production jobs"
+          <button onClick={() => pushToStudio()} disabled={studioPushing || !batchIsVideo}
+            title={batchIsVideo
+              ? 'Push approved naskah to CAK Video Studio as production jobs'
+              : 'Cuma naskah video yang bisa masuk Video Studio. Slideshow/artikel: pakai Push ke Docs atau Spreadsheet.'}
             className="flex items-center gap-1 rounded-md bg-gradient-to-r from-purple-600 to-pink-600 px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50 cursor-pointer shadow-sm shadow-purple-500/30">
             <Zap size={14} aria-hidden /> {studioPushing ? 'Pushing…' : '🎬 Push to Studio'}
           </button>
@@ -875,8 +888,16 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
               </div>
 
               <div className="pt-0.5">
-                <ContentFormatPicker value={activeFormats} onChange={setActiveFormats} disabled={generating} />
+                <OutputTypePicker value={outputType} onChange={setOutputType} disabled={generating} />
               </div>
+
+              {/* Content format describes a kind of VIDEO — meaningless once the
+                  artifact is a carousel or an article. */}
+              {resolveOutputType(outputType).supportsContentFormat && (
+                <div className="pt-0.5">
+                  <ContentFormatPicker value={activeFormats} onChange={setActiveFormats} disabled={generating} />
+                </div>
+              )}
 
               <div className="pt-0.5">
                 <PakemPicker clientId={batchClientId} value={pakemId} onChange={setPakemId} selectedFormats={activeFormats} disabled={generating} />
@@ -1008,8 +1029,10 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
                         <Check size={14} aria-hidden /> Approve
                       </button>
                       <div className="mx-0.5 h-4 w-px bg-border" />
-                      <button onClick={() => pushToStudio([detail.naskah.id])} disabled={studioPushing}
-                        title="Push THIS naskah directly to CAK Video Studio"
+                      <button onClick={() => pushToStudio([detail.naskah.id])} disabled={studioPushing || !isVideoOutput(detail.naskah.output_type)}
+                        title={isVideoOutput(detail.naskah.output_type)
+                          ? 'Push THIS naskah directly to CAK Video Studio'
+                          : 'Naskah non-video gak bisa masuk Video Studio — pakai Push ke Docs atau Spreadsheet.'}
                         className="flex items-center gap-1.5 rounded-md bg-gradient-to-r from-purple-600 to-pink-600 px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50 cursor-pointer shadow-sm shadow-purple-500/30">
                         <Zap size={14} aria-hidden /> {studioPushing ? 'Pushing…' : '🎬 Push to Studio'}
                       </button>
@@ -1046,7 +1069,7 @@ export function TriageQueue({ batchId, batchName, readyBriefs, personas, batchCl
                     <div key={block.block_id} className="rounded-lg border border-border bg-surface p-3.5">
                       <div className="flex items-center gap-1.5 font-data text-[10px] uppercase tracking-wider text-mutedText">
                         <span className="rounded bg-muted px-1.5 py-0.5 font-semibold text-text">{block.section_key}</span>
-                        <span>shot {block.shot_no} · line {block.line_no}{block.timestamp_range ? ` · ${block.timestamp_range}` : ''}</span>
+                        <span>{unitLabel} {block.shot_no} · line {block.line_no}{block.timestamp_range ? ` · ${block.timestamp_range}` : ''}</span>
                       </div>
                       {!editing ? (
                         <>

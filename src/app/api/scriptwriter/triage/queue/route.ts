@@ -21,7 +21,7 @@ export async function GET(req: Request) {
 
   let query = supabase
     .from('sw_naskah')
-    .select('id, title, status, current_version_id, updated_at, persona_id, brief_id, day_no, created_at')
+    .select('id, title, status, current_version_id, updated_at, persona_id, brief_id, day_no, output_type, created_at')
     .eq('created_by', user.id)
     .order('updated_at', { ascending: false })
     .limit(MAX_ITEMS)

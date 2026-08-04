@@ -52,7 +52,7 @@ export async function POST(req: Request) {
   // 1. Fetch naskah with current_version_id and persona
   let { data: naskahRows } = await supabase
     .from('sw_naskah')
-    .select('id, title, status, day_no, brief_id, persona_id, current_version_id, sw_personas(id, name)')
+    .select('id, title, status, day_no, brief_id, persona_id, current_version_id, output_type, sw_personas(id, name)')
     .in('id', targetIds)
 
   if (!naskahRows || naskahRows.length === 0) {
@@ -117,6 +117,7 @@ export async function POST(req: Request) {
       title: n.title,
       persona_name: persona?.name || 'Subject',
       day_series: n.title?.match(/Hari \d+(?:\/\d+)?/i)?.[0] || (n.day_no ? `Hari ${n.day_no}` : 'Hari 1/3'),
+      output_type: (n as any).output_type ?? null,
       body: currentVer?.body || [],
     }
   })

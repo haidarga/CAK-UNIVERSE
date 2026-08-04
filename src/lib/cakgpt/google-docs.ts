@@ -16,6 +16,7 @@
 //     pushed before this change.
 import type { Block, BlockInput } from '@/lib/cakgpt/schemas'
 import { generateBlockId } from '@/lib/cakgpt/block-id'
+import { isVideoOutput } from '@/lib/cakgpt/output-types'
 
 const DOCS_API = 'https://docs.googleapis.com/v1/documents'
 
@@ -82,7 +83,7 @@ export function docToPlainText(doc: { body?: { content?: unknown[] } }): string 
   return out.join('\n')
 }
 
-type NaskahForDoc = { naskah_id: string; title: string | null; body: Block[] }
+type NaskahForDoc = { naskah_id: string; title: string | null; body: Block[]; output_type?: string | null }
 
 // Shape of Document.namedRanges: a map from name -> the list of NamedRange
 // objects sharing that name, each carrying the actual index span(s). Shared
@@ -117,6 +118,9 @@ export function renderNaskahForDoc(n: NaskahForDoc): RenderedNaskah {
 }
 
 function renderNaskah(n: NaskahForDoc): RenderedNaskah {
+  // Null output_type means video — every naskah written before output types
+  // existed, and the only shape this renderer used to know.
+  const isVideo = isVideoOutput(n.output_type)
   const speakerRanges: RenderedNaskah['speakerRanges'] = []
   const noteRanges: RenderedNaskah['noteRanges'] = []
 
@@ -148,7 +152,8 @@ function renderNaskah(n: NaskahForDoc): RenderedNaskah {
 
     // Timecode leads the line so the client can see the beat structure without
     // reading the dialogue — muted, since it is production metadata, not copy.
-    if (block.timestamp_range?.trim()) {
+    // Skipped entirely for a carousel or an article, which have no timeline.
+    if (isVideo && block.timestamp_range?.trim()) {
       const tsStart = text.length
       text += `[${block.timestamp_range.trim()}] `
       noteRanges.push({ start: tsStart, end: text.length - 1 }) // exclude the trailing space
@@ -165,7 +170,9 @@ function renderNaskah(n: NaskahForDoc): RenderedNaskah {
     // Location / wardrobe / visual note, one indented muted line each. Blank
     // and whitespace-only values are skipped rather than rendered as a lone
     // icon — an empty "📍" reads as missing data the writer must go fix.
-    for (const key of ['location', 'wardrobe', 'visual_note'] as const) {
+    // Location and wardrobe describe a shoot; a slide or a paragraph only ever
+    // carries the visual note (image direction / image suggestion).
+    for (const key of (isVideo ? ['location', 'wardrobe', 'visual_note'] : ['visual_note']) as Array<'location' | 'wardrobe' | 'visual_note'>) {
       const value = block[key]
       if (typeof value !== 'string' || !value.trim()) continue
       const detailStart = text.length

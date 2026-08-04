@@ -1,6 +1,9 @@
 export function formatNaskahForSheetsExport(naskahList: any[]) {
   return naskahList.map((n, idx) => {
     const blocks: any[] = Array.isArray(n.body) ? n.body : []
+    // "Shot" is video wording. A carousel counts slides and an article counts
+    // sections — the client reads this column, so it has to say the right word.
+    const unitLabel = n.output_type === 'slideshow' ? 'Slide' : n.output_type === 'article' ? 'Bagian' : 'Shot'
 
     const hookParts: string[] = []
     const bodyParts: string[] = []
@@ -10,7 +13,7 @@ export function formatNaskahForSheetsExport(naskahList: any[]) {
     blocks.forEach((b, blockIdx) => {
       const text = (b.text || '').trim()
       const speaker = (b.speaker || '').trim()
-      const shotLabel = `[Shot ${b.shot_no || blockIdx + 1}]`
+      const shotLabel = `[${unitLabel} ${b.shot_no || blockIdx + 1}]`
       const lineText = speaker ? `${shotLabel} ${speaker}: ${text}` : `${shotLabel} ${text}`
       const key = (b.section_key || b.type || '').toLowerCase()
 

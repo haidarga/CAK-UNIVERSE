@@ -11,6 +11,7 @@ import { steeringMentions } from '@/lib/cakgpt/steering'
 import { brandContextSection, type BrandContext } from '@/lib/cakgpt/brand-context'
 import { contentFormatSection, type ContentFormat } from '@/lib/cakgpt/content-formats'
 import { pakemSection, type PakemStructure } from '@/lib/cakgpt/script-pakem'
+import { outputTypeSection, sizeGuidance, resolveOutputType, type OutputType } from '@/lib/cakgpt/output-types'
 
 const MAX_FIELD_LEN = 4000
 
@@ -123,7 +124,11 @@ export function buildGenerationPrompt(opts: {
   contentFormat?: ContentFormat | null
   pakem?: PakemStructure | null
   pakemName?: string | null
+  outputType?: OutputType | string | null
 }): string {
+  const outType = typeof opts.outputType === 'object' && opts.outputType
+    ? opts.outputType
+    : resolveOutputType(opts.outputType as string | null | undefined)
   // One hook, CHOSEN BY THE CALLER (see pickHookForNaskah in generation.ts) —
   // not a menu for the model to pick from. The bank is a pool drawn per persona
   // from that persona's own cluster, and rotated per day so a multi-day series
@@ -206,10 +211,15 @@ export function buildGenerationPrompt(opts: {
   ].filter(Boolean)
 
   return [
-    'You are writing a short-form video naskah (script) in Indonesian, in the exact voice of the',
-    'persona below, strictly serving the brief below. Output a shot-by-shot breakdown as blocks.',
+    outType.key === 'video'
+      ? 'You are writing a short-form video naskah (script) in Indonesian, in the exact voice of the persona below, strictly serving the brief below. Output a shot-by-shot breakdown as blocks.'
+      : `You are writing a ${outType.label} in Indonesian, in the exact voice of the persona below, strictly serving the brief below. Output it as an ordered list of blocks.`,
     '',
     steeringSection,
+    // Read first among the locks: it decides what ARTIFACT this is, and the
+    // sections further down are worded for video. Anything assuming a filmed
+    // shot has to be overridden before the model reaches it.
+    outputTypeSection(outType),
     // Content format decides the SHAPE of the video (who is on camera, whether
     // the camera moves, how many speakers), so it has to be read before the
     // brief describes what to say — a brief read first pulls every naskah back
@@ -231,28 +241,40 @@ export function buildGenerationPrompt(opts: {
     hookBankSection,
     '',
     '## FORMAT / STRUCTURE REQUIREMENTS',
-    `Platform: ${opts.platform}. Target duration: ${opts.targetDurationS}s. Aspect ratio: ${opts.aspectRatio}.`,
-    `The whole naskah must fit inside ${opts.targetDurationS} seconds of screen time — that is the`,
-    'total for ALL shots combined, not per shot. Budget roughly 2-3 spoken seconds per short line and',
-    'cut content until it fits, rather than writing long and letting it overrun.',
-    'Break the naskah into shots; each shot may have multiple lines/blocks. Number shot_no and',
-    'line_no sequentially starting at 1. Use section_key to label structural parts (e.g. "hook",',
-    '"body", "cta").',
+    outType.key === 'video'
+      ? `Platform: ${opts.platform}. Target duration: ${opts.targetDurationS}s. Aspect ratio: ${opts.aspectRatio}.`
+      : `Platform: ${opts.platform}.`,
+    // Seconds of screen time only mean something for video. The other types
+    // reinterpret the same brief-derived number as slides or words.
+    outType.key === 'video'
+      ? `The whole naskah must fit inside ${opts.targetDurationS} seconds of screen time — that is the total for ALL shots combined, not per shot. Budget roughly 2-3 spoken seconds per short line and cut content until it fits, rather than writing long and letting it overrun.`
+      : sizeGuidance(outType, opts.targetDurationS),
+    outType.key === 'video'
+      ? 'Break the naskah into shots; each shot may have multiple lines/blocks. Number shot_no and line_no sequentially starting at 1. Use section_key to label structural parts (e.g. "hook", "body", "cta").'
+      : `Number shot_no and line_no sequentially starting at 1 — here shot_no is the ${outType.unit} number.`,
     '',
-    '## SHOT DETAILS (location, timestamp_range, wardrobe)',
-    `- timestamp_range: The timeline code for each shot e.g. "00:00 - 00:05". These must run in order,`,
-    `  must not overlap, and the final shot must not end after ${formatTimecode(opts.targetDurationS)}.`,
-    '- location: The physical setting AND lighting environment e.g. "Dapur Rumah Minimalis - Soft Daylight from Window", "Laboratorium Nutrisi - Cool White Lighting".',
-    '- wardrobe: The persona outfit / costume e.g. "Kaos Santai Nude & Apron Memasak", "Jas Lab Putih & Name Tag".',
-    '- Fill all three on EVERY block. If the steering did not pin them, invent cohesive, realistic',
-    '  defaults that stay consistent across the whole naskah.',
-    // Without this, the per-shot location/wardrobe instructions above read as
-    // permission to keep changing sets — which is the grammar of a directed
-    // piece and directly contradicts a locked Talking Head ("one location").
-    opts.contentFormat
-      ? '- These three fields describe the shoot; they must OBEY the locked content format above. If the format fixes the setting or keeps the persona off camera, follow the format — do not invent variety it forbids.'
-      : '',
-    ...lockedLines,
+    // Shot details are filmed-production metadata. Emitting them for a carousel
+    // or an article would ask the model to invent a wardrobe for a blog post.
+    ...(outType.supportsShotDetails
+      ? [
+          '## SHOT DETAILS (location, timestamp_range, wardrobe)',
+          `- timestamp_range: The timeline code for each shot e.g. "00:00 - 00:05". These must run in order,`,
+          `  must not overlap, and the final shot must not end after ${formatTimecode(opts.targetDurationS)}.`,
+          '- location: The physical setting AND lighting environment e.g. "Dapur Rumah Minimalis - Soft Daylight from Window", "Laboratorium Nutrisi - Cool White Lighting".',
+          '- wardrobe: The persona outfit / costume e.g. "Kaos Santai Nude & Apron Memasak", "Jas Lab Putih & Name Tag".',
+          '- Fill all three on EVERY block. If the steering did not pin them, invent cohesive, realistic',
+          '  defaults that stay consistent across the whole naskah.',
+          // Without this, the per-shot location/wardrobe instructions above read
+          // as permission to keep changing sets — the grammar of a directed
+          // piece, which contradicts a locked Talking Head ("one location").
+          opts.contentFormat
+            ? '- These three fields describe the shoot; they must OBEY the locked content format above. If the format fixes the setting or keeps the persona off camera, follow the format — do not invent variety it forbids.'
+            : '',
+          ...lockedLines,
+        ]
+      // A carousel or an article has no shoot. The steering locks that DO still
+      // apply (duration -> size) are folded into the size guidance above.
+      : []),
     daySection,
     '',
     'Respond ONLY with JSON matching the required schema.',

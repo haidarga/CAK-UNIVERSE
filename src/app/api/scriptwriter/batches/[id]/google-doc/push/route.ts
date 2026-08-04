@@ -30,7 +30,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // interleaved). A Doc is read top to bottom, so it's re-sorted below into the
   // order a human expects — topic → persona → day.
   const { data: naskahRows, error: naskahErr } = await authClient
-    .from('sw_naskah').select('id, title, current_version_id, brief_id, persona_id, day_no, created_at')
+    .from('sw_naskah').select('id, title, current_version_id, brief_id, persona_id, day_no, output_type, created_at')
     .eq('batch_id', batchId).eq('created_by', user.id).order('created_at', { ascending: true })
   if (naskahErr) return NextResponse.json({ ok: false, error: naskahErr.message }, { status: 500 })
 
@@ -72,7 +72,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       if (nameCmp !== 0) return nameCmp
       return (a.day_no ?? 0) - (b.day_no ?? 0)
     })
-    .map((n) => ({ naskah_id: n.id, title: n.title, body: bodyByVersion.get(n.current_version_id!) || [] }))
+    .map((n) => ({ naskah_id: n.id, title: n.title, body: bodyByVersion.get(n.current_version_id!) || [], output_type: n.output_type }))
 
   try {
     let docId: string | null = (batch.external_doc_ref as { doc_id?: string } | null)?.doc_id || null
