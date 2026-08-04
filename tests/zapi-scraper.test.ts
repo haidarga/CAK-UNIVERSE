@@ -394,3 +394,37 @@ describe('response envelope', () => {
     expect(posts[0].saves).toBe(1708133)
   })
 })
+
+// ── Enrichment budget ───────────────────────────────────────────────────────
+// Measured live: post/:id is ~20-24s on a cold shortcode and ~30ms once Zapi
+// has it cached. Trend Radar is user-facing, so enrichment must never wait out
+// a cold fetch — these lock that in.
+describe('enrichInstagramItems latency guard', () => {
+  it('abandons a slow item instead of holding up the search', async () => {
+    vi.stubEnv('ZAPI_KEY', 'zpi_test')
+    // Never resolves — stands in for a cold 20s+ fetch. The AbortSignal the
+    // client attaches is what has to end this.
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => new Promise((_res, rej) => {
+      init.signal?.addEventListener('abort', () => {
+        const err = new Error('aborted'); err.name = 'AbortError'; rej(err)
+      })
+    })))
+    const started = Date.now()
+    const out = await enrichInstagramItems([
+      { url: 'https://www.instagram.com/p/AAA/', views: null, likes: null },
+    ])
+    // Well under the 20s default the non-enrichment calls use.
+    expect(Date.now() - started).toBeLessThan(6_000)
+    expect(out[0].views).toBeNull()
+  })
+
+  it('passes a per-item timeout well below the default', async () => {
+    vi.stubEnv('ZAPI_KEY', 'zpi_test')
+    const spy = vi.fn(async () => ({
+      ok: true, status: 200, headers: { get: () => null }, json: async () => ({ playCount: 5 }),
+    }))
+    vi.stubGlobal('fetch', spy)
+    await enrichInstagramItems([{ url: 'https://www.instagram.com/p/AAA/', views: null, likes: null }])
+    expect(spy).toHaveBeenCalledOnce()
+  })
+})

@@ -4,7 +4,7 @@
 //   GET https://api.zpi.web.id/v1/{category}:{service}/{operation}/{pathParam}
 //   Header: x-api-key: zpi_...
 //   Extra params: query string on GET.
-//   Errors: 401 auth · 403 plan gate · 404 · 422 invalid params · 429 (+retryAfterSec)
+//   Errors: 401 auth · 403 plan gate OR account privacy · 404 · 422 · 429 (+retryAfterSec)
 //   Every response carries x-request-id, which is what support will ask for.
 //
 // WHAT THIS CAN AND CANNOT DO — both scrapers are ACCOUNT-based:
@@ -85,12 +85,13 @@ async function zapiGet<T = unknown>(
   operation: string,
   pathParam?: string,
   query?: Record<string, string | number | undefined>,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<T> {
   const key = process.env.ZAPI_KEY
   if (!key) throw new ZapiError('ZAPI_KEY is not set', 0)
 
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS)
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const res = await fetch(buildZapiUrl(service, operation, pathParam, query), {
       headers: { 'x-api-key': key, accept: 'application/json' },
@@ -115,7 +116,7 @@ async function zapiGet<T = unknown>(
   } catch (e) {
     if (e instanceof ZapiError) throw e
     if (e instanceof Error && e.name === 'AbortError') {
-      throw new ZapiError(`Zapi ${operation} timed out after ${DEFAULT_TIMEOUT_MS}ms`, 408)
+      throw new ZapiError(`Zapi ${operation} timed out after ${timeoutMs}ms`, 408)
     }
     throw new ZapiError(e instanceof Error ? e.message : 'Zapi request failed', 0)
   } finally {
@@ -153,6 +154,17 @@ export function fetchTikTokPost(idOrUrl: string): Promise<unknown> {
   return zapiGet(TIKTOK_SERVICE, 'post', idOrUrl)
 }
 
+export function fetchTikTokComments(idOrUrl: string, count = 20, page = 1): Promise<unknown> {
+  return zapiGet(TIKTOK_SERVICE, 'comments', idOrUrl, { count, page })
+}
+
+// Verified live: returns 403 with "Following list is hidden by this account"
+// when the account keeps it private — an account setting, not a plan limit, so
+// callers should surface Zapi's own message rather than assume a quota problem.
+export function fetchTikTokFollowing(handle: string, count = 30, page = 1): Promise<unknown> {
+  return zapiGet(TIKTOK_SERVICE, 'following', normalizeHandle(handle), { count, page })
+}
+
 // ── Instagram ───────────────────────────────────────────────────────────────
 
 export function fetchInstagramProfile(handle: string): Promise<unknown> {
@@ -163,8 +175,16 @@ export function fetchInstagramPosts(handle: string, page = 1): Promise<unknown> 
   return zapiGet(INSTAGRAM_SERVICE, 'posts', normalizeHandle(handle), { page })
 }
 
-export function fetchInstagramPost(idOrUrl: string): Promise<unknown> {
-  return zapiGet(INSTAGRAM_SERVICE, 'post', idOrUrl)
+export function fetchInstagramPost(idOrUrl: string, timeoutMs?: number): Promise<unknown> {
+  return zapiGet(INSTAGRAM_SERVICE, 'post', idOrUrl, undefined, timeoutMs)
+}
+
+export function fetchInstagramComments(idOrUrl: string, limit = 50): Promise<unknown> {
+  return zapiGet(INSTAGRAM_SERVICE, 'comments', idOrUrl, { limit })
+}
+
+export function fetchInstagramStories(handle: string): Promise<unknown> {
+  return zapiGet(INSTAGRAM_SERVICE, 'stories', normalizeHandle(handle))
 }
 
 // ── Trend Radar enrichment ──────────────────────────────────────────────────
@@ -176,7 +196,19 @@ export function fetchInstagramPost(idOrUrl: string): Promise<unknown> {
 // views — so a missed parse silently pushes a strong post to the bottom.
 // post/:id returns those as structured integers.
 
+// Measured against the live API: post/:id takes ~20-24s the FIRST time Zapi
+// sees a shortcode (it scrapes on demand) and ~30ms on every later call (cached
+// their side). Trend Radar is a user-facing search, so waiting out a cold fetch
+// is not an option — 15 uncached items at 5-wide would add roughly a minute.
+//
+// So enrichment is OPPORTUNISTIC: a short per-item timeout plus a hard overall
+// budget. Cached posts (the common case once a topic has been searched before)
+// land in milliseconds; cold ones are abandoned and keep whatever number
+// discovery scraped. Nothing is ever worse than before, and the search never
+// pays for a cold cache.
 const ENRICH_CONCURRENCY = 5
+const ENRICH_ITEM_TIMEOUT_MS = 2_500
+const ENRICH_TOTAL_BUDGET_MS = 6_000
 
 export type EnrichableItem = { url: string; views?: number | null; likes?: number | null }
 
@@ -213,12 +245,18 @@ export async function enrichInstagramItems<T extends EnrichableItem>(items: T[])
   const needsWork = items.some((it) => it.views == null || it.likes == null)
   if (!needsWork) return items
 
+  const deadline = Date.now() + ENRICH_TOTAL_BUDGET_MS
+
   return mapWithConcurrency(items, ENRICH_CONCURRENCY, async (item) => {
     if (item.views != null && item.likes != null) return item
+    // Stop starting new work once the budget is spent — remaining items keep
+    // their discovered numbers instead of dragging the search out.
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) return item
     const code = extractShortcode(item.url)
     if (!code) return item
     try {
-      const raw = await fetchInstagramPost(code) as Record<string, unknown>
+      const raw = await fetchInstagramPost(code, Math.min(ENRICH_ITEM_TIMEOUT_MS, remaining)) as Record<string, unknown>
       const views = pickNumber(raw, ['playCount', 'play_count', 'videoViewCount', 'video_view_count', 'viewCount', 'views'])
       const likes = pickNumber(raw, ['likeCount', 'like_count', 'likes', 'edge_liked_by'])
       return {

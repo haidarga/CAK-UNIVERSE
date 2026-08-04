@@ -34,7 +34,10 @@ function toScraperError(e: unknown, platform: Platform): ScraperError {
   if (e instanceof ZapiError) {
     const ref = e.requestId ? ` (ref: ${e.requestId})` : ''
     if (e.status === 401) return new ScraperError(`Zapi nolak request — cek ZAPI_KEY${ref}.`)
-    if (e.status === 403) return new ScraperError(`Plan Zapi lu gak nyakup endpoint ini${ref}.`)
+    // 403 is NOT only a plan gate: Zapi also uses it for account-level privacy
+    // ("Following list is hidden by this account"), verified live. Its own
+    // message is the actionable one, so lead with it instead of guessing.
+    if (e.status === 403) return new ScraperError(`${e.message || 'Zapi nolak akses'}${ref}.`)
     if (e.status === 404) return new ScraperError(`Akun ${platform} gak ketemu di Zapi — cek handle-nya${ref}.`)
     if (e.status === 429) {
       const wait = e.retryAfterSec ? ` Coba lagi ${e.retryAfterSec} detik.` : ''
