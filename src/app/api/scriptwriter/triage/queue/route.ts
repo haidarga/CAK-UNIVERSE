@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/cakgpt/supabase/server'
 import { requireUser } from '@/lib/cakgpt/auth'
+import { briefScheduleKey } from '@/lib/cakgpt/brief-schedule'
 
 const MAX_ITEMS = 200
 
@@ -31,6 +32,14 @@ export async function GET(req: Request) {
   const { data: naskahRows, error } = await query
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   if (!naskahRows || naskahRows.length === 0) return NextResponse.json({ ok: true, items: [] })
+
+  // Brief `fields` carry the content-calendar week/day the plan was written
+  // against — the order a human actually wants to read these in.
+  const briefIds = [...new Set(naskahRows.map((n) => n.brief_id).filter(Boolean))] as string[]
+  const { data: briefRows } = briefIds.length
+    ? await supabase.from('sw_strategist_briefs').select('id, fields').in('id', briefIds)
+    : { data: [] as Array<{ id: string; fields: Record<string, unknown> | null }> }
+  const scheduleByBrief = new Map((briefRows || []).map((b) => [b.id, briefScheduleKey(b.fields)]))
 
   const personaIds = [...new Set(naskahRows.map((n) => n.persona_id).filter(Boolean))] as string[]
   const { data: personaRows } = personaIds.length
@@ -97,11 +106,11 @@ export async function GET(req: Request) {
   // (Hari 3 above Hari 1, one persona's days interleaved with another's).
   // Equally-risky items now read in the order a human thinks about them:
   // topic → persona → day.
-  // One fixed rank per topic, computed BEFORE sorting: the earliest naskah
-  // created for that brief. Comparing each item's own created_at instead would
-  // be an inconsistent comparator — two naskah of the same topic can sit on
-  // either side of another topic's, so the "same brief" branch and the
-  // timestamp branch would disagree and scramble the result.
+  // Topics are ranked by the CONTENT CALENDAR (week then day from the brief's
+  // own fields), not by which of the 12 concurrent jobs finished first. A plan
+  // already organised Monday..Sunday now reads back in that order. Briefs whose
+  // plan carries no schedule fall to the end rather than to the top, and ties
+  // there fall back to the old creation-order rank so the result stays stable.
   const briefRank = new Map<string, number>()
   for (const i of items) {
     if (!i._briefId) continue
@@ -109,6 +118,8 @@ export async function GET(req: Request) {
     const cur = briefRank.get(i._briefId)
     if (cur === undefined || t < cur) briefRank.set(i._briefId, t)
   }
+  const scheduleOf = (briefId: string | null | undefined) =>
+    (briefId && scheduleByBrief.get(briefId)) || briefScheduleKey(null)
 
   items.sort((a, b) => {
     if (a.has_open_blockers !== b.has_open_blockers) return a.has_open_blockers ? -1 : 1
@@ -116,6 +127,10 @@ export async function GET(req: Request) {
     // Group a topic's naskah together. brief_id is opaque, so topics follow the
     // order their first naskah appeared (which tracks content-plan order).
     if (a._briefId !== b._briefId) {
+      const sa = scheduleOf(a._briefId)
+      const sb = scheduleOf(b._briefId)
+      if (sa.week !== sb.week) return sa.week - sb.week
+      if (sa.day !== sb.day) return sa.day - sb.day
       return (briefRank.get(a._briefId ?? '') ?? 0) - (briefRank.get(b._briefId ?? '') ?? 0)
     }
     const nameCmp = (a.persona_name || '').localeCompare(b.persona_name || '')

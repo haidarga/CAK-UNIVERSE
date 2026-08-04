@@ -5,6 +5,7 @@ import { formatNaskahForSheetsExport } from '@/lib/sheets-helpers'
 import { getValidAccessToken } from '@/lib/cakgpt/google-oauth'
 import { pushValuesToGoogleSheet } from '@/lib/cakgpt/google-sheets'
 import { parseGoogleDocId } from '@/lib/cakgpt/google-docs'
+import { briefScheduleKey, compareBySchedule } from '@/lib/cakgpt/brief-schedule'
 
 export async function POST(req: Request) {
   const supabase = await createServerClient()
@@ -107,6 +108,18 @@ export async function POST(req: Request) {
       versionMap.set(v.naskah_id, v)
     }
   }
+
+  // Same calendar ordering as the Doc: the spreadsheet is what the client
+  // reviews, and rows arriving in generation-finish order made a plan organised
+  // Monday..Sunday unreadable.
+  const briefIdsForSort = [...new Set(naskahRows.map((n: any) => n.brief_id).filter(Boolean))] as string[]
+  const { data: briefRowsForSort } = briefIdsForSort.length
+    ? await supabase.from('sw_strategist_briefs').select('id, fields').in('id', briefIdsForSort)
+    : { data: [] as Array<{ id: string; fields: Record<string, unknown> | null }> }
+  const scheduleByBrief = new Map((briefRowsForSort || []).map((b) => [b.id, briefScheduleKey(b.fields)]))
+  naskahRows = [...naskahRows].sort(
+    compareBySchedule<any>((r) => scheduleByBrief.get(r.brief_id) || briefScheduleKey(null)),
+  )
 
   const formattedList = naskahRows.map(n => {
     const persona = Array.isArray(n.sw_personas) ? n.sw_personas[0] : n.sw_personas

@@ -89,6 +89,9 @@ export const GenerateBatchItemSchema = z.object({
   // What ARTIFACT this is: 'video' | 'slideshow' | 'article'. Omitted/null =
   // video, matching every naskah made before output types existed.
   output_type: z.string().max(40).nullable().optional(),
+  // One naskah for EVERY persona instead of one per persona. Mutually
+  // exclusive with persona_id — the server ignores persona_id when set.
+  general: z.boolean().nullable().optional(),
   // Multi-day fan-out: which day of how many this naskah is for. Both null
   // (the default) = the original one-naskah-per-(brief x persona) behavior.
   // Capped so one click can't quietly enqueue a month-per-topic run.

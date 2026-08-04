@@ -125,6 +125,8 @@ export function buildGenerationPrompt(opts: {
   pakem?: PakemStructure | null
   pakemName?: string | null
   outputType?: OutputType | string | null
+  // Extra block for a general naskah; empty for a normal persona-specific one.
+  generalSection?: string
 }): string {
   const outType = typeof opts.outputType === 'object' && opts.outputType
     ? opts.outputType
@@ -220,6 +222,7 @@ export function buildGenerationPrompt(opts: {
     // sections further down are worded for video. Anything assuming a filmed
     // shot has to be overridden before the model reaches it.
     outputTypeSection(outType),
+    opts.generalSection || '',
     // Content format decides the SHAPE of the video (who is on camera, whether
     // the camera moves, how many speakers), so it has to be read before the
     // brief describes what to say — a brief read first pulls every naskah back

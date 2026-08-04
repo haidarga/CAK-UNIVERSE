@@ -111,6 +111,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       content_format: it.content_format?.trim() || null,
       pakem_id: it.pakem_id || null,
       output_type: it.output_type?.trim() || null,
+      general: it.general || false,
       day_no: it.day_no ?? null,
       day_total: it.day_total ?? null,
       status: 'pending' as const,

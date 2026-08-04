@@ -32,7 +32,13 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const { data: brief } = await authClient
     .from('sw_strategist_briefs').select('title, product, platform, fields')
     .eq('id', naskah.brief_id).eq('created_by', user.id).maybeSingle()
-  if (!version || !persona || !brief) return NextResponse.json({ ok: false, error: 'related data missing' }, { status: 500 })
+  if (!version || !brief) return NextResponse.json({ ok: false, error: 'related data missing' }, { status: 500 })
+  // persona is null for a GENERAL naskah (written for every persona, owned by
+  // none). QC still runs — the brand rules and the critic pass both apply.
+  const personaForQc = persona ?? {
+    name: 'General (semua persona)', tone: null, diction_quirks: null,
+    banned_words: [], required_words: [], sample_lines: null, red_flags: null,
+  }
 
   const service = createServiceClient()
   let apiKey: string
@@ -47,7 +53,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     apiKey,
     naskahId: id,
     versionId: version.id,
-    persona,
+    persona: personaForQc,
     brief,
     blocks: version.body as Block[],
     brandContext: await loadBrandContextForBrief(authClient, naskah.brief_id, user.id),

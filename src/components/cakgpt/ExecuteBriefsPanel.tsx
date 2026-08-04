@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Zap, X } from 'lucide-react'
+import { Loader2, Zap, X, Users } from 'lucide-react'
 import { MAX_DAY_TOTAL, MAX_FANOUT_ITEMS } from '@/lib/cakgpt/schemas'
 import { OutputTypePicker } from '@/components/cakgpt/OutputTypePicker'
 import { ContentFormatPicker } from '@/components/cakgpt/ContentFormatPicker'
@@ -33,6 +33,9 @@ export function ExecuteBriefsPanel({ briefIds, personas, clientId, onClose }: {
 }) {
   const router = useRouter()
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<string[]>([])
+  // General = ONE naskah per brief that every persona can deliver, instead of
+  // one per persona. Mutually exclusive with picking personas.
+  const [general, setGeneral] = useState(false)
   const [outputType, setOutputType] = useState('video')
   const [activeFormats, setActiveFormats] = useState<string[]>([])
   const [pakemId, setPakemId] = useState<string | null>(null)
@@ -44,7 +47,7 @@ export function ExecuteBriefsPanel({ briefIds, personas, clientId, onClose }: {
 
   const dayTotal = clampDays(days)
   const formatCount = Math.max(1, activeFormats.length)
-  const personaCount = Math.max(1, selectedPersonaIds.length)
+  const personaCount = general ? 1 : Math.max(1, selectedPersonaIds.length)
   const projected = briefIds.length * personaCount * dayTotal * formatCount
   const over = projected > MAX_FANOUT_ITEMS
 
@@ -77,7 +80,9 @@ export function ExecuteBriefsPanel({ briefIds, personas, clientId, onClose }: {
 
       // No persona ticked = null, which makes the server fall back to each
       // brief's own default persona — the same rule Import & Generate uses.
-      const personaTargets: Array<string | null> = selectedPersonaIds.length > 0 ? selectedPersonaIds : [null]
+      const personaTargets: Array<string | null> = general
+        ? [null]
+        : selectedPersonaIds.length > 0 ? selectedPersonaIds : [null]
       const formats: Array<string | undefined> = activeFormats.length > 0 ? activeFormats : [undefined]
       const arahan = steering.trim() || undefined
 
@@ -86,10 +91,10 @@ export function ExecuteBriefsPanel({ briefIds, personas, clientId, onClose }: {
         for (const persona_id of personaTargets) {
           for (const content_format of formats) {
             if (dayTotal === 1) {
-              items.push({ brief_id, persona_id, extra_context: arahan, content_format, pakem_id: pakemId || undefined, output_type: outputType })
+              items.push({ brief_id, persona_id, extra_context: arahan, content_format, pakem_id: pakemId || undefined, output_type: outputType, general })
             } else {
               for (let d = 1; d <= dayTotal; d++) {
-                items.push({ brief_id, persona_id, extra_context: arahan, content_format, pakem_id: pakemId || undefined, output_type: outputType, day_no: d, day_total: dayTotal })
+                items.push({ brief_id, persona_id, extra_context: arahan, content_format, pakem_id: pakemId || undefined, output_type: outputType, general, day_no: d, day_total: dayTotal })
               }
             }
           }
@@ -138,9 +143,24 @@ export function ExecuteBriefsPanel({ briefIds, personas, clientId, onClose }: {
 
       <div>
         <span className="mb-1 block text-xs font-medium text-text">
-          Persona <span className="font-normal text-mutedText">— kosongin = pakai persona bawaan tiap brief</span>
+          Persona <span className="font-normal text-mutedText">— kosongin = pakai persona bawaan brief</span>
         </span>
-        <div className="flex flex-wrap gap-1.5">
+
+        <button type="button" disabled={busy} onClick={() => { setGeneral((v) => !v); setSelectedPersonaIds([]) }}
+          aria-pressed={general}
+          className={`mb-1.5 flex w-full items-center gap-1.5 rounded-md border px-2 py-1.5 text-xs font-medium disabled:opacity-50 cursor-pointer ${
+            general ? 'border-primary bg-primary/10 text-primary' : 'border-border text-mutedText hover:bg-muted'
+          }`}>
+          <Users size={13} aria-hidden />
+          General — 1 naskah buat semua persona
+        </button>
+        {general && (
+          <p className="mb-1.5 text-[11px] text-mutedText">
+            Suaranya netral, dan kata terlarang semua persona digabung — jadi naskahnya aman dibawain siapa pun.
+          </p>
+        )}
+
+        <div className={`flex flex-wrap gap-1.5 ${general ? 'pointer-events-none opacity-40' : ''}`}>
           {personas.map((p) => {
             const on = selectedPersonaIds.includes(p.id)
             return (

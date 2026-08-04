@@ -4,6 +4,7 @@ import { requireUser } from '@/lib/cakgpt/auth'
 import { getValidAccessToken } from '@/lib/cakgpt/google-oauth'
 import { createDoc, pushNaskahToDoc, getDocWebViewUrl } from '@/lib/cakgpt/google-docs'
 import type { Block } from '@/lib/cakgpt/schemas'
+import { briefScheduleKey } from '@/lib/cakgpt/brief-schedule'
 
 // POST /api/batches/[id]/google-doc/push — creates the batch's Google Doc on
 // first call, then full-rewrites its content from the current naskah every
@@ -49,9 +50,19 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     : { data: [] as Array<{ id: string; name: string }> }
   const personaNameById = new Map((personaRows || []).map((p) => [p.id, p.name]))
 
-  // Fixed rank per topic (earliest naskah for that brief), computed before the
-  // sort — comparing each row's own created_at inside the comparator would be
-  // inconsistent, since two naskah of one topic can straddle another topic's.
+  // Topics are ordered by the CONTENT CALENDAR the plan was written against
+  // (week, then day, from the brief's own fields). A Doc is read top to bottom,
+  // and a client expects Monday before Wednesday — not whichever of the
+  // concurrent generation jobs happened to finish first. Creation order is kept
+  // only as the tiebreak for briefs with no schedule.
+  const briefIds = [...new Set((naskahRows || []).map((n) => n.brief_id).filter(Boolean))] as string[]
+  const { data: briefRows } = briefIds.length
+    ? await authClient.from('sw_strategist_briefs').select('id, fields').in('id', briefIds)
+    : { data: [] as Array<{ id: string; fields: Record<string, unknown> | null }> }
+  const scheduleByBrief = new Map((briefRows || []).map((b) => [b.id, briefScheduleKey(b.fields)]))
+  const scheduleOf = (briefId: string | null | undefined) =>
+    (briefId && scheduleByBrief.get(briefId)) || briefScheduleKey(null)
+
   const briefRank = new Map<string, number>()
   for (const n of naskahRows || []) {
     if (!n.brief_id) continue
@@ -64,6 +75,10 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     .filter((n) => n.current_version_id)
     .sort((a, b) => {
       if (a.brief_id !== b.brief_id) {
+        const sa = scheduleOf(a.brief_id)
+        const sb = scheduleOf(b.brief_id)
+        if (sa.week !== sb.week) return sa.week - sb.week
+        if (sa.day !== sb.day) return sa.day - sb.day
         return (briefRank.get(a.brief_id ?? '') ?? 0) - (briefRank.get(b.brief_id ?? '') ?? 0)
       }
       const an = a.persona_id ? personaNameById.get(a.persona_id) || '' : ''

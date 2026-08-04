@@ -161,7 +161,7 @@ export function BriefsManager({ briefs, clientNames, personaNames, personas, act
                             </div>
                           ) : (
                             <div className="flex flex-wrap items-center gap-2">
-                              <h3 className="truncate font-medium text-text">{b.title}</h3>
+                              <h3 className="min-w-0 truncate font-medium text-text">{b.title}</h3>
                               {b.client_id && clientNames[b.client_id] && <span className="rounded bg-accent/10 px-1.5 py-0.5 text-[11px] font-medium text-accent">{clientNames[b.client_id]}</span>}
                               <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-mutedText">{b.status}</span>
                             </div>
@@ -173,8 +173,8 @@ export function BriefsManager({ briefs, clientNames, personaNames, personas, act
                               </p>
                               {Object.keys(fields).length > 0 && (
                                 <div className="mt-1 flex flex-wrap gap-1">
-                                  {Object.entries(fields).slice(0, 6).map(([k, v]) => (
-                                    <span key={k} className="rounded bg-muted px-1.5 py-0.5 font-data text-[10px] text-mutedText"><span className="font-medium text-text">{k}:</span> {String(v)}</span>
+                                  {Object.entries(fields).slice(0, 4).map(([k, v]) => (
+                                    <span key={k} title={`${k}: ${String(v)}`} className="max-w-[220px] truncate rounded bg-muted px-1.5 py-0.5 font-data text-[10px] text-mutedText"><span className="font-medium text-text">{k}:</span> {String(v)}</span>
                                   ))}
                                 </div>
                               )}

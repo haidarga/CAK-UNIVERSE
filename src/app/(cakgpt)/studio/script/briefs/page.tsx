@@ -35,8 +35,8 @@ export default async function BriefsPage() {
         <p className="mt-0.5 text-sm text-mutedText">What the strategist team hands off — translated into naskah via generation.</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_380px]">
-        <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-3">
           {(!briefs || briefs.length === 0) ? (
             <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border py-16 text-center">
               <FileText size={28} strokeWidth={1.5} className="text-mutedText" aria-hidden />
@@ -47,7 +47,7 @@ export default async function BriefsPage() {
           )}
         </div>
 
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <BriefImport clients={clients || []} personas={personas || []} />
           <BriefForm personas={personas || []} clients={clients || []} />
         </div>

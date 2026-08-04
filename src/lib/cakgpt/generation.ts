@@ -16,6 +16,7 @@ import { brandQcWords, parseBrandContext, type BrandContext } from '@/lib/cakgpt
 import { resolveContentFormat } from '@/lib/cakgpt/content-formats'
 import { parsePakemStructure } from '@/lib/cakgpt/script-pakem'
 import { resolveOutputType } from '@/lib/cakgpt/output-types'
+import { buildGeneralPersona, generalPersonaSection, GENERAL_PERSONA_NAME } from '@/lib/cakgpt/general-persona'
 
 export type GenerateNaskahParams = {
   supabase: SupabaseClient // service-role client — system-initiated writes
@@ -31,6 +32,8 @@ export type GenerateNaskahParams = {
   pakemId?: string | null
   // 'video' | 'slideshow' | 'article'. Null = video.
   outputType?: string | null
+  // Write ONE naskah that fits every persona, instead of one per persona.
+  general?: boolean
   // Multi-day fan-out: which day of how many this naskah covers for the topic.
   // Omitted = single-day (unchanged behavior).
   dayNo?: number
@@ -190,16 +193,46 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
     : null
   const brandContext = parseBrandContext(brandClient?.brand_context)
 
-  const personaId = params.personaIdOverride || brief.persona_id
-  if (!personaId) return { ok: false, error: 'no persona specified (brief has no default persona)' }
+  // GENERAL mode: one naskah that every persona can deliver, built from the
+  // intersection of what they all allow. Otherwise the usual single persona.
+  const PERSONA_COLS = 'id, name, cluster, tone, diction_quirks, banned_words, required_words, sample_lines, red_flags, is_active, created_by'
+  let persona: {
+    id: string; name: string; cluster: string | null
+    tone: unknown; diction_quirks: unknown; sample_lines: unknown; red_flags: unknown
+    banned_words: string[]; required_words: string[]
+  }
+  let generalSection = ''
+  let personaId: string | null = null
 
-  const { data: persona, error: personaErr } = await supabase
-    .from('sw_personas')
-    .select('id, name, cluster, tone, diction_quirks, banned_words, required_words, sample_lines, red_flags, is_active, created_by')
-    .eq('id', personaId)
-    .eq('created_by', createdBy)
-    .maybeSingle()
-  if (personaErr || !persona || !persona.is_active) return { ok: false, error: 'persona not found or inactive' }
+  if (params.general) {
+    const { data: all } = await supabase
+      .from('sw_personas').select(PERSONA_COLS).eq('created_by', createdBy).eq('is_active', true)
+    const roster = all || []
+    if (roster.length === 0) return { ok: false, error: 'no active personas to build a general naskah from' }
+    const synthetic = buildGeneralPersona(roster)
+    persona = {
+      id: 'general',
+      name: GENERAL_PERSONA_NAME,
+      cluster: null,
+      tone: synthetic.tone,
+      diction_quirks: synthetic.diction_quirks,
+      sample_lines: synthetic.sample_lines,
+      red_flags: synthetic.red_flags,
+      banned_words: synthetic.banned_words,
+      required_words: synthetic.required_words,
+    }
+    generalSection = generalPersonaSection(roster)
+    // personaId stays null: sw_naskah.persona_id is a uuid FK, and a general
+    // naskah genuinely belongs to no persona.
+  } else {
+    personaId = params.personaIdOverride || brief.persona_id
+    if (!personaId) return { ok: false, error: 'no persona specified (brief has no default persona)' }
+
+    const { data: row, error: personaErr } = await supabase
+      .from('sw_personas').select(PERSONA_COLS).eq('id', personaId).eq('created_by', createdBy).maybeSingle()
+    if (personaErr || !row || !row.is_active) return { ok: false, error: 'persona not found or inactive' }
+    persona = row
+  }
 
   const { data: batch, error: batchErr } = await supabase
     .from('sw_batches').select('id, created_by, hook_bank').eq('id', params.batchId).eq('created_by', createdBy).maybeSingle()
@@ -268,13 +301,14 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
       pakem,
       pakemName: pakemRow?.name ?? null,
       outputType,
+      generalSection,
       dayNo: params.dayNo,
       dayTotal: params.dayTotal,
       assignedHook: pickHookForNaskah({
         bank: hookBank,
         personaCluster: persona.cluster,
         briefId: params.briefId,
-        personaId,
+        personaId: personaId ?? 'general',
         dayNo: params.dayNo,
       }),
     })
