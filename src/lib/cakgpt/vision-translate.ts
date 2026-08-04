@@ -154,3 +154,44 @@ export async function translateVideoToDirection(opts: {
     if (geminiFileName) await fileManager.deleteFile(geminiFileName).catch(() => {})
   }
 }
+
+/**
+ * Analyse a YouTube video straight from its URL.
+ *
+ * Gemini accepts a YouTube link as video input (fileData.fileUri with no
+ * mimeType), so this path skips the download, the Storage round-trip and the
+ * Files API upload/poll entirely — verified live before it was wired up.
+ * Nothing here touches Zapi either, so YouTube costs no scraper quota.
+ */
+export async function translateYouTubeToDirection(opts: {
+  youtubeUrl: string
+  note?: string
+}): Promise<TranslateResult> {
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY is not set' }
+
+  try {
+    const prompt = buildVisualTranslationPrompt({ note: opts.note, mediaKind: 'video' })
+    const client = new GoogleGenerativeAI(apiKey).getGenerativeModel({
+      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+      generationConfig: {
+        maxOutputTokens: 8000,
+        temperature: 0.4,
+        responseMimeType: 'application/json',
+        responseSchema: VISUAL_TRANSLATION_RESPONSE_SCHEMA as unknown as import('@google/generative-ai').ResponseSchema,
+      },
+    })
+    // The SDK's FileData type marks mimeType as required, but a YouTube URL is
+    // resolved server-side by Google and must be sent WITHOUT one — verified
+    // against the live API. Same situation as the responseSchema cast above:
+    // the REST endpoint is more permissive than the generated types.
+    const res = await client.generateContent({
+      contents: [{ role: 'user', parts: [{ fileData: { fileUri: opts.youtubeUrl } }, { text: prompt }] }],
+    } as unknown as Parameters<typeof client.generateContent>[0])
+
+    const raw = JSON.parse(res.response.text())
+    return { ok: true, direction: VisualDirectionSchema.parse(raw) }
+  } catch (e) {
+    return toTranslateError(e)
+  }
+}

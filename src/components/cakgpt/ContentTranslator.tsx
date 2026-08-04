@@ -48,6 +48,11 @@ export function ContentTranslator() {
   const [error, setError] = useState<string | null>(null)
   const [direction, setDirection] = useState<VisualDirection | null>(null)
   const [copied, setCopied] = useState(false)
+  // Link mode: a pasted YouTube/TikTok/Instagram URL analysed in place of an
+  // upload. Nothing is uploaded on this path — see lib/cakgpt/video-link.ts.
+  const [inputMode, setInputMode] = useState<'upload' | 'link'>('upload')
+  const [sourceUrl, setSourceUrl] = useState('')
+  const [sourceStats, setSourceStats] = useState<Record<string, unknown> | null>(null)
 
   const [saveModalOpen, setSaveModalOpen] = useState(false)
   const [knowledgeTitle, setKnowledgeTitle] = useState('')
@@ -69,7 +74,30 @@ export function ContentTranslator() {
   function reset() {
     if (preview) URL.revokeObjectURL(preview)
     setPreview(null); setPreviewIsVideo(false); setFileName(null); setNote(''); setError(null); setDirection(null); setCopied(false)
+    setSourceUrl(''); setSourceStats(null)
     if (fileRef.current) fileRef.current.value = ''
+  }
+
+  async function translateFromLink() {
+    const url = sourceUrl.trim()
+    if (!url) { setError('paste link videonya dulu'); return }
+    setBusy(true); setError(null); setDirection(null); setSourceStats(null)
+    try {
+      const res = await fetch('/api/scriptwriter/translator/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_url: url, note: note.trim() || undefined }),
+      })
+      let data: { ok?: boolean; error?: string; direction?: VisualDirection; stats?: Record<string, unknown> | null }
+      try { data = await res.json() } catch { setError(`Server error (status ${res.status}) — coba lagi.`); return }
+      if (!data.ok || !data.direction) { setError(data.error || 'analisis gagal'); return }
+      setDirection(data.direction)
+      setSourceStats(data.stats ?? null)
+    } catch (e) {
+      setError(e instanceof Error && e.message ? `Network error: ${e.message}` : 'network error saat translate')
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function translate() {
@@ -185,6 +213,77 @@ export function ContentTranslator() {
       )}
 
       <div className="rounded-lg border border-border bg-surface p-4">
+        {/* Link mode skips the upload entirely: YouTube is read by Gemini from
+            the URL, TikTok/Instagram are fetched server-side via Zapi. */}
+        <div className="mb-3 flex gap-1.5">
+          {([['upload', 'Upload file'], ['link', 'Dari link video']] as const).map(([key, label]) => (
+            <button
+              key={key} type="button" disabled={busy}
+              onClick={() => { setInputMode(key); setError(null) }}
+              aria-pressed={inputMode === key}
+              className={`rounded-md border px-2.5 py-1 text-xs font-medium disabled:opacity-50 cursor-pointer ${
+                inputMode === key ? 'border-primary bg-primary/10 text-primary' : 'border-border text-mutedText hover:bg-muted'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {inputMode === 'link' ? (
+          <div className="space-y-2">
+            <div>
+              <label htmlFor="translator-url" className="mb-1 block text-xs font-medium text-text">
+                Link video <span className="font-normal text-mutedText">— YouTube, TikTok, atau Instagram</span>
+              </label>
+              <input
+                id="translator-url"
+                value={sourceUrl}
+                onChange={(e) => setSourceUrl(e.target.value)}
+                disabled={busy}
+                placeholder="https://www.tiktok.com/@user/video/123… atau https://youtu.be/…"
+                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-text outline-none placeholder:text-mutedText focus:border-primary disabled:opacity-60"
+              />
+              <p className="mt-1 text-[11px] text-mutedText">
+                TikTok diambil tanpa watermark. Angka views/likes aslinya ikut kepakai jadi konteks analisis.
+              </p>
+            </div>
+            <div>
+              <label htmlFor="translator-note-link" className="mb-1 block text-xs font-medium text-text">
+                Fokus analisis <span className="font-normal text-mutedText">(opsional)</span>
+              </label>
+              <textarea
+                id="translator-note-link"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                disabled={busy}
+                maxLength={1000}
+                rows={3}
+                placeholder="mis. Fokus ke cara dia buka hook-nya…"
+                className="w-full resize-y rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-text outline-none placeholder:text-mutedText focus:border-primary disabled:opacity-60"
+              />
+            </div>
+            <button
+              onClick={translateFromLink}
+              disabled={busy || !sourceUrl.trim()}
+              className="flex w-full items-center justify-center gap-1.5 rounded-md bg-primary py-2 text-sm font-medium text-onPrimary hover:opacity-90 disabled:opacity-50"
+            >
+              {busy
+                ? <><Loader2 size={15} className="animate-spin" aria-hidden /> Narik &amp; menganalisis video (bisa 1-2 menit)…</>
+                : <><Sparkles size={15} aria-hidden /> Translate ke direction</>}
+            </button>
+            {sourceStats && (
+              <p className="rounded-md bg-muted/60 px-2.5 py-1.5 text-[11px] text-mutedText">
+                {[
+                  sourceStats.author ? `@${sourceStats.author}` : '',
+                  typeof sourceStats.views === 'number' ? `${sourceStats.views.toLocaleString('id-ID')} views` : '',
+                  typeof sourceStats.likes === 'number' ? `${sourceStats.likes.toLocaleString('id-ID')} likes` : '',
+                ].filter(Boolean).join(' · ')}
+              </p>
+            )}
+            {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
+          </div>
+        ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-[220px_1fr]">
           <div>
             <input
@@ -255,7 +354,8 @@ export function ContentTranslator() {
             </button>
           </div>
         </div>
-        {error && <p role="alert" className="mt-3 text-xs text-destructive">{error}</p>}
+        )}
+        {inputMode === 'upload' && error && <p role="alert" className="mt-3 text-xs text-destructive">{error}</p>}
       </div>
 
       {direction && (

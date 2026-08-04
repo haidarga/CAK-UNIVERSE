@@ -3,9 +3,10 @@ import { createServerClient, createServiceClient } from '@/lib/cakgpt/supabase/s
 import { requireUser } from '@/lib/cakgpt/auth'
 import { getGeminiApiKey } from '@/lib/cakgpt/settings'
 import {
-  translateImageToDirection, translateVideoToDirection,
+  translateImageToDirection, translateVideoToDirection, translateYouTubeToDirection,
   isSupportedImageMime, isSupportedVideoMime,
 } from '@/lib/cakgpt/vision-translate'
+import { resolveVideoLink, downloadMedia, statsNote, VideoLinkError } from '@/lib/cakgpt/video-link'
 import { withDeadline, DeadlineExceededError } from '@/lib/cakgpt/deadline'
 
 export const runtime = 'nodejs'
@@ -49,11 +50,20 @@ async function handleAnalyze(req: Request) {
   }
 
   const body = await req.json().catch(() => ({}))
+  const sourceUrl = typeof body.source_url === 'string' ? body.source_url.trim() : ''
   const storagePath = typeof body.storage_path === 'string' ? body.storage_path.trim() : ''
   const mimeType = typeof body.mime_type === 'string' ? body.mime_type.trim() : ''
   const note = typeof body.note === 'string' ? body.note.slice(0, MAX_NOTE_LEN) : undefined
 
-  if (!storagePath) return NextResponse.json({ ok: false, error: 'storage_path is required' }, { status: 400 })
+  // Link mode. A pasted YouTube/TikTok/Instagram URL replaces the upload
+  // entirely — see video-link.ts for why the two platforms take different
+  // routes (YouTube goes straight to Gemini, the others download via Zapi).
+  if (sourceUrl) {
+    const noteWithUrl = typeof body.note === 'string' ? body.note.slice(0, MAX_NOTE_LEN) : undefined
+    return await handleLink(sourceUrl, noteWithUrl, apiKey)
+  }
+
+  if (!storagePath) return NextResponse.json({ ok: false, error: 'storage_path atau source_url wajib diisi' }, { status: 400 })
   const isVideo = isSupportedVideoMime(mimeType)
   if (!isVideo && !isSupportedImageMime(mimeType)) {
     return NextResponse.json({ ok: false, error: `unsupported file type: ${mimeType || '(none)'}` }, { status: 415 })
@@ -90,5 +100,56 @@ async function handleAnalyze(req: Request) {
       ? 'this analysis is taking too long — try again with a shorter/smaller file.'
       : e instanceof Error ? e.message : 'translation failed'
     return NextResponse.json({ ok: false, error: msg }, { status: 504 })
+  }
+}
+
+// Analyse a pasted social video link. Kept separate from the upload path
+// because the media never touches our Storage bucket here: YouTube is read by
+// Gemini from the URL, and TikTok/Instagram are fetched straight into memory.
+async function handleLink(sourceUrl: string, note: string | undefined, apiKey: string) {
+  let resolved
+  try {
+    resolved = await resolveVideoLink(sourceUrl)
+  } catch (e) {
+    // A private post or an unsupported link is an ordinary thing to paste, so
+    // this is a 400 with the operator-facing message, not a server error.
+    if (e instanceof VideoLinkError) return NextResponse.json({ ok: false, error: e.message }, { status: 400 })
+    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'gagal baca link' }, { status: 400 })
+  }
+
+  // Real engagement numbers from Zapi, folded into the note so the direction is
+  // grounded in how the video actually performed rather than visuals alone.
+  const fullNote = [note, statsNote(resolved.stats)].filter(Boolean).join('') || undefined
+
+  try {
+    if (resolved.kind === 'gemini_uri') {
+      const result = await withDeadline(
+        translateYouTubeToDirection({ youtubeUrl: resolved.uri, note: fullNote }),
+        VIDEO_DEADLINE_MS,
+        'YouTube analysis',
+      )
+      return NextResponse.json(result.ok
+        ? { ok: true, direction: result.direction, platform: resolved.platform, stats: resolved.stats ?? null }
+        : { ok: false, error: result.error }, { status: result.ok ? 200 : 502 })
+    }
+
+    const buffer = await downloadMedia(resolved.url)
+    const isVideo = resolved.mimeType.startsWith('video/')
+    const result = await withDeadline(
+      isVideo
+        ? translateVideoToDirection({ apiKey, videoBuffer: buffer, mimeType: resolved.mimeType, note: fullNote })
+        : translateImageToDirection({ apiKey, imageBase64: buffer.toString('base64'), mimeType: resolved.mimeType, note: fullNote }),
+      isVideo ? VIDEO_DEADLINE_MS : IMAGE_DEADLINE_MS,
+      isVideo ? 'video analysis' : 'image analysis',
+    )
+    return NextResponse.json(result.ok
+      ? { ok: true, direction: result.direction, platform: resolved.platform, stats: resolved.stats ?? null }
+      : { ok: false, error: result.error }, { status: result.ok ? 200 : 502 })
+  } catch (e) {
+    if (e instanceof VideoLinkError) return NextResponse.json({ ok: false, error: e.message }, { status: 400 })
+    if (e instanceof DeadlineExceededError) {
+      return NextResponse.json({ ok: false, error: 'Analisisnya kelamaan — coba video yang lebih pendek.' }, { status: 504 })
+    }
+    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'analisis gagal' }, { status: 500 })
   }
 }
