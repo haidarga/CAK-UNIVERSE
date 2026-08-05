@@ -364,6 +364,9 @@ export async function generateNaskah(params: GenerateNaskahParams): Promise<Gene
       content_format: params.contentFormat || null,
       pakem_id: params.pakemId || null,
       output_type: params.outputType || null,
+      // Distinguishes a general naskah (persona_id NULL by design) from one whose
+      // persona row was deleted.
+      general: !!params.general,
       status: 'draft',
       source: params.sourceIdeaSessionId ? 'promoted_from_idea' : 'generated',
       source_idea_session_id: params.sourceIdeaSessionId || null,
