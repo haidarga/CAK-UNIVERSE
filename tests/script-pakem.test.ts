@@ -21,6 +21,7 @@ const full: PakemStructure = {
   extra_rules: 'Sebut nama anak minimal sekali\nJangan pakai angka statistik',
   detected_format: 'talking_head',
   voice_sample: 'Bunda, coba cek deh label susunya.',
+  match_rules: 'category: Trend-adapted Format\nregion: Jepang',
 }
 
 describe('PakemStructureSchema', () => {
@@ -225,5 +226,107 @@ describe('pakem inside buildGenerationPrompt', () => {
 
   it('injects the writer-edited shot range verbatim', () => {
     expect(prompt({ pakem: { ...full, shot_min: 3, shot_max: 3 } })).toContain('3 shot')
+  })
+})
+
+
+// ── Auto-matching per brief ─────────────────────────────────────────────────
+import { parseMatchRules, scorePakemForBrief, pickPakemForBrief } from '@/lib/cakgpt/script-pakem'
+
+describe('parseMatchRules', () => {
+  it('reads one "field: value" per line', () => {
+    expect(parseMatchRules('category: Trend-adapted Format\nregion: Jepang')).toEqual([
+      { field: 'category', value: 'Trend-adapted Format' },
+      { field: 'region', value: 'Jepang' },
+    ])
+  })
+
+  it('strips bullets writers paste from a deck', () => {
+    expect(parseMatchRules('- region: China')).toEqual([{ field: 'region', value: 'China' }])
+  })
+
+  it('ignores a line with no colon rather than guessing what it meant', () => {
+    expect(parseMatchRules('Jepang\nregion: Jepang')).toEqual([{ field: 'region', value: 'Jepang' }])
+  })
+
+  it('keeps a value that itself contains a colon', () => {
+    expect(parseMatchRules('note: pakai ini: buat trend')).toEqual([
+      { field: 'note', value: 'pakai ini: buat trend' },
+    ])
+  })
+
+  it('is empty for nothing', () => {
+    expect(parseMatchRules('')).toEqual([])
+    expect(parseMatchRules(null)).toEqual([])
+  })
+})
+
+describe('scorePakemForBrief', () => {
+  const fields = { region: 'Jepang', category: 'Trend-adapted Format', day: 'Monday' }
+
+  it('counts how many rules hit', () => {
+    expect(scorePakemForBrief(parseMatchRules('region: Jepang\ncategory: Trend'), fields)).toBe(2)
+  })
+
+  it('scores rules as OR, not AND', () => {
+    // Plans rarely fill every column on every row; requiring all rules to match
+    // would leave most briefs unmatched.
+    expect(scorePakemForBrief(parseMatchRules('region: Jepang\nregion: Mars'), fields)).toBe(1)
+  })
+
+  it('matches loosely on both sides', () => {
+    // Spreadsheets spell the same column "region"/"Region"/"region_target" and
+    // the same value "Jepang"/"Jepang (Osaka)".
+    expect(scorePakemForBrief([{ field: 'Region', value: 'jepang' }], fields)).toBe(1)
+    expect(scorePakemForBrief([{ field: 'reg', value: 'Jep' }], fields)).toBe(1)
+  })
+
+  it('is zero when nothing matches, or when there are no rules', () => {
+    expect(scorePakemForBrief(parseMatchRules('region: China'), fields)).toBe(0)
+    expect(scorePakemForBrief([], fields)).toBe(0)
+    expect(scorePakemForBrief(parseMatchRules('region: Jepang'), null)).toBe(0)
+  })
+})
+
+describe('pickPakemForBrief', () => {
+  const trend = { id: 'p_trend', name: 'Pakem Trend', structure: { ...EMPTY_PAKEM, match_rules: 'category: Trend-adapted Format' } }
+  const jepang = { id: 'p_jp', name: 'Pakem Jepang', structure: { ...EMPTY_PAKEM, match_rules: 'region: Jepang\ncategory: Trend-adapted Format' } }
+  const fallback = { id: 'p_def', name: 'Pakem Default', structure: { ...EMPTY_PAKEM }, is_default: true }
+
+  it('picks the pakem with the most matching rules', () => {
+    const r = pickPakemForBrief([trend, jepang, fallback], { region: 'Jepang', category: 'Trend-adapted Format' })
+    expect(r.pakemId).toBe('p_jp')
+    expect(r.reason).toBe('matched')
+    expect(r.score).toBe(2)
+  })
+
+  it('falls back to the brand default when nothing matches', () => {
+    const r = pickPakemForBrief([trend, jepang, fallback], { region: 'Mars' })
+    expect(r.pakemId).toBe('p_def')
+    expect(r.reason).toBe('default')
+  })
+
+  it('returns nothing when there is no match and no default', () => {
+    const r = pickPakemForBrief([trend, jepang], { region: 'Mars' })
+    expect(r.pakemId).toBeNull()
+    expect(r.reason).toBe('none')
+  })
+
+  it('breaks ties by list order, so a re-run picks the same one', () => {
+    const a = { id: 'a', name: 'A', structure: { ...EMPTY_PAKEM, match_rules: 'region: Jepang' } }
+    const b = { id: 'b', name: 'B', structure: { ...EMPTY_PAKEM, match_rules: 'region: Jepang' } }
+    expect(pickPakemForBrief([a, b], { region: 'Jepang' }).pakemId).toBe('a')
+    expect(pickPakemForBrief([a, b], { region: 'Jepang' }).pakemId).toBe('a')
+  })
+
+  it('ignores a pakem with no rules unless it is the default', () => {
+    const bare = { id: 'bare', name: 'Bare', structure: { ...EMPTY_PAKEM } }
+    expect(pickPakemForBrief([bare], { region: 'Jepang' }).reason).toBe('none')
+    expect(pickPakemForBrief([{ ...bare, is_default: true }], { region: 'Jepang' }).reason).toBe('default')
+  })
+
+  it('handles an empty candidate list and null fields', () => {
+    expect(pickPakemForBrief([], { a: 1 }).reason).toBe('none')
+    expect(pickPakemForBrief([fallback], null).reason).toBe('default')
   })
 })

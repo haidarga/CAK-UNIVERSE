@@ -36,13 +36,19 @@ export const PakemStructureSchema = z.object({
   // a full script in the prompt makes the model copy the CONTENT (product
   // claims, specific phrasing) instead of the STRUCTURE.
   voice_sample: z.string().max(1200).default(''),
+  // Which briefs this pakem is FOR, one "field: value" per line, e.g.
+  //   category: Trend-adapted Format
+  //   region: Jepang
+  // Used by Auto mode to pick a pakem per brief. Empty = never auto-matched
+  // (the pakem is still selectable by hand).
+  match_rules: z.string().max(2000).default(''),
 })
 export type PakemStructure = z.infer<typeof PakemStructureSchema>
 
 export const EMPTY_PAKEM: PakemStructure = {
   section_flow: [], shot_min: null, shot_max: null,
   hook_style: '', cta_style: '', pacing: '', extra_rules: '',
-  detected_format: null, voice_sample: '',
+  detected_format: null, voice_sample: '', match_rules: '',
 }
 
 export const PakemSchema = z.object({
@@ -148,4 +154,88 @@ export function pakemSection(pakem: PakemStructure | null | undefined, pakemName
       : '',
     '',
   ].filter(Boolean).join('\n')
+}
+
+
+// ── Auto-matching a pakem to a brief ────────────────────────────────────────
+//
+// Deliberately deterministic rather than an LLM call. Picking one of three or
+// four options per brief would cost an extra model call for every brief in a
+// 40-brief run, give a different answer on a re-run, and — worst — leave no way
+// to explain why a particular pakem was chosen. These rules can be shown in the
+// UI before the writer commits.
+
+export type MatchRule = { field: string; value: string }
+
+/** One "field: value" per line. A line without a colon is ignored, not guessed. */
+export function parseMatchRules(value: string | null | undefined): MatchRule[] {
+  const out: MatchRule[] = []
+  for (const raw of (value || '').split('\n')) {
+    const line = raw.replace(/^\s*[-–—•*]\s*/, '').trim()
+    if (!line) continue
+    const idx = line.indexOf(':')
+    if (idx <= 0) continue
+    const field = line.slice(0, idx).trim()
+    const val = line.slice(idx + 1).trim()
+    if (field && val) out.push({ field, value: val })
+  }
+  return out
+}
+
+/**
+ * How well a pakem's rules fit one brief — the number of rules that match.
+ *
+ * Rules are OR'd and scored rather than AND'd: a plan rarely fills every column
+ * on every row, so requiring all rules to match would leave most briefs
+ * unmatched. Comparison is loose on both sides (case-insensitive, substring)
+ * because strategist spreadsheets spell the same column "region" / "Region" /
+ * "region_target" and the same value "Jepang" / "Jepang (Osaka)".
+ */
+export function scorePakemForBrief(rules: MatchRule[], fields: Record<string, unknown> | null | undefined): number {
+  if (rules.length === 0 || !fields) return 0
+  const entries = Object.entries(fields).map(([k, v]) => [k.toLowerCase(), String(v ?? '').toLowerCase()] as const)
+  let score = 0
+  for (const rule of rules) {
+    const f = rule.field.toLowerCase()
+    const v = rule.value.toLowerCase()
+    if (entries.some(([k, val]) => k.includes(f) && val.includes(v))) score += 1
+  }
+  return score
+}
+
+export type PakemCandidate = {
+  id: string
+  name: string
+  structure: PakemStructure
+  is_default?: boolean | null
+}
+
+export type PakemMatch = {
+  pakemId: string | null
+  pakemName: string | null
+  /** Why it was chosen — surfaced in the UI so Auto is never a black box. */
+  reason: 'matched' | 'default' | 'none'
+  score: number
+}
+
+/**
+ * Picks the pakem for ONE brief: best rule match, else the brand default, else
+ * nothing. Ties go to the earlier pakem in the list (creation order), so the
+ * same inputs always produce the same run.
+ */
+export function pickPakemForBrief(
+  candidates: PakemCandidate[],
+  fields: Record<string, unknown> | null | undefined,
+): PakemMatch {
+  let best: { c: PakemCandidate; score: number } | null = null
+  for (const c of candidates) {
+    const score = scorePakemForBrief(parseMatchRules(c.structure?.match_rules), fields)
+    if (score > 0 && (!best || score > best.score)) best = { c, score }
+  }
+  if (best) return { pakemId: best.c.id, pakemName: best.c.name, reason: 'matched', score: best.score }
+
+  const fallback = candidates.find((c) => c.is_default)
+  if (fallback) return { pakemId: fallback.id, pakemName: fallback.name, reason: 'default', score: 0 }
+
+  return { pakemId: null, pakemName: null, reason: 'none', score: 0 }
 }

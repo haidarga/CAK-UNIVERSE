@@ -19,7 +19,7 @@ export async function GET(req: Request) {
 
   const { data, error } = await supabase
     .from('sw_script_pakem')
-    .select('id, client_id, name, structure, source_excerpt, created_at')
+    .select('id, client_id, name, structure, source_excerpt, is_default, created_at')
     .eq('client_id', clientId)
     .eq('created_by', user.id)
     .eq('is_active', true)
@@ -32,6 +32,7 @@ const CreateSchema = z.object({
   client_id: z.string().uuid(),
   name: z.string().min(1).max(200),
   structure: PakemStructureSchema,
+  is_default: z.boolean().optional(),
   source_excerpt: z.string().max(20_000).nullable().optional(),
 })
 
@@ -58,8 +59,9 @@ export async function POST(req: Request) {
       name: parsed.data.name.trim(),
       structure: parsed.data.structure,
       source_excerpt: parsed.data.source_excerpt?.slice(0, 20_000) || null,
+      is_default: parsed.data.is_default ?? false,
     })
-    .select('id, client_id, name, structure, source_excerpt, created_at')
+    .select('id, client_id, name, structure, source_excerpt, is_default, created_at')
     .single()
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true, pakem: data })

@@ -100,7 +100,7 @@ export function BriefsManager({ briefs, clientNames, personaNames, personas, act
 
       {executing && (
         <ExecuteBriefsPanel
-          briefIds={selectedIds}
+          briefs={briefs.filter((b) => selectedIds.includes(b.id)).map((b) => ({ id: b.id, title: b.title, fields: b.fields }))}
           personas={personas}
           clientId={activeClientId}
           onClose={() => setExecuting(false)}

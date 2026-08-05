@@ -7,6 +7,8 @@ import { MAX_DAY_TOTAL, MAX_FANOUT_ITEMS } from '@/lib/cakgpt/schemas'
 import { OutputTypePicker } from '@/components/cakgpt/OutputTypePicker'
 import { ContentFormatPicker } from '@/components/cakgpt/ContentFormatPicker'
 import { PakemPicker } from '@/components/cakgpt/PakemPicker'
+import { pickPakemForBrief, EMPTY_PAKEM, type PakemStructure } from '@/lib/cakgpt/script-pakem'
+import { useEffect } from 'react'
 import { resolveOutputType } from '@/lib/cakgpt/output-types'
 
 function clampDays(n: number) {
@@ -25,12 +27,16 @@ function clampDays(n: number) {
  * and posts the same fan-out items, so nothing about generation behaves
  * differently depending on where the run was started.
  */
-export function ExecuteBriefsPanel({ briefIds, personas, clientId, onClose }: {
-  briefIds: string[]
+type SelectedBrief = { id: string; title: string; fields: Record<string, unknown> | null }
+type PakemRow = { id: string; name: string; structure: PakemStructure; is_default?: boolean | null }
+
+export function ExecuteBriefsPanel({ briefs, personas, clientId, onClose }: {
+  briefs: SelectedBrief[]
   personas: Array<{ id: string; name: string; cluster?: string | null }>
   clientId: string | null
   onClose: () => void
 }) {
+  const briefIds = briefs.map((b) => b.id)
   const router = useRouter()
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<string[]>([])
   // General = ONE naskah per brief that every persona can deliver, instead of
@@ -39,6 +45,36 @@ export function ExecuteBriefsPanel({ briefIds, personas, clientId, onClose }: {
   const [outputType, setOutputType] = useState('video')
   const [activeFormats, setActiveFormats] = useState<string[]>([])
   const [pakemId, setPakemId] = useState<string | null>(null)
+  // 'auto' resolves a pakem PER BRIEF from each pakem's match rules, falling
+  // back to the brand default. Deterministic, so the preview below is exactly
+  // what the run will do.
+  const [pakemMode, setPakemMode] = useState<'auto' | 'manual'>('auto')
+  const [pakemRows, setPakemRows] = useState<PakemRow[]>([])
+
+  useEffect(() => {
+    if (!clientId) { setPakemRows([]); return }
+    let cancelled = false
+    fetch(`/api/scriptwriter/pakem?client_id=${encodeURIComponent(clientId)}`)
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled && d.ok) setPakemRows(d.pakem) })
+      .catch(() => { /* optional feature — a failed load just hides Auto */ })
+    return () => { cancelled = true }
+  }, [clientId])
+
+  // Resolved once and reused for both the preview and the payload, so what the
+  // writer is shown cannot drift from what is sent.
+  const autoMatches = briefs.map((b) => ({
+    briefId: b.id,
+    match: pickPakemForBrief(
+      pakemRows.map((r) => ({ id: r.id, name: r.name, structure: { ...EMPTY_PAKEM, ...r.structure }, is_default: r.is_default })),
+      b.fields,
+    ),
+  }))
+  const autoSummary = new Map<string, number>()
+  for (const { match } of autoMatches) {
+    const label = match.pakemName ? `${match.pakemName}${match.reason === 'default' ? ' (default)' : ''}` : 'tanpa pakem'
+    autoSummary.set(label, (autoSummary.get(label) || 0) + 1)
+  }
   const [steering, setSteering] = useState('')
   const [days, setDays] = useState(1)
   const [busy, setBusy] = useState(false)
@@ -86,15 +122,18 @@ export function ExecuteBriefsPanel({ briefIds, personas, clientId, onClose }: {
       const formats: Array<string | undefined> = activeFormats.length > 0 ? activeFormats : [undefined]
       const arahan = steering.trim() || undefined
 
+      const autoById = new Map(autoMatches.map((m) => [m.briefId, m.match.pakemId]))
       const items: Array<Record<string, unknown>> = []
       for (const brief_id of briefIds) {
+        // Auto resolves per brief; manual applies one pakem to the whole run.
+        const resolvedPakem = pakemMode === 'auto' ? autoById.get(brief_id) || undefined : pakemId || undefined
         for (const persona_id of personaTargets) {
           for (const content_format of formats) {
             if (dayTotal === 1) {
-              items.push({ brief_id, persona_id, extra_context: arahan, content_format, pakem_id: pakemId || undefined, output_type: outputType, general })
+              items.push({ brief_id, persona_id, extra_context: arahan, content_format, pakem_id: resolvedPakem, output_type: outputType, general })
             } else {
               for (let d = 1; d <= dayTotal; d++) {
-                items.push({ brief_id, persona_id, extra_context: arahan, content_format, pakem_id: pakemId || undefined, output_type: outputType, general, day_no: d, day_total: dayTotal })
+                items.push({ brief_id, persona_id, extra_context: arahan, content_format, pakem_id: resolvedPakem, output_type: outputType, general, day_no: d, day_total: dayTotal })
               }
             }
           }
@@ -139,7 +178,34 @@ export function ExecuteBriefsPanel({ briefIds, personas, clientId, onClose }: {
         <ContentFormatPicker value={activeFormats} onChange={setActiveFormats} disabled={busy} />
       )}
 
-      <PakemPicker clientId={clientId} value={pakemId} onChange={setPakemId} selectedFormats={activeFormats} disabled={busy} />
+      {pakemRows.length > 0 && (
+        <div className="space-y-1.5">
+          <div>
+            <span className="block text-xs font-medium text-text">Pakem script</span>
+            <span className="block text-[11px] text-mutedText">Auto nyocokin per brief dari aturan tiap pakem, jatuh ke pakem default kalau gak ada yang cocok.</span>
+          </div>
+          <div className="flex gap-1.5">
+            {([['auto', 'Auto (per brief)'], ['manual', 'Pilih sendiri']] as const).map(([key, label]) => (
+              <button key={key} type="button" disabled={busy} onClick={() => setPakemMode(key)} aria-pressed={pakemMode === key}
+                className={`rounded-md border px-2.5 py-1 text-xs font-medium disabled:opacity-50 cursor-pointer ${
+                  pakemMode === key ? 'border-primary bg-primary/10 text-primary' : 'border-border text-mutedText hover:bg-muted'
+                }`}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {pakemMode === 'auto' ? (
+            // Shown before Generate so Auto is never a black box: this is the
+            // actual per-brief result, not an estimate.
+            <div className="rounded-md bg-muted/60 px-2.5 py-1.5 text-[11px] text-mutedText">
+              {[...autoSummary.entries()].map(([label, n]) => `${n} brief → ${label}`).join(' · ')}
+            </div>
+          ) : (
+            <PakemPicker clientId={clientId} value={pakemId} onChange={setPakemId} selectedFormats={activeFormats} disabled={busy} />
+          )}
+        </div>
+      )}
 
       <div>
         <span className="mb-1 block text-xs font-medium text-text">

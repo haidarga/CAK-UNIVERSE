@@ -1,14 +1,14 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Sparkles, Loader2, Upload, ClipboardPaste, Trash2, Plus, X, Save } from 'lucide-react'
+import { Sparkles, Loader2, Upload, ClipboardPaste, Trash2, Plus, X, Save, Star } from 'lucide-react'
 import {
   EMPTY_PAKEM, formatShotRange, type PakemStructure,
 } from '@/lib/cakgpt/script-pakem'
 import { CONTENT_FORMAT_PRESETS } from '@/lib/cakgpt/content-formats'
 import { uploadFileForImport } from '@/lib/cakgpt/upload-client'
 
-type PakemRow = { id: string; name: string; structure: PakemStructure; source_excerpt: string | null }
+type PakemRow = { id: string; name: string; structure: PakemStructure; source_excerpt: string | null; is_default?: boolean | null }
 
 /**
  * Script Pakem manager for one brand.
@@ -100,6 +100,16 @@ export function PakemManager({ clientId, clientName }: { clientId: string; clien
     } catch { setError('network error') } finally { setBusy(null) }
   }
 
+  async function setDefault(id: string, next: boolean) {
+    try {
+      const res = await fetch(`/api/scriptwriter/pakem/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_default: next }),
+      })
+      if ((await res.json()).ok) await load()
+    } catch { setError('network error') }
+  }
+
   async function remove(id: string, name: string) {
     if (!window.confirm(`Hapus pakem "${name}"? Naskah yang udah dibikin pakai pakem ini tetap aman.`)) return
     try {
@@ -143,10 +153,22 @@ export function PakemManager({ clientId, clientName }: { clientId: string; clien
                   <div className="min-w-0">
                     <p className="truncate text-xs font-medium text-text">{r.name}</p>
                     <p className="truncate text-[11px] text-mutedText">
-                      {[r.structure?.section_flow?.join(' → '), range, r.structure?.detected_format].filter(Boolean).join(' · ') || 'struktur kosong'}
+                      {[
+                        r.is_default ? 'DEFAULT' : '',
+                        r.structure?.match_rules?.trim() ? `${r.structure.match_rules.split('\n').filter(Boolean).length} aturan match` : '',
+                        r.structure?.section_flow?.join(' → '),
+                        range,
+                      ].filter(Boolean).join(' · ') || 'struktur kosong'}
                     </p>
                   </div>
-                  <div className="flex shrink-0 gap-1">
+                  <div className="flex shrink-0 items-center gap-1">
+                    {/* The fallback Auto uses when no pakem's rules match a brief. */}
+                    <button type="button" onClick={() => setDefault(r.id, !r.is_default)}
+                      aria-pressed={!!r.is_default}
+                      title={r.is_default ? 'Ini pakem default brand' : 'Jadikan pakem default brand'}
+                      className={`rounded p-1 cursor-pointer ${r.is_default ? 'text-warning' : 'text-mutedText hover:bg-muted hover:text-text'}`}>
+                      <Star size={13} fill={r.is_default ? 'currentColor' : 'none'} aria-hidden />
+                    </button>
                     <button type="button" onClick={() => openEdit(r)}
                       className="rounded px-2 py-1 text-[11px] font-medium text-text hover:bg-muted cursor-pointer">Edit</button>
                     <button type="button" onClick={() => remove(r.id, r.name)} aria-label={`Hapus ${r.name}`}
@@ -240,6 +262,12 @@ export function PakemManager({ clientId, clientName }: { clientId: string; clien
                 <option value="">— gak ditentukan —</option>
                 {CONTENT_FORMAT_PRESETS.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
               </select>
+            </Field>
+
+            <Field label="Kepakai buat brief yang mana" hint='satu "field: nilai" per baris — dipakai mode Auto pas execute'>
+              <textarea value={draft.match_rules} onChange={(e) => setField('match_rules', e.target.value)} rows={3}
+                placeholder={'category: Trend-adapted Format\nregion: Jepang'}
+                aria-label="Aturan pencocokan brief" className={`${inputCls} font-data`} />
             </Field>
 
             <Field label="Contoh gaya bicara" hint="1-2 baris aja — dipakai buat ritme, bukan buat dicontek isinya">
