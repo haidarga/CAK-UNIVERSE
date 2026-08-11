@@ -81,24 +81,52 @@ export function selectFallbackProvider(primary: ScraperProvider): ScraperProvide
   return null
 }
 
+function hasPosts(a: ScrapedAccount | null): a is ScrapedAccount {
+  return !!a && Array.isArray(a.recentPosts) && a.recentPosts.length > 0
+}
+
 export async function scrapeAccount(platform: Platform, handle: string): Promise<ScrapedAccount> {
   const provider = selectProvider()
-  let account: ScrapedAccount
+  const fallback = selectFallbackProvider(provider)
+
+  let account: ScrapedAccount | null = null
+  let primaryErr: unknown = null
   try {
     account = await provider.scrape(platform, handle)
-  } catch (primaryErr) {
-    // Automatic failover: a provider outage, rate limit, or plan gate should
-    // not take the feature down when a second key is configured.
-    const fallback = selectFallbackProvider(provider)
-    if (!fallback) throw primaryErr
-    console.warn(`[strategist] ${provider.name} failed, falling back to ${fallback.name}:`, primaryErr instanceof Error ? primaryErr.message : primaryErr)
-    account = await fallback.scrape(platform, handle)
+  } catch (e) {
+    primaryErr = e
   }
 
-  // An account with no analysable posts is not a provider failure — retrying on
-  // the fallback would just burn a second quota for the same empty answer.
-  if (!account.recentPosts || account.recentPosts.length === 0) {
-    throw new ScraperError('Akun ditemukan tapi nggak ada post publik yang bisa dianalisis.')
+  // Failover covers BOTH an outright failure and a scrape that came back with
+  // followers but no posts. The second case used to be treated as "this account
+  // has nothing public" and reported as such — but it is just as often one
+  // provider's post endpoint failing while the other returns a full feed
+  // (observed live: RapidAPI's IG statistics returned zero posts for an account
+  // Zapi returned twelve for). Reporting that as an empty account sent the
+  // writer chasing a problem that was never on Instagram's side.
+  if (fallback && !hasPosts(account)) {
+    const why = primaryErr
+      ? (primaryErr instanceof Error ? primaryErr.message : String(primaryErr))
+      : 'returned no posts'
+    console.warn(`[strategist] ${provider.name} ${why} — retrying on ${fallback.name}`)
+    try {
+      const alt = await fallback.scrape(platform, handle)
+      if (hasPosts(alt) || !account) account = alt
+    } catch (fallbackErr) {
+      // Both failed: surface the PRIMARY error, which is the one the operator
+      // can act on (its key/quota is the configured default).
+      if (!account) throw primaryErr ?? fallbackErr
+    }
+  }
+
+  if (!account) throw primaryErr ?? new ScraperError('Gagal ngambil data akun.')
+
+  if (!hasPosts(account)) {
+    throw new ScraperError(
+      fallback
+        ? 'Akun ketemu tapi nggak ada post publik yang kebaca — udah dicoba dua provider.'
+        : 'Akun ketemu tapi nggak ada post publik yang kebaca. Kalau akunnya jelas ada postingannya, kemungkinan besar provider-nya lagi ngadat — set ZAPI_KEY biar ada cadangan.',
+    )
   }
   return account
 }
