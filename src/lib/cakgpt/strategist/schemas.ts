@@ -102,6 +102,9 @@ export const StrategistReportSchema = z.object({
     analyzedAt: z.string(),
     cached: z.boolean(),
     provider: z.string(),
+    // Which slice was measured. Defaulted so a payload written before Reels
+    // scope existed still validates.
+    feed: z.enum(['all', 'reels']).default('all'),
     model: z.string().nullable(),
   }),
 })

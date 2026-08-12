@@ -11,6 +11,11 @@
 
 export type Platform = 'tiktok' | 'instagram'
 
+// Which slice of an Instagram account to measure. Chosen by the pasted URL:
+// .../username/reels/ asks for Reels only, a bare profile URL for everything.
+// TikTok is video-only, so this never applies there.
+export type FeedScope = 'all' | 'reels'
+
 // ── Layer 1: real scraped data (normalized across providers) ─────────────────
 export interface ScrapedPost {
   id?: string | null
@@ -24,6 +29,11 @@ export interface ScrapedPost {
   comments: number | null
   shares?: number | null
   saves?: number | null
+  // Instagram mixes photos into the same feed as Reels, and a photo has no
+  // play count — averaging it in as 0 views understates a Reels account by
+  // roughly a quarter (measured: 13,316 vs 17,755 on a real account). Null when
+  // the provider does not say, in which case nothing is filtered.
+  isVideo?: boolean | null
   takenAt?: string | null // ISO-8601, used to derive posting cadence
   caption?: string | null
 }
@@ -107,6 +117,8 @@ export interface StrategistReport {
     analyzedAt: string
     cached: boolean // true = served from cache, no scraper/LLM call this request
     provider: string
+    // Which slice was measured — 'reels' when the pasted URL asked for it.
+    feed: FeedScope
     model: string | null
   }
 }

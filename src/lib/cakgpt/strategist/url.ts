@@ -1,4 +1,4 @@
-import type { Platform } from '@/lib/cakgpt/strategist/types'
+import type { FeedScope, Platform } from '@/lib/cakgpt/strategist/types'
 
 // Parse + VALIDATE a user-pasted TikTok/Instagram URL into { platform, handle }.
 //
@@ -11,7 +11,7 @@ import type { Platform } from '@/lib/cakgpt/strategist/types'
 // URLs is rejected with a plain-language reason.
 
 export type ParsedAccountUrl =
-  | { ok: true; platform: Platform; handle: string; normalizedUrl: string }
+  | { ok: true; platform: Platform; handle: string; normalizedUrl: string; feed: FeedScope }
   | { ok: false; error: string }
 
 // Hosts we accept, matched as exact host or subdomain (www.tiktok.com etc.).
@@ -66,6 +66,8 @@ export function parseAccountUrl(input: string): ParsedAccountUrl {
   }
 
   let handle: string
+  // TikTok is video-only, so the scope never narrows there.
+  let feed: FeedScope = 'all'
   if (platform === 'tiktok') {
     // tiktok.com/@handle  |  tiktok.com/@handle/video/123
     const first = segments[0]
@@ -80,6 +82,10 @@ export function parseAccountUrl(input: string): ParsedAccountUrl {
       return { ok: false, error: 'Link ini ke post/reel, bukan profil akun. Paste link profil-nya.' }
     }
     handle = segments[0]
+    // .../username/reels/ — a deliberate request for the Reels tab, not a
+    // reserved segment. Only meaningful as the SECOND segment; as the first it
+    // is the reserved /reels/ explore page rejected above.
+    if (segments[1]?.toLowerCase() === 'reels') feed = 'reels'
   }
 
   handle = handle.replace(/^@/, '').toLowerCase()
@@ -90,7 +96,7 @@ export function parseAccountUrl(input: string): ParsedAccountUrl {
   const normalizedUrl =
     platform === 'tiktok'
       ? `https://www.tiktok.com/@${handle}`
-      : `https://www.instagram.com/${handle}`
+      : `https://www.instagram.com/${handle}${feed === 'reels' ? '/reels' : ''}`
 
-  return { ok: true, platform, handle, normalizedUrl }
+  return { ok: true, platform, handle, normalizedUrl, feed }
 }

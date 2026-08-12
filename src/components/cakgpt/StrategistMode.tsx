@@ -151,7 +151,10 @@ export function StrategistMode() {
                   {report.account.verified && <CheckCircle2 size={14} className="text-primary" aria-label="verified" />}
                 </div>
                 <span className="font-data text-[11px] uppercase tracking-wide text-mutedText">
-                  {report.account.platform} · {report.account.followers === null ? 'follower tidak terbaca' : `${compact(report.account.followers)} followers`}
+                  {report.account.platform}
+                  {report.meta.feed === 'reels' && <span className="ml-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">REELS ONLY</span>}
+                  {' · '}
+                  {report.account.followers === null ? 'follower tidak terbaca' : `${compact(report.account.followers)} followers`}
                 </span>
               </div>
             </div>

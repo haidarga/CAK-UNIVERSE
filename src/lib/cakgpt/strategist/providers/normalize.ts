@@ -105,6 +105,14 @@ export function normalizePosts(raw: unknown): ScrapedPost[] {
           'shareCount', 'stats.shareCount',
         ])),
         saves: num(pull(item, ['collect_count', 'save_count', 'saved', 'collectCount', 'stats.collectCount'])),
+        isVideo: (() => {
+          const v = pull(item, ['isVideo', 'is_video'])
+          if (typeof v === 'boolean') return v
+          // No explicit flag: a play count is the reliable tell — Instagram
+          // photos never carry one.
+          const plays = num(pull(item, ['playCount', 'play_count', 'video_view_count']))
+          return plays === null ? null : plays > 0
+        })(),
         takenAt: toIso(pull(item, [
           'create_time', 'created_at', 'taken_at', 'taken_at_timestamp', 'timestamp', 'device_timestamp',
           'createTime', 'takenAt',

@@ -3,6 +3,7 @@ import { ScraperError } from '@/lib/cakgpt/strategist/errors'
 import { rapidApiProvider } from '@/lib/cakgpt/strategist/providers/rapidapi'
 import { zapiProvider } from '@/lib/cakgpt/strategist/providers/zapi'
 import { zapiConfigured } from '@/lib/integrations/scrapers/zapi'
+import { fetchInstagramPublicCounts } from '@/lib/integrations/scrapers/instagram-public'
 
 export { ScraperError }
 
@@ -168,6 +169,24 @@ export async function scrapeAccount(platform: Platform, handle: string): Promise
       `Akun ketemu tapi nggak ada post publik yang kebaca.${fallback ? ' Udah dicoba dua provider.' : ''}`,
     )
   }
+  if (!followersLookBroken(account)) return account
+
+  // Last resort before giving up on the field: Instagram publishes the count in
+  // its own page metadata, which is often readable when the paid providers'
+  // profile endpoints are not. Best-effort — a failure just leaves it null.
+  if (account.platform === 'instagram') {
+    const publicCounts = await fetchInstagramPublicCounts(handle)
+    if (publicCounts.followers !== null && publicCounts.followers > 0) {
+      console.warn(`[strategist] ${account.provider} could not read followers for @${handle} — filled from Instagram's public page`)
+      return {
+        ...account,
+        followers: publicCounts.followers,
+        totalPosts: account.totalPosts && account.totalPosts > 0 ? account.totalPosts : publicCounts.posts,
+        provider: `${account.provider}+ig-public`,
+      }
+    }
+  }
+
   // Keep the scrape, drop only the field that cannot be trusted.
   return downgradeBrokenFollowers(account)
 }

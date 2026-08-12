@@ -1,4 +1,4 @@
-import type { ScrapedAccount, AccountMetrics } from '@/lib/cakgpt/strategist/types'
+import type { ScrapedAccount, AccountMetrics, FeedScope } from '@/lib/cakgpt/strategist/types'
 
 // Pure, deterministic derivation of AccountMetrics from a ScrapedAccount.
 // No I/O, no randomness — same input always yields the same output, which is
@@ -47,9 +47,16 @@ function avgPresent(values: Array<number | null | undefined>): number | null {
 
 // sampleSize caps how many of the most-recent posts feed the averages (the
 // scraper stores up to ~30, recent-first). Undefined/0 = use all cached posts.
-export function computeMetrics(account: ScrapedAccount, sampleSize?: number): AccountMetrics {
-  const posts =
-    sampleSize && sampleSize > 0 ? account.recentPosts.slice(0, sampleSize) : account.recentPosts
+export function computeMetrics(account: ScrapedAccount, sampleSize?: number, feed: FeedScope = 'all'): AccountMetrics {
+  // Reels scope drops photos BEFORE the sample is taken, so "7 konten" means
+  // seven Reels rather than seven mixed posts of which four happen to be video.
+  // If the provider never marked which is which, nothing is dropped — better a
+  // mixed average than an empty one.
+  const scoped =
+    feed === 'reels' && account.recentPosts.some((p) => p.isVideo === true)
+      ? account.recentPosts.filter((p) => p.isVideo !== false)
+      : account.recentPosts
+  const posts = sampleSize && sampleSize > 0 ? scoped.slice(0, sampleSize) : scoped
   // null propagates: an unreadable follower count must not become 0, which
   // would render as a measured "0 followers" and silently zero the engagement
   // denominator.

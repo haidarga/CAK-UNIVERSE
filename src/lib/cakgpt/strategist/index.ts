@@ -5,6 +5,7 @@ import { computeMetrics } from '@/lib/cakgpt/strategist/metrics'
 import { analyzeAccount } from '@/lib/cakgpt/strategist/analysis'
 import { CacheRowSchema } from '@/lib/cakgpt/strategist/schemas'
 import type {
+  FeedScope,
   Platform,
   ScrapedAccount,
   AccountMetrics,
@@ -57,6 +58,7 @@ function assembleReport(args: {
   model: string | null
   fetchedAt: string
   cached: boolean
+  feed: FeedScope
 }): StrategistReport {
   const { account, metrics, estimate } = args
   return {
@@ -76,6 +78,7 @@ function assembleReport(args: {
       analyzedAt: args.fetchedAt,
       cached: args.cached,
       provider: args.provider,
+      feed: args.feed,
       model: args.model,
     },
   }
@@ -161,7 +164,7 @@ export async function analyzeAccountUrl(params: {
   const clientId = params.clientId ?? null
   const parsed = parseAccountUrl(params.url)
   if (!parsed.ok) return { ok: false, error: parsed.error, status: 400 }
-  const { platform, handle, normalizedUrl } = parsed
+  const { platform, handle, normalizedUrl, feed } = parsed
 
   // 1. Reuse the cached SCRAPE when fresh (or within the refresh floor on a
   // forced refresh). The chosen sample size only affects downstream metrics, so
@@ -193,7 +196,10 @@ export async function analyzeAccountUrl(params: {
 
   // 2. Metrics over the chosen sample size, then the AI estimate. Both are cheap
   // and run every request so the dropdown reflects instantly without a re-scrape.
-  const metrics = computeMetrics(account, params.sampleSize)
+  // The pasted URL decides the scope: .../username/reels/ measures Reels only.
+  // Applied HERE rather than at scrape time so one cached scrape serves both
+  // views — switching costs no quota, same as the sample-size selector.
+  const metrics = computeMetrics(account, params.sampleSize, feed)
 
   let estimate: StrategistEstimate
   let model: string | null
@@ -216,7 +222,7 @@ export async function analyzeAccountUrl(params: {
     ok: true,
     report: assembleReport({
       url: normalizedUrl, account, metrics, estimate,
-      provider: account.provider, model, fetchedAt, cached: scrapeFromCache,
+      provider: account.provider, model, fetchedAt, cached: scrapeFromCache, feed,
     }),
   }
 }
