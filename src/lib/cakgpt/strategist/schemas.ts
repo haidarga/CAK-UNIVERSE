@@ -27,7 +27,7 @@ export const ScrapedAccountSchema = z.object({
   handle: z.string(),
   displayName: z.string().nullish(),
   bio: z.string().nullish(),
-  followers: z.number(),
+  followers: z.number().nullable(),
   following: z.number().nullish(),
   totalPosts: z.number().nullish(),
   verified: z.boolean().optional(),
@@ -38,7 +38,7 @@ export const ScrapedAccountSchema = z.object({
 })
 
 export const AccountMetricsSchema = z.object({
-  followers: z.number(),
+  followers: z.number().nullable(),
   postsAnalyzed: z.number(),
   avgViews: z.number().nullable(),
   avgLikes: z.number().nullable(),
@@ -92,7 +92,7 @@ export const StrategistReportSchema = z.object({
     displayName: z.string().nullable(),
     avatarUrl: z.string().nullable(),
     verified: z.boolean(),
-    followers: z.number(),
+    followers: z.number().nullable(),
     url: z.string(),
   }),
   metrics: AccountMetricsSchema,

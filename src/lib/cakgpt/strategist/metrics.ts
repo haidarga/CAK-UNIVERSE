@@ -50,7 +50,12 @@ function avgPresent(values: Array<number | null | undefined>): number | null {
 export function computeMetrics(account: ScrapedAccount, sampleSize?: number): AccountMetrics {
   const posts =
     sampleSize && sampleSize > 0 ? account.recentPosts.slice(0, sampleSize) : account.recentPosts
-  const followers = Math.max(0, account.followers || 0)
+  // null propagates: an unreadable follower count must not become 0, which
+  // would render as a measured "0 followers" and silently zero the engagement
+  // denominator.
+  const followers = account.followers === null || account.followers === undefined
+    ? null
+    : Math.max(0, account.followers)
 
   // Every average excludes unparsed/missing samples so a partial provider
   // payload can't fabricate zeros into these "measured" numbers.
@@ -65,8 +70,11 @@ export function computeMetrics(account: ScrapedAccount, sampleSize?: number): Ac
   // Basis by platform convention: TikTok reach ≈ views; Instagram ER is the
   // industry-standard interactions/followers (feed photos have no public views,
   // and mixing sparse Reel views with photo likes would skew the ratio).
-  const useViews = account.platform === 'tiktok' && avgViews !== null && avgViews > 0
-  const reach = useViews ? (avgViews as number) : followers
+  // Views also become the basis on Instagram when followers are unreadable —
+  // otherwise the whole engagement figure is lost over one missing field, even
+  // though every post metric came back fine.
+  const useViews = (account.platform === 'tiktok' || followers === null) && avgViews !== null && avgViews > 0
+  const reach = useViews ? (avgViews as number) : (followers ?? 0)
   const interactions = (avgLikes ?? 0) + (avgComments ?? 0) + (avgShares ?? 0)
   const engagementRatePct = reach > 0 ? round((interactions / reach) * 100, 2) : 0
 

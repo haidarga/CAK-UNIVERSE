@@ -33,7 +33,10 @@ export interface ScrapedAccount {
   handle: string
   displayName?: string | null
   bio?: string | null
-  followers: number
+  // null when the provider could not read it. Deliberately NOT 0 — a real 0
+  // and an unreadable field mean opposite things, and the second must never
+  // render as a measured number.
+  followers: number | null
   following?: number | null
   totalPosts?: number | null
   verified?: boolean
@@ -45,7 +48,7 @@ export interface ScrapedAccount {
 
 // ── Layer 2: deterministic derived metrics ───────────────────────────────────
 export interface AccountMetrics {
-  followers: number
+  followers: number | null
   postsAnalyzed: number
   // All averages are null when no post carried a usable value for that metric,
   // so the UI shows "N/A" instead of a fabricated 0.
@@ -94,7 +97,7 @@ export interface StrategistReport {
     displayName: string | null
     avatarUrl: string | null
     verified: boolean
-    followers: number
+    followers: number | null
     url: string
   }
   metrics: AccountMetrics

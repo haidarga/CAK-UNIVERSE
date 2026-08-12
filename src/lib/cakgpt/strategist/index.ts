@@ -66,7 +66,7 @@ function assembleReport(args: {
       displayName: account.displayName ?? null,
       avatarUrl: account.avatarUrl ?? null,
       verified: account.verified ?? false,
-      followers: metrics.followers,
+      followers: metrics.followers ?? null,
       url: args.url,
     },
     metrics,

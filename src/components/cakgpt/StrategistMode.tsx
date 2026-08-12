@@ -151,7 +151,7 @@ export function StrategistMode() {
                   {report.account.verified && <CheckCircle2 size={14} className="text-primary" aria-label="verified" />}
                 </div>
                 <span className="font-data text-[11px] uppercase tracking-wide text-mutedText">
-                  {report.account.platform} · {compact(report.account.followers)} followers
+                  {report.account.platform} · {report.account.followers === null ? 'follower tidak terbaca' : `${compact(report.account.followers)} followers`}
                 </span>
               </div>
             </div>
@@ -178,7 +178,10 @@ export function StrategistMode() {
               subtitle="Diukur langsung dari post publik"
             />
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Stat icon={<Users size={14} />} label="Followers" value={nf.format(report.metrics.followers)} />
+              {/* "—" rather than 0: the provider could not read it, which is a
+                  different fact from an account having none. */}
+              <Stat icon={<Users size={14} />} label="Followers"
+                value={report.metrics.followers === null ? '— tidak terbaca' : nf.format(report.metrics.followers)} />
               <Stat icon={<Eye size={14} />} label="Avg views" value={report.metrics.avgViews === null ? 'N/A' : nf.format(report.metrics.avgViews)} />
               <Stat
                 icon={<Heart size={14} />}
