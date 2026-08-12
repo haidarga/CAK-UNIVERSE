@@ -4,6 +4,8 @@ import { rapidApiProvider } from '@/lib/cakgpt/strategist/providers/rapidapi'
 import { zapiProvider } from '@/lib/cakgpt/strategist/providers/zapi'
 import { zapiConfigured } from '@/lib/integrations/scrapers/zapi'
 import { fetchInstagramPublicCounts } from '@/lib/integrations/scrapers/instagram-public'
+import { apifyProvider } from '@/lib/cakgpt/strategist/providers/apify'
+import { apifyConfigured } from '@/lib/integrations/scrapers/apify'
 
 export { ScraperError }
 
@@ -73,13 +75,25 @@ export function selectProvider(): ScraperProvider {
   throw new ScraperError(`Unknown STRATEGIST_SCRAPER: "${choice}" (expected "zapi", "rapidapi" or "mock")`)
 }
 
-// The provider to try when the primary one fails. Only ever a DIFFERENT real
-// provider — falling back to mock would silently replace a failed scrape with
-// invented numbers, which is the one thing Strategist Mode must never do.
+// Providers to try, in order, when the primary one fails or returns something
+// unusable. Never mock — falling back to invented numbers is the one thing
+// Strategist Mode must never do.
+//
+// Ordered by COST, cheapest first. Apify is billed per result, so it only runs
+// once every subscription-based source has failed.
+export function selectFallbackProviders(primary: ScraperProvider, platform: Platform): ScraperProvider[] {
+  const chain: ScraperProvider[] = []
+  if (primary.name !== 'zapi' && zapiConfigured()) chain.push(zapiProvider)
+  if (primary.name !== 'rapidapi' && process.env.RAPIDAPI_KEY) chain.push(rapidApiProvider)
+  // Instagram only — Zapi covers TikTok, and a paid actor is not the place to
+  // duplicate a platform the free providers already handle.
+  if (primary.name !== 'apify' && platform === 'instagram' && apifyConfigured()) chain.push(apifyProvider)
+  return chain
+}
+
+/** Back-compat for callers/tests that only care about the first fallback. */
 export function selectFallbackProvider(primary: ScraperProvider): ScraperProvider | null {
-  if (primary.name === 'zapi' && process.env.RAPIDAPI_KEY) return rapidApiProvider
-  if (primary.name === 'rapidapi' && zapiConfigured()) return zapiProvider
-  return null
+  return selectFallbackProviders(primary, 'instagram')[0] ?? null
 }
 
 function hasPosts(a: ScrapedAccount | null): a is ScrapedAccount {
@@ -126,7 +140,8 @@ export function looksUnreadable(a: ScrapedAccount | null): boolean {
 
 export async function scrapeAccount(platform: Platform, handle: string): Promise<ScrapedAccount> {
   const provider = selectProvider()
-  const fallback = selectFallbackProvider(provider)
+  const chain = selectFallbackProviders(provider, platform)
+  const fallback = chain[0] ?? null
 
   let account: ScrapedAccount | null = null
   let primaryErr: unknown = null
@@ -143,24 +158,24 @@ export async function scrapeAccount(platform: Platform, handle: string): Promise
   // (observed live: RapidAPI's IG statistics returned zero posts for an account
   // Zapi returned twelve for). Reporting that as an empty account sent the
   // writer chasing a problem that was never on Instagram's side.
-  // Still worth a second opinion when the follower count looks broken — the
-  // other provider may read it fine — but no longer a reason to fail.
-  if (fallback && (looksUnreadable(account) || followersLookBroken(account))) {
+  // Walk the chain until one provider returns something clean. Stops at the
+  // first good result, so the paid provider at the end is only reached when
+  // every cheaper one has genuinely failed.
+  for (const alt of chain) {
+    if (account && !looksUnreadable(account) && !followersLookBroken(account)) break
     const why = primaryErr
       ? (primaryErr instanceof Error ? primaryErr.message : String(primaryErr))
       : hasPosts(account) ? 'returned 0 followers alongside live posts' : 'returned no posts'
-    console.warn(`[strategist] ${provider.name} ${why} — retrying on ${fallback.name}`)
+    console.warn(`[strategist] ${provider.name} ${why} — trying ${alt.name}`)
     try {
-      const alt = await fallback.scrape(platform, handle)
-      // Only prefer the fallback if it is strictly better: has posts, and did
-      // not fail the same follower check.
-      if (!account || (!looksUnreadable(alt) && !followersLookBroken(alt))) account = alt
+      const next = await alt.scrape(platform, handle)
+      // Only take it if strictly better than what we already hold.
+      if (!account || (!looksUnreadable(next) && !followersLookBroken(next))) account = next
     } catch (fallbackErr) {
-      // Both failed: surface the PRIMARY error, which is the one the operator
-      // can act on (its key/quota is the configured default).
-      if (!account) throw primaryErr ?? fallbackErr
+      console.warn(`[strategist] ${alt.name} also failed:`, fallbackErr instanceof Error ? fallbackErr.message : fallbackErr)
     }
   }
+  if (!account && primaryErr) throw primaryErr
 
   if (!account) throw primaryErr ?? new ScraperError('Gagal ngambil data akun.')
 
