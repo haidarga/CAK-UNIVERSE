@@ -26,6 +26,11 @@ export function StrategistMode() {
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Shown once a lookup passes the point where it is clearly a cold scrape.
+  // Zapi fetches on demand and caches, so a first-time account can take about a
+  // minute while a repeat is near-instant — without saying so the wait reads as
+  // a hang.
+  const [slow, setSlow] = useState(false)
   const [report, setReport] = useState<StrategistReport | null>(null)
   const [copied, setCopied] = useState(false)
   const [sampleSize, setSampleSize] = useState(15)
@@ -37,6 +42,8 @@ export function StrategistMode() {
     if (!url.trim()) return setError('Paste link akun TikTok atau Instagram dulu.')
     setLoading(true)
     setError(null)
+    setSlow(false)
+    const slowTimer = setTimeout(() => setSlow(true), 8_000)
     try {
       const res = await fetch('/api/scriptwriter/strategist', {
         method: 'POST',
@@ -52,8 +59,16 @@ export function StrategistMode() {
       setReport(validated.data as StrategistReport)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'network error')
+      // Drop the previous report. Leaving it on screen under an error message
+      // presents a stale result — often for a DIFFERENT account or platform —
+      // as the answer to the lookup that just failed. In a feature whose whole
+      // point is separating measured data from estimates, that is the worst
+      // possible thing to render.
+      setReport(null)
     } finally {
+      clearTimeout(slowTimer)
       setLoading(false)
+      setSlow(false)
     }
   }
 
@@ -108,6 +123,12 @@ export function StrategistMode() {
           </button>
         </div>
         <p className="mt-2 text-xs text-mutedText">Level akun (bukan per-video). Data di-cache biar hemat kuota — pakai “Refresh” buat paksa ambil ulang.</p>
+        {slow && !error && (
+          <p className="mt-2 text-xs text-mutedText">
+            Akun ini kayaknya belum pernah di-scrape — lagi diambil dari nol, bisa sampai ~1 menit.
+            Sekali kelar, akun yang sama bakal langsung muncul.
+          </p>
+        )}
         {error && <p role="alert" className="mt-2 text-xs text-destructive">{error}</p>}
       </div>
 
