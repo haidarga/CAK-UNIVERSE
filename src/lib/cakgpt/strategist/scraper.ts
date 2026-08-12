@@ -85,6 +85,26 @@ function hasPosts(a: ScrapedAccount | null): a is ScrapedAccount {
   return !!a && Array.isArray(a.recentPosts) && a.recentPosts.length > 0
 }
 
+/**
+ * A scrape that came back "successful" but is internally impossible.
+ *
+ * Observed live: Zapi's Instagram profile returned HTTP 200 with
+ * followerCount 0 and postCount 0 for an account whose POSTS endpoint returned
+ * seven posts averaging 7.9k views and 333 likes. Zero followers is a real
+ * state for a real account — but not alongside posts pulling thousands of
+ * views. That combination means the profile read failed and reported defaults.
+ *
+ * Left unchecked it renders as "Followers 0 · Engagement 0%" under a green
+ * DATA AKTUAL header: a confidently wrong number where the whole point of the
+ * section is that it was measured.
+ */
+export function looksUnreadable(a: ScrapedAccount | null): boolean {
+  if (!hasPosts(a)) return true
+  if (a.followers > 0) return false
+  // Zero followers is only believable if the posts are also lifeless.
+  return a.recentPosts.some((p) => (p.views ?? 0) > 0 || (p.likes ?? 0) > 0 || (p.comments ?? 0) > 0)
+}
+
 export async function scrapeAccount(platform: Platform, handle: string): Promise<ScrapedAccount> {
   const provider = selectProvider()
   const fallback = selectFallbackProvider(provider)
@@ -104,14 +124,14 @@ export async function scrapeAccount(platform: Platform, handle: string): Promise
   // (observed live: RapidAPI's IG statistics returned zero posts for an account
   // Zapi returned twelve for). Reporting that as an empty account sent the
   // writer chasing a problem that was never on Instagram's side.
-  if (fallback && !hasPosts(account)) {
+  if (fallback && looksUnreadable(account)) {
     const why = primaryErr
       ? (primaryErr instanceof Error ? primaryErr.message : String(primaryErr))
-      : 'returned no posts'
+      : hasPosts(account) ? 'returned 0 followers alongside live posts' : 'returned no posts'
     console.warn(`[strategist] ${provider.name} ${why} — retrying on ${fallback.name}`)
     try {
       const alt = await fallback.scrape(platform, handle)
-      if (hasPosts(alt) || !account) account = alt
+      if (!looksUnreadable(alt) || !account) account = alt
     } catch (fallbackErr) {
       // Both failed: surface the PRIMARY error, which is the one the operator
       // can act on (its key/quota is the configured default).
@@ -121,11 +141,16 @@ export async function scrapeAccount(platform: Platform, handle: string): Promise
 
   if (!account) throw primaryErr ?? new ScraperError('Gagal ngambil data akun.')
 
-  if (!hasPosts(account)) {
+  if (looksUnreadable(account)) {
+    // Two distinct failures, two distinct messages — "no posts" and "profile
+    // came back empty while posts did not" need different next steps.
+    const suffix = fallback
+      ? ' Udah dicoba dua provider.'
+      : ' Set ZAPI_KEY (atau RAPIDAPI_KEY) biar ada provider cadangan.'
     throw new ScraperError(
-      fallback
-        ? 'Akun ketemu tapi nggak ada post publik yang kebaca — udah dicoba dua provider.'
-        : 'Akun ketemu tapi nggak ada post publik yang kebaca. Kalau akunnya jelas ada postingannya, kemungkinan besar provider-nya lagi ngadat — set ZAPI_KEY biar ada cadangan.',
+      hasPosts(account)
+        ? `Data profil ${handle} nggak kebaca — follower kebaca 0 padahal postingannya jelas ada engagement. Itu scrape yang gagal separuh di sisi provider, bukan kondisi akunnya.${suffix}`
+        : `Akun ketemu tapi nggak ada post publik yang kebaca.${suffix}`,
     )
   }
   return account
