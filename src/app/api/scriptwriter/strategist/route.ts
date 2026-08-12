@@ -10,7 +10,12 @@ import { analyzeAccountUrl } from '@/lib/cakgpt/strategist'
 // (host allowlist) inside analyzeAccountUrl before anything downstream runs.
 
 export const runtime = 'nodejs'
-export const maxDuration = 60
+// A COLD Zapi scrape of one account was measured at 55-87s (it fetches on
+// demand, then caches). 60s killed the function mid-flight and surfaced as a
+// scraper failure. Raised to the platform ceiling; a warm account still returns
+// in well under a second, and the result is cached in sw_strategist_accounts so
+// the slow path is paid once per account.
+export const maxDuration = 300
 
 const BodySchema = z.object({
   url: z.string().min(1).max(500),

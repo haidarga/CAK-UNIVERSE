@@ -428,3 +428,39 @@ describe('enrichInstagramItems latency guard', () => {
     expect(spy).toHaveBeenCalledOnce()
   })
 })
+
+// ── Cold-scrape timeout budget ──────────────────────────────────────────────
+// Zapi fetches on demand then caches, so the FIRST call for an account is far
+// slower than every later one. Measured live: an Instagram profile returned 200
+// after 55s and 87s while the client aborted at 20s — a successful response
+// thrown away, surfaced to the writer as "account has no public posts".
+describe('zapi cold-scrape timeout', () => {
+  it('allows well over a minute by default', async () => {
+    vi.stubEnv('ZAPI_KEY', 'zpi_test')
+    let seen = 0
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => {
+      // The abort fires on a timer we cannot wait out in a test; asserting the
+      // signal is still unaborted immediately after the call proves the ceiling
+      // is not the old 20s-or-less behaviour that fired synchronously in CI.
+      seen += init.signal?.aborted ? 0 : 1
+      return Promise.resolve({
+        ok: true, status: 200, headers: { get: () => null },
+        json: async () => ({ followerCount: 1 }),
+      })
+    }))
+    await fetchTikTokProfile('x')
+    expect(seen).toBe(1)
+  })
+
+  it('honours an explicit shorter budget, which enrichment relies on', async () => {
+    vi.stubEnv('ZAPI_KEY', 'zpi_test')
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => new Promise((_res, rej) => {
+      init.signal?.addEventListener('abort', () => {
+        const err = new Error('aborted'); err.name = 'AbortError'; rej(err)
+      })
+    })))
+    const started = Date.now()
+    await expect(fetchTikTokProfile('x', 300)).rejects.toMatchObject({ status: 408 })
+    expect(Date.now() - started).toBeLessThan(3_000)
+  })
+})

@@ -43,7 +43,12 @@ function toScraperError(e: unknown, platform: Platform): ScraperError {
       const wait = e.retryAfterSec ? ` Coba lagi ${e.retryAfterSec} detik.` : ''
       return new ScraperError(`Kuota Zapi kena rate limit.${wait}${ref}`)
     }
-    if (e.status === 408) return new ScraperError(`Zapi kelamaan gak jawab${ref}.`)
+    if (e.status === 408) return new ScraperError(`Zapi kelamaan gak jawab — akun ini belum pernah di-scrape jadi lagi diambil dari nol${ref}. Coba lagi bentar, hasilnya udah ke-cache.`)
+    // Zapi's own upstream (TikTok/Instagram) refusing it, not us and not the
+    // key. Observed live as 503 "Source temporarily unavailable".
+    if (e.status === 502 || e.status === 503 || e.status === 504) {
+      return new ScraperError(`Sumbernya lagi down di sisi Zapi (${e.status})${ref}. Bukan masalah key atau akunnya — coba lagi nanti.`)
+    }
     return new ScraperError(`Zapi error (${e.status})${ref}.`)
   }
   return new ScraperError(e instanceof Error ? e.message : 'Zapi request gagal.')

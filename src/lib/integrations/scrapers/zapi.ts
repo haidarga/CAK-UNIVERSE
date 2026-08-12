@@ -21,7 +21,16 @@ const BASE_URL = process.env.ZAPI_BASE_URL || 'https://api.zpi.web.id/v1'
 const TIKTOK_SERVICE = 'social-media:tiktok-scraper'
 const INSTAGRAM_SERVICE = 'social-media:instagram-scraper'
 
-const DEFAULT_TIMEOUT_MS = 20_000
+// Zapi scrapes ON DEMAND and caches its own result, so the FIRST call for an
+// account is dramatically slower than every later one — measured live: an
+// Instagram profile took 55s and 87s cold, and post/:id 22s cold versus 32ms
+// warm. A 20s ceiling aborted those successful responses client-side, which
+// showed up as "account has no public posts" for accounts that were fine.
+//
+// Long, but bounded: the caller's route still has its own maxDuration, and
+// Trend Radar enrichment passes a much shorter budget because it runs on a
+// user-facing search where waiting is not an option.
+const DEFAULT_TIMEOUT_MS = Number(process.env.ZAPI_TIMEOUT_MS) || 120_000
 
 export function zapiConfigured(): boolean {
   return !!process.env.ZAPI_KEY
@@ -142,12 +151,12 @@ export type ZapiTikTokProfile = {
   privateAccount?: boolean
 }
 
-export function fetchTikTokProfile(handle: string): Promise<ZapiTikTokProfile> {
-  return zapiGet<ZapiTikTokProfile>(TIKTOK_SERVICE, 'profile', normalizeHandle(handle))
+export function fetchTikTokProfile(handle: string, timeoutMs?: number): Promise<ZapiTikTokProfile> {
+  return zapiGet<ZapiTikTokProfile>(TIKTOK_SERVICE, 'profile', normalizeHandle(handle), undefined, timeoutMs)
 }
 
-export function fetchTikTokPosts(handle: string, count = 30): Promise<unknown> {
-  return zapiGet(TIKTOK_SERVICE, 'posts', normalizeHandle(handle), { count })
+export function fetchTikTokPosts(handle: string, count = 30, timeoutMs?: number): Promise<unknown> {
+  return zapiGet(TIKTOK_SERVICE, 'posts', normalizeHandle(handle), { count }, timeoutMs)
 }
 
 export function fetchTikTokPost(idOrUrl: string): Promise<unknown> {
@@ -167,12 +176,12 @@ export function fetchTikTokFollowing(handle: string, count = 30, page = 1): Prom
 
 // ── Instagram ───────────────────────────────────────────────────────────────
 
-export function fetchInstagramProfile(handle: string): Promise<unknown> {
-  return zapiGet(INSTAGRAM_SERVICE, 'profile', normalizeHandle(handle))
+export function fetchInstagramProfile(handle: string, timeoutMs?: number): Promise<unknown> {
+  return zapiGet(INSTAGRAM_SERVICE, 'profile', normalizeHandle(handle), undefined, timeoutMs)
 }
 
-export function fetchInstagramPosts(handle: string, page = 1): Promise<unknown> {
-  return zapiGet(INSTAGRAM_SERVICE, 'posts', normalizeHandle(handle), { page })
+export function fetchInstagramPosts(handle: string, page = 1, timeoutMs?: number): Promise<unknown> {
+  return zapiGet(INSTAGRAM_SERVICE, 'posts', normalizeHandle(handle), { page }, timeoutMs)
 }
 
 export function fetchInstagramPost(idOrUrl: string, timeoutMs?: number): Promise<unknown> {
