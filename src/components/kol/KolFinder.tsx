@@ -493,13 +493,41 @@ export function KolFinder() {
             </>
           )}
 
-          <p className="flex items-start gap-2 text-[10px] leading-relaxed text-mutedText/45">
-            <Info size={11} className="mt-px shrink-0" aria-hidden />
-            Engagement dihitung dari likes ÷ views di feed asli tiap kreator, bukan dari feed
-            hashtag — feed hashtag diurutin berdasarkan yang viral, jadi akun mati sering
-            kelihatan bagus di situ. Follower dan negara itu data terukur; lokasi provinsi cuma
-            tebakan dari bio. Demografi follower gak tersedia dari sumber publik mana pun.
-          </p>
+          {/* What was measured, what was estimated, and what cannot be had at
+              all — stated at the bottom of every result set rather than buried
+              in a help page. Location in particular is an estimate, and a reader
+              who mistakes it for a record will brief a campaign on it. */}
+          <div className="space-y-1.5 rounded-lg border border-border bg-surface px-3 py-2.5">
+            <p className="flex items-start gap-2 text-[10px] leading-relaxed text-mutedText/60">
+              <Info size={11} className="mt-px shrink-0 text-emerald-600/60" aria-hidden />
+              <span>
+                <strong className="font-semibold text-mutedText">Terukur</strong> — follower,
+                engagement (likes &divide; views dari feed asli tiap kreator, bukan feed hashtag),
+                keaktifan, dan negara. Angka ini datang langsung dari platformnya.
+              </span>
+            </p>
+            <p className="flex items-start gap-2 text-[10px] leading-relaxed text-mutedText/60">
+              <Info size={11} className="mt-px shrink-0 text-warning/70" aria-hidden />
+              <span>
+                <strong className="font-semibold text-mutedText">Perkiraan</strong> — lokasi
+                provinsi dan penilaian niche.{' '}
+                <strong className="font-semibold text-mutedText">Lokasi bukan data resmi</strong>,
+                tapi tebakan dari handle, bio, caption, hashtag, mention, dan logat. Tanda{' '}
+                <span className="font-data">?</span> artinya kurang yakin. Jauh lebih tepat di
+                kuliner dan wisata daripada di fashion, beauty, atau gaming — di sana kreator
+                jarang nyebut kotanya sama sekali. Pakai sebagai patokan awal; kalau kampanyenya
+                bener-bener terikat kota, cek manual dulu.
+              </span>
+            </p>
+            <p className="flex items-start gap-2 text-[10px] leading-relaxed text-mutedText/45">
+              <Info size={11} className="mt-px shrink-0" aria-hidden />
+              <span>
+                <strong className="font-semibold text-mutedText/60">Gak tersedia</strong> —
+                demografi follower (followers-nya dominan dari daerah mana). Data itu cuma ada di
+                Insights milik kreatornya sendiri, gak bisa diambil dari sumber publik mana pun.
+              </span>
+            </p>
+          </div>
         </section>
       )}
 

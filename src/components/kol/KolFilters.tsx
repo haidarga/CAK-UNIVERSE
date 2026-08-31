@@ -143,7 +143,7 @@ export function KolFilters({
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="min-w-0">
           <label htmlFor="kol-region" className="mb-2 block font-data text-[10px] uppercase tracking-[0.12em] text-mutedText/50">
-            Region
+            Region <span className="normal-case tracking-normal text-mutedText/40">· perkiraan</span>
           </label>
           <select
             id="kol-region"
@@ -169,9 +169,12 @@ export function KolFilters({
               behaves differently from the others and silence here would let it
               read as measured data. */}
           <p className="mt-1.5 text-[10px] leading-snug text-mutedText/45">
-            {value.platform === 'instagram'
-              ? 'Dibaca dari lokasi yang di-tag di post, plus caption dan bio. Akun yang lokasinya gak ketahuan bakal kesembunyi.'
-              : 'Dibaca dari handle, bio, caption, dan hashtag. Akurat di niche kuliner/wisata (90%+), lemah di fashion/beauty. Yang gak ketahuan bakal kesembunyi.'}
+            Milih region bikin pencarian nambah hashtag lokal — jadi yang ketemu emang kreator
+            yang <em className="not-italic text-mutedText/70">nulis sendiri</em> daerahnya.
+            Lokasi di hasil cuma <strong className="font-semibold text-mutedText/70">perkiraan</strong>,
+            bukan data pasti, dan{' '}
+            <strong className="font-semibold text-mutedText/70">gak ada yang disembunyiin</strong> —
+            yang lokasinya beda atau gak ketahuan tetap muncul, ditandai.
           </p>
         </div>
 

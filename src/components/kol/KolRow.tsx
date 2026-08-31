@@ -224,7 +224,9 @@ export const KolRow = memo(function KolRow({
             {niche ? (
               <>
                 <span className="font-data tabular-nums">{niche.matched}/{niche.total}</span>
-                <span className="text-mutedText/45"> nyambung</span>
+                {/* Niche is an LLM judgement, exactly as estimated as location —
+                    it gets the same tilde so neither reads as a measurement. */}
+                <span className="text-mutedText/45"> nyambung~</span>
               </>
             ) : (
               <span className="text-mutedText/35">niche {EMPTY}</span>

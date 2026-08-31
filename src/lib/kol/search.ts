@@ -5,6 +5,7 @@ import { enrichHandles } from '@/lib/kol/enrich'
 import { classifyNiches } from '@/lib/kol/niche'
 import { buildFlags, compareResults, scoreResult } from '@/lib/kol/score'
 import { detectRegion, detectionMatches } from '@/lib/kol/region-detect'
+import { regionHashtags, regionLabel } from '@/lib/kol/regions'
 import { tierOf } from '@/lib/kol/tiers'
 import type { KolProfile, KolResult, KolSearchInput, KolSearchResponse } from '@/lib/kol/types'
 import type { EnrichedCreator } from '@/lib/kol/enrich'
@@ -97,18 +98,44 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
   if (isInstagram && !instagramConfigured()) {
     return emptyResponse(input.query, ['Instagram butuh APIFY_TOKEN yang belum diset.'])
   }
-  if (isInstagram && !hashtags.length) {
+  if (isInstagram && !hashtags.length && !regionHashtags(input.region, keywords).length) {
     // Instagram has no keyword search at any price — only hashtags.
     return emptyResponse(input.query, ['Instagram cuma bisa dicari lewat hashtag. Tulis pakai #, contoh: #skincareindonesia'])
   }
 
+  // Region STEERS the sweep, it does not merely trim its output.
+  //
+  // Sweeping "#kuliner" worldwide and then guessing where 194 strangers live is
+  // inference. Sweeping "#kulinerbandung" is not: everyone who turns up put
+  // themselves there. It also rescues the niches where text inference fails —
+  // a beauty creator never writes her city in her bio, but she does write
+  // #skincarebandung when she is selling to her own city.
+  // The total stays inside MAX_HASHTAGS. Region tags are added WITHIN that
+  // budget, not on top of it — stacking them on the cap turned a "Dalam" sweep
+  // into nine hashtags at fifteen pages each, which is precisely the cost
+  // blowout the cap exists to prevent.
+  const REGION_TAG_SLOTS = 2
+  const localTags = regionHashtags(input.region, [...hashtags, ...keywords], REGION_TAG_SLOTS)
+  const ownTags = localTags.length ? hashtags.slice(0, MAX_HASHTAGS - localTags.length) : hashtags
+  const sweepHashtags = [...new Set([...ownTags, ...localTags])]
+  if (localTags.length) {
+    warnings.push(
+      `Ditambahin hashtag lokal biar hasilnya nyambung sama ${regionLabel(input.region)}: #${localTags.join(', #')}`,
+    )
+  }
+  if (hashtags.length > ownTags.length) {
+    warnings.push(
+      `${hashtags.length - ownTags.length} hashtag kamu digeser buat kasih tempat ke hashtag lokal. Hapus filter region kalau mau semuanya kepakai.`,
+    )
+  }
+
   // ── Stage 1: discover ──────────────────────────────────────────────────────
-  report({ stage: 'discover', message: hashtags.length ? `Nyisir #${hashtags.join(', #')}…` : `Nyari "${keywords[0]}"…` })
+  report({ stage: 'discover', message: sweepHashtags.length ? `Nyisir #${sweepHashtags.join(', #')}…` : `Nyari "${keywords[0]}"…` })
 
   const discovery = isInstagram
-    ? { ...(await discoverInstagram(hashtags, IG_DEPTH[input.depth].postLimit)), preResolved: new Map(), truncated: null, totalFound: 0, droppedForeign: 0 }
+    ? { ...(await discoverInstagram(sweepHashtags, IG_DEPTH[input.depth].postLimit)), preResolved: new Map(), truncated: null, totalFound: 0, droppedForeign: 0 }
     : await discoverCandidates({
-        hashtags,
+        hashtags: sweepHashtags,
         keywords,
         pagesPerHashtag: depth.pagesPerHashtag,
         pagesPerKeyword: depth.pagesPerKeyword,
@@ -290,6 +317,10 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
     !active || r.performance?.daysSinceLastPost == null || r.performance.daysSinceLastPost <= active
   const passesRegion = (r: KolResult) => !input.region || detectionMatches(r.region, input.region)
 
+  // Region no longer removes anyone. Location is an ESTIMATE — measured at
+  // 90%+ on food and travel but near zero on beauty and fashion — and letting an
+  // estimate delete rows produced "0 KOL cocok" on searches that had found
+  // perfectly good creators. It now ranks and labels, exactly like tier.
   const visible = results.filter((r) => passesActivity(r) && passesRegion(r))
   const droppedByActivity = results.filter((r) => !passesActivity(r)).length
   const droppedByRegion = results.filter((r) => passesActivity(r) && !passesRegion(r)).length
@@ -298,8 +329,9 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
   if (droppedByRegion > 0) {
     const unknown = results.filter((r) => passesActivity(r) && !passesRegion(r) && !r.region.area).length
     warnings.push(
-      `${droppedByRegion} akun gak lolos filter region` +
-        (unknown ? ` (${unknown} di antaranya lokasinya emang gak ketahuan).` : '.'),
+      `${droppedByRegion} akun lokasinya beda atau gak ketahuan` +
+        (unknown ? ` (${unknown} di antaranya emang gak kebaca)` : '') +
+        ' — tetap ditampilin di bagian bawah, ditandai. Lokasi cuma perkiraan, jadi gak ada yang dibuang.',
     )
   }
 

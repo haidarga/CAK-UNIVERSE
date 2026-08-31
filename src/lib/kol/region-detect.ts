@@ -74,7 +74,38 @@ const LOCALITY_MARKERS = [
 // What each kind of evidence is worth. A GPS tag beats a passing mention by a
 // wide margin, and one hashtag the creator chose for themselves beats several
 // incidental words.
-const WEIGHT = { geo: 8, handle: 6, hashtag: 3, bio: 6, caption: 1 } as const
+const WEIGHT = { geo: 8, handle: 6, hashtag: 3, bio: 6, caption: 1, mention: 4, dialect: 2 } as const
+
+// Regional speech, which is the only signal that reaches creators who never name
+// a place at all — the majority in beauty, fashion and comedy. It cannot point
+// at a city, only at a province or island, and that is exactly how it is used:
+// a supporting vote, never strong enough to decide on its own.
+//
+// Words are chosen for being distinctive rather than common: "aing" and "pisan"
+// are unmistakably Sundanese, while "aku" or "kamu" say nothing.
+const DIALECTS: { area: string; words: string[] }[] = [
+  // Removed after review, each for being ordinary language rather than a marker:
+  //   "teh"  — the drink. "es teh manis" appears in half of all food captions.
+  //   "iso"  — the camera setting, in every photography caption ever written.
+  //   "ndak" — casual nationwide Indonesian for "tidak", not Central Java.
+  //   "side" — an English loanword, unrelated to NTB/NTT speech.
+  // A false dialect hit does not merely fail to corroborate: its weight still
+  // counts toward the dominance ratio and can tip the winner to the wrong
+  // province. False positives cost more here than missing coverage.
+  { area: 'jawa-barat', words: ['pisan', 'atuh', 'euy', 'aing', 'kumaha', 'meuni', 'cenah', 'kunaon'] },
+  { area: 'jawa-timur', words: ['rek', 'arek', 'sampeyan', 'jancok', 'lapo', 'ndhak'] },
+  { area: 'jawa-tengah', words: ['piye', 'ojo', 'monggo', 'tenan', 'ngoten', 'mboten'] },
+  { area: 'yogyakarta', words: ['jogjaku', 'ngayogyakarta', 'gumbira'] },
+  { area: 'sumatera-utara', words: ['bah', 'kali ya', 'awak', 'horas', 'lae', 'namboru'] },
+  { area: 'sumatera-barat', words: ['uda', 'uni', 'baa', 'lai', 'rancak'] },
+  { area: 'sumatera-selatan', words: ['ngapo', 'cak mano', 'kito', 'wong kito'] },
+  { area: 'sulawesi-utara', words: ['torang', 'kita pe', 'so pigi', 'nyanda'] },
+  { area: 'sulawesi-selatan', words: ['tawwa', 'mi ki', 'cika', 'anjo'] },
+  { area: 'bali', words: ['nggih', 'suksma', 'rahajeng', 'om swastiastu'] },
+  { area: 'nusa-tenggara', words: ['sasak', 'aok'] },
+  { area: 'maluku', words: ['beta', 'katong', 'dong pu'] },
+  { area: 'papua', words: ['sa pu', 'ko pu', 'tong pu'] },
+]
 
 interface Alias {
   area: string
@@ -132,6 +163,27 @@ function voteFromTokens(text: string, weight: number, kind: 'hashtag' | 'handle'
   return votes
 }
 
+/**
+ * Votes from @mentions.
+ *
+ * Substring matching is safe inside a mention for the same reason it is safe
+ * inside a hashtag: @kopi_toko_djawa_bandung is a handle someone chose, not a
+ * sentence that happened to contain a city.
+ */
+function voteFromMentions(text: string, weight: number): Vote[] {
+  const mentions = (text.toLowerCase().match(/@[a-z0-9._]{3,30}/g) || []).map((m) => m.slice(1).replace(/[._]/g, ''))
+  const votes: Vote[] = []
+  for (const handle of mentions) {
+    for (const { area, alias } of COMPACT_ALIASES) {
+      if (!handle.includes(alias)) continue
+      if (AMBIGUOUS.has(alias)) continue // no sentence context to disambiguate
+      votes.push({ area, weight, label: `mention @${handle}`, deliberate: true })
+      break
+    }
+  }
+  return votes
+}
+
 function voteFromProse(text: string, weight: number, label: string): Vote[] {
   const lower = text.toLowerCase()
   const votes: Vote[] = []
@@ -164,6 +216,18 @@ export function detectRegion(signals: RegionSignals): RegionDetection {
   for (const caption of signals.captions || []) {
     votes.push(...voteFromTokens(caption, WEIGHT.hashtag, 'hashtag'))
     votes.push(...voteFromProse(caption, WEIGHT.caption, 'caption'))
+    // An @mention is usually a LOCAL BUSINESS the creator visited, and a shop
+    // name carries its city far more often than the creator's own prose does:
+    // @noahs_barn_bandung exists once in the world.
+    votes.push(...voteFromMentions(caption, WEIGHT.mention))
+  }
+
+  // Dialect last, and deliberately never `strong` or `deliberate`: it corroborates,
+  // it does not decide.
+  const speech = [signals.bio || '', ...(signals.captions || [])].join(' ').toLowerCase()
+  for (const { area, words } of DIALECTS) {
+    const hit = words.find((w) => wordHit(speech, w))
+    if (hit) votes.push({ area, weight: WEIGHT.dialect, label: `logat "${hit}"` })
   }
 
   const empty: RegionDetection = { area: null, confidence: null, evidence: null, dominance: 0, alternates: [] }

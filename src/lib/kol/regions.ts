@@ -58,6 +58,69 @@ export const REGIONS: RegionDef[] = [
 
 export const REGION_IDS = REGIONS.map((r) => r.id)
 
+/**
+ * Turns a chosen region into the hashtags creators there actually type.
+ *
+ * This is the single biggest lever on location accuracy, and it works by not
+ * inferring anything at all. Instead of sweeping "#kuliner" worldwide and then
+ * guessing where 194 strangers live, we sweep "#kulinerbandung" — and everyone
+ * who turns up put themselves there. A declared fact beats an inference every
+ * time.
+ *
+ * It also rescues the niches where text inference is hopeless. A beauty creator
+ * never writes her city in her bio, but she absolutely writes #skincarebandung
+ * when she is selling to her own city.
+ *
+ * Only the compact, hashtag-shaped aliases are used: "bandung" yes, "jawa barat"
+ * no, because nobody types #kulinerjawa barat.
+ */
+export function regionHashtags(regionId: string | null, topics: string[], max = 4): string[] {
+  if (!regionId) return []
+  const region = REGIONS.find((r) => r.id === regionId)
+  const islandRegions = (ISLANDS as readonly string[]).includes(regionId)
+    ? REGIONS.filter((r) => r.island === regionId)
+    : region
+      ? [region]
+      : []
+  if (!islandRegions.length) return []
+
+  // Province names make poor hashtags; city names carry the traffic.
+  const perRegion = islandRegions.map((r) => r.aliases.filter((a) => !a.includes(' ') && a.length >= 4))
+
+  // Round-robin across the provinces rather than draining the first one.
+  // Flattening in array order meant picking the island "Jawa" always produced
+  // Jabodetabek satellite towns and never once reached Bandung, Surabaya,
+  // Semarang or Yogyakarta — a filter chosen to WIDEN coverage silently
+  // narrowed it instead.
+  const places: string[] = []
+  for (let i = 0; places.length < perRegion.length * 12; i++) {
+    let added = false
+    for (const aliases of perRegion) {
+      if (aliases[i]) {
+        places.push(aliases[i])
+        added = true
+      }
+    }
+    if (!added) break
+  }
+
+  const allPlaces = new Set(places)
+  const out: string[] = []
+  for (const topic of topics) {
+    const clean = topic.toLowerCase().replace(/[^a-z0-9]/g, '')
+    if (clean.length < 3) continue
+    // A topic that already names ANY city is left alone. Stapling a second one
+    // on produced "kulinerbandungcirebon" — a tag nobody has ever typed, which
+    // burns sweep budget and returns nothing.
+    if ([...allPlaces].some((p) => clean.includes(p))) continue
+    for (const place of places) {
+      out.push(`${clean}${place}`)
+      if (out.length >= max) return [...new Set(out)]
+    }
+  }
+  return [...new Set(out)]
+}
+
 export function regionLabel(id: string | null): string {
   if (!id) return '—'
   return REGIONS.find((r) => r.id === id)?.label ?? id

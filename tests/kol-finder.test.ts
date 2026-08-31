@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { tierOf, tierLabel, KOL_TIERS } from '@/lib/kol/tiers'
-import { regionsByIsland } from '@/lib/kol/regions'
+import { regionsByIsland, regionHashtags } from '@/lib/kol/regions'
 import { detectRegion, detectionMatches } from '@/lib/kol/region-detect'
 import { parseQuery, MAX_HASHTAGS, MAX_KEYWORDS } from '@/lib/kol/discover'
 import { performanceFromVideos } from '@/lib/kol/enrich'
@@ -464,6 +464,112 @@ describe('region evidence, not just arithmetic', () => {
 
   it('accepts the same place appearing across separate posts', () => {
     const d = detectRegion({ handle: 'x', bio: null, captions: ['makan di bandung', 'balik ke bandung lagi'] })
+    expect(d.area).toBe('jawa-barat')
+  })
+})
+
+describe('signals that reach creators who never name a place', () => {
+  // Measured coverage before these: ~90% on food and travel, ~25% on fashion
+  // and beauty. The gap is entirely creators who never write a city anywhere,
+  // so the fix has to come from something other than place names.
+
+  it('reads a city out of a mentioned local business', () => {
+    // A shop handle carries its city far more reliably than the creator's prose:
+    // @noahs_barn_bandung exists once in the world.
+    const d = detectRegion({
+      handle: 'x', bio: null,
+      captions: ['ngopi pagi di @noahs_barn_bandung', 'balik lagi ke @noahs_barn_bandung'],
+    })
+    expect(d.area).toBe('jawa-barat')
+  })
+
+  it('uses regional speech as support, never as the deciding vote', () => {
+    // Dialect alone is too weak to name a province on its own.
+    const alone = detectRegion({ handle: 'x', bio: 'enak pisan euy', captions: [] })
+    expect(alone.area).toBeNull()
+    // Paired with anything deliberate it tips the balance.
+    const supported = detectRegion({ handle: 'x', bio: 'enak pisan euy', captions: ['#kulinerbandung'] })
+    expect(supported.area).toBe('jawa-barat')
+  })
+
+  it('does not let a common word masquerade as dialect', () => {
+    expect(detectRegion({ handle: 'x', bio: 'aku suka kamu', captions: [] }).area).toBeNull()
+  })
+
+  it('ignores an ambiguous word inside a mention, where there is no sentence to judge by', () => {
+    // @solobeauty could be solo-anything; without prose around it there is
+    // nothing to disambiguate against.
+    expect(detectRegion({ handle: 'x', bio: null, captions: ['bareng @solobeautycare'] }).area).toBeNull()
+  })
+})
+
+describe('region steers the sweep instead of trimming it', () => {
+  it('builds the hashtags creators in that region actually type', () => {
+    const tags = regionHashtags('jawa-barat', ['kuliner'])
+    expect(tags).toContain('kulinerbandung')
+    expect(tags.length).toBeLessThanOrEqual(4)
+  })
+
+  it('works for a niche where text inference fails entirely', () => {
+    // A beauty creator never writes her city in her bio. She does write
+    // #skincarejakarta when selling to her own city.
+    expect(regionHashtags('dki-jakarta', ['skincare'])).toContain('skincarejakarta')
+  })
+
+  it('expands an island into the cities inside it', () => {
+    expect(regionHashtags('Jawa', ['ootd']).length).toBeGreaterThan(0)
+  })
+
+  it('returns nothing when no region was chosen', () => {
+    expect(regionHashtags(null, ['kuliner'])).toEqual([])
+  })
+
+  it('never builds a hashtag that repeats the place twice', () => {
+    // "#kulinerbandungbandung" from a query that already named the city.
+    expect(regionHashtags('jawa-barat', ['kulinerbandung'])).not.toContain('kulinerbandungbandung')
+  })
+})
+
+describe('region steering stays inside the cost cap', () => {
+  // Region tags were added ON TOP of MAX_HASHTAGS, so a "Dalam" sweep could hit
+  // nine hashtags at fifteen pages each — the exact blowout the cap exists for.
+  it('never asks for more region tags than the reserved slots', () => {
+    expect(regionHashtags('jawa-barat', ['kuliner'], 2).length).toBeLessThanOrEqual(2)
+  })
+
+  it('spreads an island across its provinces instead of draining the first', () => {
+    // Picking "Jawa" used to return only Jabodetabek satellite towns, never
+    // Bandung or Surabaya — a filter chosen to widen coverage narrowed it.
+    const tags = regionHashtags('Jawa', ['kuliner'], 8)
+    const areas = new Set(tags.map((t) => t.replace('kuliner', '')))
+    expect(areas.size).toBeGreaterThan(2)
+  })
+
+  it('refuses to staple a second city onto a query that already names one', () => {
+    // "kulinerbandungcirebon" is a tag nobody has ever typed.
+    const tags = regionHashtags('jawa-barat', ['kulinerbandung'], 4)
+    expect(tags.every((t) => !t.includes('bandung') || t === 'kulinerbandung')).toBe(true)
+  })
+})
+
+describe('dialect words must not be ordinary language', () => {
+  // Each of these shipped in the first draft and would fire on everyday captions.
+  // A false dialect hit still adds weight to the dominance ratio, so it can tip
+  // the winner to the wrong province — not merely fail to corroborate.
+  it('does not read the drink "teh" as Sundanese', () => {
+    expect(detectRegion({ handle: 'x', bio: null, captions: ['es teh manis paling enak', 'teh tarik dingin'] }).area).toBeNull()
+  })
+
+  it('does not read the camera setting "iso" as Javanese', () => {
+    expect(detectRegion({ handle: 'x', bio: null, captions: ['shot on iso 400', 'iso rendah biar bersih'] }).area).toBeNull()
+  })
+
+  it('does not read nationwide "ndak" as Central Java', () => {
+    expect(detectRegion({ handle: 'x', bio: null, captions: ['ndak nyangka seenak ini'] }).area).toBeNull()
+  })
+
+  it('still reads genuinely distinctive speech', () => {
+    const d = detectRegion({ handle: 'x', bio: 'enak pisan atuh', captions: ['#kulinerbandung'] })
     expect(d.area).toBe('jawa-barat')
   })
 })
