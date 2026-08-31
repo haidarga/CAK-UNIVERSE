@@ -255,6 +255,9 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
     const flags = buildFlags(profile, tier, performance, region, niche, {
       tierMatch,
       wantedCountry: input.country,
+      // The near-miss badge on the row already says the location is unknown; a
+      // chip repeating it is noise, and the two used to contradict each other.
+      suppressRegionFlag: !!input.region,
     })
     return {
       platform: input.platform,
@@ -290,6 +293,23 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
     )
   }
 
+  // Some niches simply have no geography. Perfume, fashion and beauty creators
+  // rarely name a city anywhere, so a region filter there does not narrow the
+  // list — it deletes it, and every remaining row reads "lokasi gak ketahuan".
+  // Saying so is more useful than handing back a page of near misses and letting
+  // the reader conclude the tool is broken.
+  if (results.length >= 5) {
+    const located = results.filter((r) => r.region.area).length
+    const share = located / results.length
+    if (share < 0.4) {
+      warnings.push(
+        `Cuma ${located} dari ${results.length} kreator di niche ini yang nyebut lokasinya${
+          input.region ? ' — filter region kurang cocok di sini, mending dimatiin' : ''
+        }. Deteksi lokasi paling nendang di kuliner dan wisata, lemah di parfum, fashion, dan beauty.`,
+      )
+    }
+  }
+
   // NEAR MISSES.
   //
   // Five filters stacked in series land on zero routinely — each one is working,
@@ -308,7 +328,9 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
       if (visible.includes(r)) continue
       const failedRegion = passesActivity(r) && !passesRegion(r)
       const failedActivity = !passesActivity(r) && passesRegion(r)
-      if (failedRegion) nearMisses.push({ ...r, missed: 'region' })
+      // Two different reasons, and calling both "beda region" contradicted the
+      // "lokasi gak ketebak" chip sitting on the same row.
+      if (failedRegion) nearMisses.push({ ...r, missed: r.region.area ? 'region' : 'region-unknown' })
       else if (failedActivity) nearMisses.push({ ...r, missed: 'activity' })
       if (nearMisses.length >= NEAR_MISS_CAP) break
     }

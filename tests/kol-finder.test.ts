@@ -435,3 +435,35 @@ describe('filters rank, they do not gate', () => {
     expect(off!.message).toContain('mega')
   })
 })
+
+describe('region evidence, not just arithmetic', () => {
+  // Screenshot evidence from a perfume search: a bio reading "Jakarta📍" came
+  // back as "DKI Jakarta ?" — hedging on the one thing the creator stated
+  // outright — while an account whose bio sold digital products was assigned
+  // "Jawa Tengah" off a single drifting word.
+
+  it('treats an explicit bio mention as settled, not a maybe', () => {
+    const d = detectRegion({ handle: 'jery16_', bio: 'Jakarta📍 Hanya cowo yang pengen wangi', captions: [] })
+    expect(d.area).toBe('dki-jakarta')
+    expect(d.confidence).toBe('tinggi')
+  })
+
+  it('refuses to name a province off one drifting word in one caption', () => {
+    const d = detectRegion({
+      handle: 'cerdasdigital27',
+      bio: 'Mau dapat CUAN dari Product Digital??? Klik Link Dibawah Ini!!',
+      captions: ['cuan terus tiap hari', 'pernah ke semarang sekali', 'link di bio'],
+    })
+    expect(d.area).toBeNull()
+  })
+
+  it('accepts a location hashtag the creator typed on purpose', () => {
+    // Deliberate, unlike a word that drifted through a sentence.
+    expect(detectRegion({ handle: 'x', bio: null, captions: ['#kulinerbandung'] }).area).toBe('jawa-barat')
+  })
+
+  it('accepts the same place appearing across separate posts', () => {
+    const d = detectRegion({ handle: 'x', bio: null, captions: ['makan di bandung', 'balik ke bandung lagi'] })
+    expect(d.area).toBe('jawa-barat')
+  })
+})

@@ -64,6 +64,8 @@ export const KolRow = memo(function KolRow({
   const missLabel =
     result.missed === 'region'
       ? 'Beda region'
+      : result.missed === 'region-unknown'
+        ? 'Lokasi gak ketahuan'
       : result.missed === 'activity'
         ? 'Udah lama gak posting'
         : result.tierMatch === false

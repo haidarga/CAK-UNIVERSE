@@ -74,7 +74,7 @@ const LOCALITY_MARKERS = [
 // What each kind of evidence is worth. A GPS tag beats a passing mention by a
 // wide margin, and one hashtag the creator chose for themselves beats several
 // incidental words.
-const WEIGHT = { geo: 8, handle: 6, hashtag: 3, bio: 3, caption: 1 } as const
+const WEIGHT = { geo: 8, handle: 6, hashtag: 3, bio: 6, caption: 1 } as const
 
 interface Alias {
   area: string
@@ -99,7 +99,10 @@ function markedHit(text: string, alias: string): boolean {
   return new RegExp(`(?:di|kota|kab|kabupaten|dari|📍|🏙|@)\\s*${escaped}([^a-z0-9]|$)`, 'i').test(text)
 }
 
-type Vote = { area: string; weight: number; label: string }
+// `strong` marks evidence a creator put there deliberately about THEMSELVES —
+// a geotag, their handle, their bio. A caption or hashtag is circumstantial:
+// one of them is a passing mention, several are a pattern.
+type Vote = { area: string; weight: number; label: string; strong?: boolean; deliberate?: boolean }
 
 function voteFromTokens(text: string, weight: number, kind: 'hashtag' | 'handle'): Vote[] {
   // Inside a hashtag or a handle, substring matching is safe: nobody writes
@@ -120,7 +123,9 @@ function voteFromTokens(text: string, weight: number, kind: 'hashtag' | 'handle'
         const rest = token.split(alias).join('')
         if (!LOCALITY_MARKERS.some((m) => rest.includes(m))) continue
       }
-      votes.push({ area, weight, label: kind === 'hashtag' ? `#${token}` : `handle @${text}` })
+      // A location hashtag is typed on purpose. A city that merely appears in a
+      // sentence is not, and one of those proves nothing on its own.
+      votes.push({ area, weight, label: kind === 'hashtag' ? `#${token}` : `handle @${text}`, deliberate: true })
       break // one vote per token; the longest alias already won
     }
   }
@@ -147,12 +152,14 @@ export function detectRegion(signals: RegionSignals): RegionDetection {
   const votes: Vote[] = []
 
   for (const tag of signals.geoTags || []) {
-    votes.push(...voteFromProse(tag, WEIGHT.geo, `lokasi post "${tag}"`))
+    votes.push(...voteFromProse(tag, WEIGHT.geo, `lokasi post "${tag}"`).map((v) => ({ ...v, strong: true })))
   }
-  if (signals.handle) votes.push(...voteFromTokens(signals.handle, WEIGHT.handle, 'handle'))
+  if (signals.handle) {
+    votes.push(...voteFromTokens(signals.handle, WEIGHT.handle, 'handle').map((v) => ({ ...v, strong: true })))
+  }
   if (signals.bio) {
-    votes.push(...voteFromTokens(signals.bio, WEIGHT.hashtag, 'hashtag'))
-    votes.push(...voteFromProse(signals.bio, WEIGHT.bio, 'bio'))
+    votes.push(...voteFromTokens(signals.bio, WEIGHT.hashtag, 'hashtag').map((v) => ({ ...v, strong: true })))
+    votes.push(...voteFromProse(signals.bio, WEIGHT.bio, 'bio').map((v) => ({ ...v, strong: true })))
   }
   for (const caption of signals.captions || []) {
     votes.push(...voteFromTokens(caption, WEIGHT.hashtag, 'hashtag'))
@@ -162,10 +169,13 @@ export function detectRegion(signals: RegionSignals): RegionDetection {
   const empty: RegionDetection = { area: null, confidence: null, evidence: null, dominance: 0, alternates: [] }
   if (!votes.length) return empty
 
-  const tally = new Map<string, { weight: number; labels: Set<string> }>()
+  const tally = new Map<string, { weight: number; labels: Set<string>; strong: boolean; deliberate: boolean; count: number }>()
   for (const v of votes) {
-    const entry = tally.get(v.area) ?? { weight: 0, labels: new Set<string>() }
+    const entry = tally.get(v.area) ?? { weight: 0, labels: new Set<string>(), strong: false, deliberate: false, count: 0 }
     entry.weight += v.weight
+    entry.count += 1
+    entry.strong = entry.strong || !!v.strong
+    entry.deliberate = entry.deliberate || !!v.deliberate
     entry.labels.add(v.label)
     tally.set(v.area, entry)
   }
@@ -181,7 +191,16 @@ export function detectRegion(signals: RegionSignals): RegionDetection {
   // Two different ways to have no answer, and they need different words. A
   // travel creator naming six provinces is not the same as one stray mention,
   // and "gak ada yang dominan" on a single hit reads as a bug.
-  if (dominance < 0.4 || topEntry.weight < 3) {
+  // Evidence, not just arithmetic.
+  //
+  // A weight threshold alone could not tell "one stray caption" from "one
+  // explicit hashtag", and raising it far enough to kill the first also killed
+  // the second. What actually separates them is corroboration: something the
+  // creator said about themselves (geotag, handle, bio), a location hashtag they
+  // typed on purpose, or the same place across at least two posts. A city that
+  // merely drifts through one sentence is noise wearing a province name.
+  const corroborated = topEntry.strong || topEntry.deliberate || topEntry.count >= 2
+  if (dominance < 0.55 || !corroborated) {
     return {
       area: null,
       confidence: null,

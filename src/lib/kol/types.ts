@@ -110,7 +110,7 @@ export interface KolResult {
    * filters run after enrichment — and the UI labels them plainly so nobody
    * mistakes a near miss for a match.
    */
-  missed?: 'region' | 'activity' | null
+  missed?: 'region' | 'region-unknown' | 'activity' | null
   /** Did this creator's size match the requested tier? Ranks, never excludes. */
   tierMatch?: boolean
   candidate: KolCandidate

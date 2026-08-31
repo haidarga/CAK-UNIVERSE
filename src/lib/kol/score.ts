@@ -33,7 +33,7 @@ export function buildFlags(
   performance: KolPerformance | null,
   region: RegionDetection,
   niche: KolNiche | null,
-  opts: { tierMatch?: boolean; wantedCountry?: string | null } = {},
+  opts: { tierMatch?: boolean; wantedCountry?: string | null; suppressRegionFlag?: boolean } = {},
 ): KolFlag[] {
   const flags: KolFlag[] = []
 
@@ -91,9 +91,9 @@ export function buildFlags(
     else if (ratio < 0.3) flags.push({ kind: 'warn', code: 'occasional', message: `Cuma ${niche.matched} dari ${niche.total} post yang nyambung — kayaknya kebetulan lewat` })
   }
 
-  if (!region.area) {
+  if (!region.area && !opts.suppressRegionFlag) {
     flags.push({ kind: 'warn', code: 'unresolved-region', message: region.evidence || 'Lokasi gak ketebak' })
-  } else if (region.confidence === 'rendah' && region.alternates.length) {
+  } else if (region.area && region.confidence === 'rendah' && region.alternates.length) {
     // A weak win is still shown, but never as if it were settled.
     flags.push({ kind: 'warn', code: 'unresolved-region', message: `Lokasi kurang yakin — juga nyebut ${region.alternates.length} daerah lain` })
   }
