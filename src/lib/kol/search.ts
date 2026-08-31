@@ -224,18 +224,28 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
   // ── Stage 4: niche consistency (optional, LLM) ────────────────────────────
   const topic = [...hashtags, ...keywords][0] || input.query
   if (deps.classifyNiche !== false) report({ stage: 'niche', message: `Ngecek konsistensi niche ${toEnrich.length} akun…`, total: toEnrich.length })
-  const nicheMap = deps.classifyNiche === false
-    ? new Map()
-    : await classifyNiches(
-        toEnrich
+  const nicheInputs =
+    deps.classifyNiche === false
+      ? []
+      : toEnrich
           .map((s) => ({
             handle: s.handle,
             bio: s.profile.bio,
             captions: enriched.get(s.handle)?.captions ?? [],
             topic,
           }))
-          .filter((i) => i.captions.length > 0),
-      )
+          .filter((i) => i.captions.length > 0)
+  const nicheMap = nicheInputs.length ? await classifyNiches(nicheInputs) : new Map()
+
+  // A classifier that fails for EVERY creator is broken, not merely unlucky, and
+  // it must not read as "none of them matched". Found live: a stale machine-level
+  // GEMINI_API_KEY shadowed the project's own, Google had blocked it as leaked,
+  // and every row rendered "niche —" while the sweep reported success.
+  if (nicheInputs.length >= 3 && nicheMap.size === 0) {
+    warnings.push(
+      'Penilaian niche gak jalan — semua panggilan AI gagal. Cek GEMINI_API_KEY (kalau ada variabel environment di komputer/Vercel dengan nama sama, itu yang dipakai, bukan .env.local). Kolom niche dikosongin, sisanya tetap terukur.',
+    )
+  }
 
   // ── Assemble ──────────────────────────────────────────────────────────────
   const results: KolResult[] = toEnrich.map(({ handle, profile, tierMatch }) => {

@@ -285,12 +285,15 @@ export function KolFinder() {
   }, [results, selected, filters.query])
 
   return (
-    <div className="space-y-7">
+    // Bottom padding clears the docked selection bar, which is fixed to the
+    // viewport and otherwise sits on top of the last rows in the list.
+    <div className={`space-y-7 ${chosenResults.length ? 'pb-32' : 'pb-4'}`}>
       <header className="max-w-2xl">
-        <h2 className="text-lg font-semibold text-text">Mencari KOL yang Hilang</h2>
+        <h1 className="text-xl font-semibold text-text">Mencari KOL yang Hilang</h1>
         <p className="mt-1 text-xs leading-relaxed text-mutedText">
-          Masukin hashtag atau kata kunci, dapet shortlist KOL yang udah kesaring tier, keaktifan,
-          dan konsistensi niche-nya — tanpa buka akun satu-satu.
+          Strategist Mode butuh handle yang udah kamu punya. Ini kebalikannya: kasih hashtag atau
+          kata kunci, dapet daftar KOL yang udah kesaring tier, keaktifan, dan konsistensi niche —
+          tanpa scroll hashtag dan buka akun satu per satu.
         </p>
       </header>
 

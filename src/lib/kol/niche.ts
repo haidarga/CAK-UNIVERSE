@@ -76,7 +76,10 @@ Kalau kreator ini jelas bukan di topik itu, tulis matched yang kecil. Jangan dib
       disableThinking: true,
     })
     const parsed = NicheSchema.safeParse(raw)
-    if (!parsed.success) return null
+    if (!parsed.success) {
+      console.warn('[kol/niche] bentuk jawaban model gak sesuai:', JSON.stringify(raw).slice(0, 200))
+      return null
+    }
     return {
       // A model that returns 15 of 12 has miscounted; clamping keeps a nonsense
       // number from rendering as "15/12 post".
@@ -85,7 +88,11 @@ Kalau kreator ini jelas bukan di topik itu, tulis matched yang kecil. Jangan dib
       label: parsed.data.label,
       reason: parsed.data.reason,
     }
-  } catch {
+  } catch (e) {
+    // Swallowing this made a headline feature fail silently: every row rendered
+    // "niche —" while the sweep reported success, and nothing anywhere said the
+    // classifier had not run at all.
+    console.warn('[kol/niche] klasifikasi gagal:', e instanceof Error ? e.message : e)
     return null
   }
 }

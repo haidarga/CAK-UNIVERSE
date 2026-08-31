@@ -55,14 +55,23 @@ export async function POST(req: Request) {
   }
   const input = parsed.data
 
-  const service = createServiceClient()
+  // The sweep itself needs no database — the cache is a speed optimisation and
+  // the history row is an audit trail. A misconfigured or unreachable Supabase
+  // used to take the whole feature down with it, which is backwards: the
+  // expensive, useful part still works perfectly without storage.
+  let service: ReturnType<typeof createServiceClient> | null = null
+  try {
+    service = createServiceClient()
+  } catch (e) {
+    console.warn('[kol] Supabase gak kepakai, cache & riwayat dimatiin:', e instanceof Error ? e.message : e)
+  }
   const clientId = await getActiveClientId().catch(() => null)
 
   // Warm the cache from previously scraped creators. Best-effort: a cache read
   // that fails must cost speed, never correctness, so it degrades to an empty
   // map and the sweep just does the work again.
   const cachedProfiles = new Map<string, KolProfile>()
-  if (input.use_cache) {
+  if (input.use_cache && service) {
     const cutoff = new Date(Date.now() - CACHE_MAX_AGE_DAYS * 86_400_000).toISOString()
     const { data } = await service
       .from('sw_kol_profiles')
@@ -129,7 +138,7 @@ export async function POST(req: Request) {
             onProgress: (event) => send({ type: 'progress', ...event }),
           },
         )
-        await persist(service, user.id, clientId, input, response)
+        if (service) await persist(service, user.id, clientId, input, response)
         send({ type: 'result', ok: true, ...response })
       } catch (e) {
         send({ type: 'error', ok: false, error: e instanceof Error ? e.message : 'Pencarian gagal.' })
