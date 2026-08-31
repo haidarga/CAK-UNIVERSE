@@ -161,24 +161,31 @@ async function persist(
   response: Awaited<ReturnType<typeof runKolSearch>>,
 ): Promise<void> {
   try {
-    if (response.results.length) {
+    // EVERY profile the sweep resolved, not only the rows that survived the
+    // filters. Caching just the visible results meant a search could pay for 90
+    // lookups, keep 4, and make the next search redo the other 86 — which is
+    // exactly why the second search was never any faster than the first.
+    if (response.resolvedProfiles.length) {
       const now = new Date().toISOString()
-      const rows = response.results.map((r) => ({
-        platform: r.platform,
-        handle: r.profile.handle,
-        display_name: r.profile.displayName,
-        bio: r.profile.bio,
-        followers: r.profile.followers,
-        following: r.profile.following,
-        total_videos: r.profile.totalVideos,
-        total_hearts: r.profile.totalHearts,
-        country: r.profile.country,
-        verified: r.profile.verified,
-        is_private: r.profile.isPrivate,
-        avatar_url: r.profile.avatarUrl,
-        instagram_handle: r.profile.instagramHandle,
-        profile_url: r.profile.profileUrl,
-        perf: r.performance,
+      const perfByHandle = new Map(response.results.map((r) => [r.profile.handle, r.performance]))
+      const rows = response.resolvedProfiles.map((p) => ({
+        platform: input.platform,
+        handle: p.handle,
+        display_name: p.displayName,
+        bio: p.bio,
+        followers: p.followers,
+        following: p.following,
+        total_videos: p.totalVideos,
+        total_hearts: p.totalHearts,
+        country: p.country,
+        verified: p.verified,
+        is_private: p.isPrivate,
+        avatar_url: p.avatarUrl,
+        instagram_handle: p.instagramHandle,
+        profile_url: p.profileUrl,
+        // Only the enriched rows have performance; the rest cache their identity
+        // and follower count, which is all the tier filter needs next time.
+        perf: perfByHandle.get(p.handle) ?? null,
         scraped_at: now,
         updated_at: now,
       }))

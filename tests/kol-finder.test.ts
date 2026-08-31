@@ -285,3 +285,20 @@ describe('resolve', () => {
     expect(out).toEqual(items.map((n) => n * 2))
   })
 })
+
+describe('funnel reporting', () => {
+  // The first version reported a single "85 gak masuk filter", which reads as a
+  // failure and tells the reader nothing about what to change. These fields are
+  // what turn that into an action.
+  it('keeps a meta shape that can explain every drop', () => {
+    const meta = {
+      candidatesFound: 131, resolved: 90, filteredOut: 85,
+      droppedByCountry: 12, droppedByTier: 70, droppedNoFollowers: 3,
+      tierSpread: { makro: 47, mikro: 23 },
+    }
+    expect(meta.droppedByCountry + meta.droppedByTier + meta.droppedNoFollowers).toBe(meta.filteredOut)
+    // The tier breakdown must account for exactly the tier rejects, or the
+    // "+47 makro" buttons would promise results that do not exist.
+    expect(Object.values(meta.tierSpread).reduce((a, b) => a + b, 0)).toBe(meta.droppedByTier)
+  })
+})

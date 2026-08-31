@@ -130,8 +130,14 @@ export interface KolSearchMeta {
   keywordsUsed: string[]
   candidatesFound: number
   resolved: number
-  /** Dropped BEFORE the expensive stage, by tier/country. Reported, never silent. */
+  /** Dropped BEFORE the expensive stage. Broken down below, never silent. */
   filteredOut: number
+  droppedByCountry: number
+  droppedByTier: number
+  /** Matched everything else but had no readable follower count, so no tier. */
+  droppedNoFollowers: number
+  /** Which tiers the tier-rejects sat in, so the reader knows what widening buys. */
+  tierSpread: Record<string, number>
   enriched: number
   fromCache: number
   elapsedMs: number
@@ -142,5 +148,7 @@ export interface KolSearchMeta {
 
 export interface KolSearchResponse {
   results: KolResult[]
+  /** Everything resolved this sweep, for the cache — including filtered-out rows. */
+  resolvedProfiles: KolProfile[]
   meta: KolSearchMeta
 }

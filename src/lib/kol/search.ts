@@ -66,9 +66,11 @@ export interface SearchDeps {
 function emptyResponse(query: string, warnings: string[]): KolSearchResponse {
   return {
     results: [],
+    resolvedProfiles: [],
     meta: {
       query, hashtagsUsed: [], keywordsUsed: [], candidatesFound: 0, resolved: 0,
-      filteredOut: 0, enriched: 0, fromCache: 0, elapsedMs: 0, truncated: null, warnings,
+      filteredOut: 0, droppedByCountry: 0, droppedByTier: 0, droppedNoFollowers: 0, tierSpread: {},
+      enriched: 0, fromCache: 0, elapsedMs: 0, truncated: null, warnings,
     },
   }
 }
@@ -144,16 +146,27 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
   report({ stage: 'filter', message: `Nyaring ${profiles.size} akun sesuai tier & negara…`, total: profiles.size })
   const wantedTiers = new Set(input.tiers)
   const survivors: { handle: string; profile: KolProfile }[] = []
-  let filteredOut = 0
+  // Counted per reason. "85 gak masuk filter" is useless on its own — the reader
+  // cannot tell whether to widen the tier, drop the country filter, or give up
+  // on the hashtag, which is the only thing they actually wanted to know.
+  const dropped = { country: 0, tier: 0, noFollowers: 0 }
+  const nearMiss = new Map<string, number>()
 
   for (const [handle, profile] of profiles) {
     if (input.country && profile.country && profile.country.toUpperCase() !== input.country.toUpperCase()) {
-      filteredOut++
+      dropped.country++
       continue
     }
     const tier = tierOf(profile.followers)
-    if (wantedTiers.size && (!tier || !wantedTiers.has(tier))) {
-      filteredOut++
+    if (wantedTiers.size && !tier) {
+      dropped.noFollowers++
+      continue
+    }
+    if (wantedTiers.size && tier && !wantedTiers.has(tier)) {
+      dropped.tier++
+      // Which tiers the rejects actually sat in, so the UI can say "ada 47 di
+      // tier Makro" instead of leaving the reader to guess and re-run blind.
+      nearMiss.set(tier, (nearMiss.get(tier) ?? 0) + 1)
       continue
     }
     // Region is NOT checked here. It used to be, reading the bio alone — which
@@ -255,6 +268,11 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
   report({ stage: 'done', message: `${visible.length} KOL siap ditinjau.`, current: visible.length, total: visible.length })
 
   return {
+    // EVERY profile the sweep resolved, not just the ones that survived the
+    // filters. The route caches this, and caching only the visible rows meant a
+    // sweep could pay for 90 lookups and keep 4 — so the next search redid 86
+    // lookups it had already bought.
+    resolvedProfiles: [...profiles.values()],
     results: visible,
     meta: {
       query: input.query,
@@ -262,7 +280,11 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
       keywordsUsed: keywords,
       candidatesFound: discovery.candidates.size,
       resolved: profiles.size,
-      filteredOut,
+      filteredOut: dropped.country + dropped.tier + dropped.noFollowers,
+      droppedByCountry: dropped.country,
+      droppedByTier: dropped.tier,
+      droppedNoFollowers: dropped.noFollowers,
+      tierSpread: Object.fromEntries([...nearMiss.entries()].sort((a, b) => b[1] - a[1])),
       enriched: toEnrich.length,
       fromCache: cached.size ? handles.filter((h) => cached.has(h)).length : 0,
       elapsedMs: Date.now() - startedAt,

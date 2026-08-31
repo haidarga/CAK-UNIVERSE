@@ -66,7 +66,7 @@ export function KolFinder() {
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
-  const search = useCallback(async () => {
+  const searchWith = useCallback(async (active: KolFilterValue) => {
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
@@ -85,13 +85,13 @@ export function KolFinder() {
         headers: { 'content-type': 'application/json' },
         signal: controller.signal,
         body: JSON.stringify({
-          platform: filters.platform,
-          query: filters.query,
-          tiers: filters.tiers,
-          region: filters.region,
-          country: filters.country,
-          max_days_inactive: filters.maxDaysInactive,
-          depth: filters.depth,
+          platform: active.platform,
+          query: active.query,
+          tiers: active.tiers,
+          region: active.region,
+          country: active.country,
+          max_days_inactive: active.maxDaysInactive,
+          depth: active.depth,
         }),
       })
 
@@ -134,7 +134,9 @@ export function KolFinder() {
       setBusy(false)
       setProgress(null)
     }
-  }, [filters])
+  }, [])
+
+  const search = useCallback(() => searchWith(filters), [searchWith, filters])
 
   const toggle = useCallback((handle: string) => {
     setSelected((prev) => {
@@ -227,12 +229,13 @@ export function KolFinder() {
           {/* What the sweep actually did. Shown because a silently truncated
               result set is indistinguishable from a small niche. */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-y border-border/40 py-3">
-            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            {/* Just the answer. The funnel below carries the arithmetic — putting
+                "131 ketemu" up here made it read as the result count. */}
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <span className="text-sm font-semibold text-text">
-                {sorted.length} KOL
+                {sorted.length} KOL siap dipakai
               </span>
               <span className="font-data text-[11px] text-mutedText/60">
-                dari {meta.candidatesFound} kandidat · {meta.filteredOut} gak masuk filter ·{' '}
                 {elapsed(meta.elapsedMs)}
                 {meta.fromCache > 0 && ` · ${meta.fromCache} dari cache`}
               </span>
@@ -266,21 +269,87 @@ export function KolFinder() {
             </div>
           </div>
 
-          {(meta.truncated || meta.warnings.length > 0) && (
-            <ul className="space-y-1 rounded-lg border border-border bg-surface px-3 py-2.5">
-              {meta.truncated && (
-                <li className="flex items-start gap-2 text-[11px] text-mutedText">
-                  <Info size={12} className="mt-px shrink-0 text-primary/70" aria-hidden />
-                  {meta.truncated}
-                </li>
+          {/* The funnel, and what to do about it.
+              The first version said only "85 gak masuk filter", which reads as a
+              failure and gives the reader nothing to act on — they cannot tell
+              whether to widen the tier, drop the country filter, or abandon the
+              hashtag. Every step now names its reason, and the tier rejects are
+              broken down into one-click widen buttons. */}
+          {(meta.filteredOut > 0 || meta.truncated || meta.warnings.length > 0) && (
+            <div className="space-y-2 rounded-lg border border-border bg-surface px-3 py-3">
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 font-data text-[11px] tabular-nums">
+                <span className="text-mutedText">{meta.candidatesFound} ketemu</span>
+                {meta.candidatesFound > meta.resolved && (
+                  <>
+                    <span className="text-mutedText/30">→</span>
+                    <span className="text-mutedText" title="Dibatasi biar gak kelamaan">
+                      {meta.resolved} dicek
+                    </span>
+                  </>
+                )}
+                {meta.droppedByCountry > 0 && (
+                  <>
+                    <span className="text-mutedText/30">→</span>
+                    <span className="text-destructive/70">−{meta.droppedByCountry} luar negeri</span>
+                  </>
+                )}
+                {meta.droppedByTier > 0 && (
+                  <>
+                    <span className="text-mutedText/30">→</span>
+                    <span className="text-warning">−{meta.droppedByTier} beda tier</span>
+                  </>
+                )}
+                {meta.droppedNoFollowers > 0 && (
+                  <>
+                    <span className="text-mutedText/30">→</span>
+                    <span className="text-mutedText/60">−{meta.droppedNoFollowers} follower gak kebaca</span>
+                  </>
+                )}
+                <span className="text-mutedText/30">→</span>
+                <span className="font-semibold text-text">{sorted.length} tampil</span>
+              </div>
+
+              {Object.keys(meta.tierSpread).length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 border-t border-border pt-2">
+                  <span className="text-[11px] text-mutedText/70">Yang kebuang ada di tier:</span>
+                  {Object.entries(meta.tierSpread).map(([tier, count]) => (
+                    <button
+                      key={tier}
+                      type="button"
+                      onClick={() => {
+                        // Widen and re-run in one click. Re-running is cheap now:
+                        // the accounts are already cached from this sweep.
+                        const next = { ...filters, tiers: [...filters.tiers, tier as (typeof filters.tiers)[number]] }
+                        setFilters(next)
+                        setTimeout(() => searchWith(next), 0)
+                      }}
+                      className="rounded-full border border-warning/40 bg-warning/[0.06] px-2 py-0.5 font-data text-[10px] tabular-nums text-warning transition-colors hover:bg-warning/15"
+                      title={`Tambahin tier ${tier} terus cari ulang`}
+                    >
+                      +{count} {tier}
+                    </button>
+                  ))}
+                  <span className="text-[10px] text-mutedText/40">klik buat tambahin & cari ulang</span>
+                </div>
               )}
-              {meta.warnings.map((w) => (
-                <li key={w} className="flex items-start gap-2 text-[11px] text-mutedText/70">
-                  <Info size={12} className="mt-px shrink-0 text-mutedText/40" aria-hidden />
-                  {w}
-                </li>
-              ))}
-            </ul>
+
+              {(meta.truncated || meta.warnings.length > 0) && (
+                <ul className="space-y-1 border-t border-border pt-2">
+                  {meta.truncated && (
+                    <li className="flex items-start gap-2 text-[11px] text-mutedText/70">
+                      <Info size={12} className="mt-px shrink-0 text-mutedText/40" aria-hidden />
+                      {meta.truncated}
+                    </li>
+                  )}
+                  {meta.warnings.map((w) => (
+                    <li key={w} className="flex items-start gap-2 text-[11px] text-mutedText/70">
+                      <Info size={12} className="mt-px shrink-0 text-mutedText/40" aria-hidden />
+                      {w}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
 
           {sorted.length === 0 ? (

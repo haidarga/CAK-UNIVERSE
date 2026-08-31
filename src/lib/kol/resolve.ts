@@ -18,7 +18,26 @@ import type { KolProfile } from '@/lib/kol/types'
 //
 // Resolution rate measured on a real cohort: 61 of 61.
 
-const RESOLVE_CONCURRENCY = 8
+// Resolve runs in TWO PASSES, and the reason is how Zapi works rather than
+// anything about our code.
+//
+// Zapi scrapes ON DEMAND and caches its own result, so the first request for a
+// handle can take tens of seconds while every later one returns in about a
+// second. That makes a single timeout impossible to choose: short enough to keep
+// a sweep quick, and it discards every account nobody has looked up before.
+//
+// Measured live at a flat 12s ceiling: 73 candidates found, 9 resolved. Sixty-four
+// real creators thrown away — far worse than the slowness it was meant to fix.
+//
+//   Pass 1  every handle, short ceiling, wide. Warm handles all land here, and
+//           the requests that time out still leave Zapi fetching in the
+//           background, which warms them for pass 2.
+//   Pass 2  only the misses, generous ceiling, narrower so we are not hammering
+//           an upstream that is already doing real work.
+const PASS1_CONCURRENCY = 16
+const PASS1_TIMEOUT_MS = 10_000
+const PASS2_CONCURRENCY = 8
+const PASS2_TIMEOUT_MS = 45_000
 
 export function profileFromSearchUser(user: ZapiTikTokSearchUser): KolProfile {
   const handle = normalizeHandle(user.username || '')
@@ -68,11 +87,11 @@ export async function mapWithConcurrency<T, R>(
  * silently attribute a lookalike account's follower count to the creator we
  * were actually asked about.
  */
-export async function resolveHandle(handle: string): Promise<KolProfile | null> {
+export async function resolveHandle(handle: string, timeoutMs = PASS2_TIMEOUT_MS): Promise<KolProfile | null> {
   const clean = normalizeHandle(handle)
   if (!clean) return null
   try {
-    const page = await searchTikTokUsers(clean)
+    const page = await searchTikTokUsers(clean, 1, timeoutMs)
     const hit = (page.users || []).find((u) => normalizeHandle(u.username || '') === clean)
     return hit ? profileFromSearchUser(hit) : null
   } catch {
@@ -111,12 +130,28 @@ export async function resolveHandles(
     needsLookup.push(handle)
   }
 
-  const looked = await mapWithConcurrency(needsLookup, RESOLVE_CONCURRENCY, (h) => resolveHandle(h))
-  const unresolved: string[] = []
-  looked.forEach((profile, i) => {
+  // Pass 1 — wide and impatient. Sweeps up everything already warm.
+  const firstPass = await mapWithConcurrency(needsLookup, PASS1_CONCURRENCY, (h) =>
+    resolveHandle(h, PASS1_TIMEOUT_MS),
+  )
+  const missed: string[] = []
+  firstPass.forEach((profile, i) => {
     if (profile) profiles.set(needsLookup[i], profile)
-    else unresolved.push(needsLookup[i])
+    else missed.push(needsLookup[i])
   })
+
+  // Pass 2 — narrow and patient, only for what pass 1 could not reach. Pass 1's
+  // own timeouts left Zapi warming these, so many now return immediately.
+  const unresolved: string[] = []
+  if (missed.length) {
+    const secondPass = await mapWithConcurrency(missed, PASS2_CONCURRENCY, (h) =>
+      resolveHandle(h, PASS2_TIMEOUT_MS),
+    )
+    secondPass.forEach((profile, i) => {
+      if (profile) profiles.set(missed[i], profile)
+      else unresolved.push(missed[i])
+    })
+  }
 
   return { profiles, unresolved }
 }
