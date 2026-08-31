@@ -33,8 +33,20 @@ export function buildFlags(
   performance: KolPerformance | null,
   region: RegionDetection,
   niche: KolNiche | null,
+  opts: { tierMatch?: boolean; wantedCountry?: string | null } = {},
 ): KolFlag[] {
   const flags: KolFlag[] = []
+
+  if (opts.tierMatch === false) {
+    flags.push({ kind: 'warn', code: 'off-tier', message: `Bukan tier yang kamu minta — ini ${tier ?? 'ukuran gak kebaca'}` })
+  }
+
+  // A missing country used to pass the Indonesia filter in silence, so foreign
+  // creators whose metadata happened to be blank arrived looking like local
+  // ones. Unknown is now said out loud rather than treated as a match.
+  if (opts.wantedCountry && !profile.country) {
+    flags.push({ kind: 'warn', code: 'unknown-country', message: 'Negaranya gak kebaca — belum tentu Indonesia' })
+  }
 
   if (profile.isPrivate) {
     flags.push({ kind: 'warn', code: 'private', message: 'Akun private — konten gak kebaca publik' })
@@ -103,6 +115,12 @@ export function scoreResult(
   flags: KolFlag[],
 ): number {
   let score = 50
+
+  // Ranked down, not removed. A creator outside the requested tier is still a
+  // real creator in the right niche, and hiding them entirely is what produced
+  // blank screens.
+  if (flags.some((f) => f.code === 'off-tier')) score -= 22
+  if (flags.some((f) => f.code === 'unknown-country')) score -= 10
 
   const days = performance?.daysSinceLastPost
   if (typeof days === 'number') {

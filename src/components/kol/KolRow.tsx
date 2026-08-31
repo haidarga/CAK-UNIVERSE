@@ -58,6 +58,17 @@ export const KolRow = memo(function KolRow({
   onToggle: (handle: string) => void
 }) {
   const { profile, performance, niche, tier, region, flags } = result
+  // Why this row is in the near-miss section. Shown on the row itself so it
+  // travels with the creator rather than living only in a section heading the
+  // reader has already scrolled past.
+  const missLabel =
+    result.missed === 'region'
+      ? 'Beda region'
+      : result.missed === 'activity'
+        ? 'Udah lama gak posting'
+        : result.tierMatch === false
+          ? 'Beda tier'
+          : null
   const floor = tierEngagementFloor(tier)
   const er = performance?.engagementRate ?? null
   // Same guard the scorer uses: a ratio off a handful of views is arithmetic,
@@ -77,7 +88,9 @@ export const KolRow = memo(function KolRow({
         className={`relative grid grid-cols-[3px_auto_minmax(0,1fr)] gap-x-3 gap-y-2 rounded-xl border py-3 pl-0 pr-3 transition-[background-color,border-color,transform] duration-200 sm:grid-cols-[3px_auto_minmax(0,1fr)_auto_auto_auto] sm:gap-x-4 ${
           selected
             ? 'border-primary/60 bg-primary/[0.05] shadow-[0_2px_12px_-4px_rgba(37,99,235,0.25)]'
-            : 'border-border bg-surface hover:border-primary/40 hover:shadow-[0_2px_12px_-4px_rgba(24,24,27,0.14)]'
+            : result.missed || result.tierMatch === false
+              ? 'border-dashed border-border bg-surface/60 hover:border-warning/50'
+              : 'border-border bg-surface hover:border-primary/40 hover:shadow-[0_2px_12px_-4px_rgba(24,24,27,0.14)]'
         }`}
       >
         {/* Score as a physical stripe. Ranking you can feel at a glance without
@@ -105,6 +118,11 @@ export const KolRow = memo(function KolRow({
             grid track out and the whole row scrolls sideways. */}
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {missLabel && (
+              <span className="shrink-0 rounded bg-warning/15 px-1.5 py-px text-[10px] font-medium text-warning">
+                {missLabel}
+              </span>
+            )}
             <a
               href={profile.profileUrl}
               target="_blank"

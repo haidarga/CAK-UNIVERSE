@@ -218,10 +218,15 @@ export function KolFinder() {
     })
   }, [])
 
-  const sorted = useMemo(() => {
-    if (!results) return null
-    const copy = [...results]
-    switch (sort) {
+  // Exact matches and near misses are rendered as separate sections. A near miss
+  // is a fully measured creator who failed ONE filter, kept so a narrow filter
+  // combination never produces a blank screen with nothing to judge.
+  const matched = useMemo(() => (results ?? []).filter((r) => !r.missed && r.tierMatch !== false), [results])
+  const near = useMemo(() => (results ?? []).filter((r) => r.missed || r.tierMatch === false), [results])
+
+  const sortRows = useCallback((rows: KolResult[], key: SortKey) => {
+    const copy = [...rows]
+    switch (key) {
       case 'follower':
         return copy.sort((a, b) => (b.profile.followers ?? 0) - (a.profile.followers ?? 0))
       case 'engagement':
@@ -235,7 +240,10 @@ export function KolFinder() {
       default:
         return copy // already ordered by the server's composite score
     }
-  }, [results, sort])
+  }, [])
+
+  const sortedMatched = useMemo(() => sortRows(matched, sort), [sortRows, matched, sort])
+  const sortedNear = useMemo(() => sortRows(near, sort), [sortRows, near, sort])
 
   const chosenResults = useMemo(
     () => (results ?? []).filter((r) => selected.has(r.profile.handle)),
@@ -297,7 +305,7 @@ export function KolFinder() {
         </p>
       )}
 
-      {sorted && meta && (
+      {results && meta && (
         <section className="space-y-4">
           {/* What the sweep actually did. Shown because a silently truncated
               result set is indistinguishable from a small niche. */}
@@ -306,7 +314,8 @@ export function KolFinder() {
                 "131 ketemu" up here made it read as the result count. */}
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <span className="text-sm font-semibold text-text">
-                {sorted.length} KOL siap dipakai
+                {matched.length} KOL cocok
+                {near.length > 0 && <span className="font-normal text-mutedText/60"> · {near.length} mendekati</span>}
               </span>
               <span className="font-data text-[11px] text-mutedText/60">
                 {elapsed(meta.elapsedMs)}
@@ -333,7 +342,7 @@ export function KolFinder() {
               <button
                 type="button"
                 onClick={exportCsv}
-                disabled={!sorted.length}
+                disabled={!results?.length}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1.5 text-[11px] font-medium text-mutedText transition-colors hover:border-border hover:text-text disabled:opacity-40"
               >
                 <Download size={12} aria-hidden />
@@ -352,60 +361,43 @@ export function KolFinder() {
             <div className="space-y-2 rounded-lg border border-border bg-surface px-3 py-3">
               <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 font-data text-[11px] tabular-nums">
                 <span className="text-mutedText">{meta.candidatesFound} ketemu</span>
-                {meta.candidatesFound > meta.resolved && (
+                {meta.droppedForeignEarly > 0 && (
                   <>
                     <span className="text-mutedText/30">→</span>
-                    <span className="text-mutedText" title="Dibatasi biar gak kelamaan">
-                      {meta.resolved} dicek
+                    <span className="text-destructive/70" title="Dibuang dari kode negara di videonya, sebelum dicek satu-satu">
+                      −{meta.droppedForeignEarly} luar negeri
                     </span>
-                  </>
-                )}
-                {meta.droppedForeignEarly + meta.droppedByCountry > 0 && (
-                  <>
-                    <span className="text-mutedText/30">→</span>
-                    <span className="text-destructive/70">
-                      −{meta.droppedForeignEarly + meta.droppedByCountry} luar negeri
-                    </span>
-                  </>
-                )}
-                {meta.droppedByTier > 0 && (
-                  <>
-                    <span className="text-mutedText/30">→</span>
-                    <span className="text-warning">−{meta.droppedByTier} beda tier</span>
-                  </>
-                )}
-                {meta.droppedNoFollowers > 0 && (
-                  <>
-                    <span className="text-mutedText/30">→</span>
-                    <span className="text-mutedText/60">−{meta.droppedNoFollowers} follower gak kebaca</span>
                   </>
                 )}
                 <span className="text-mutedText/30">→</span>
-                <span className="font-semibold text-text">{sorted.length} tampil</span>
+                <span className="text-mutedText">{meta.resolved} dicek</span>
+                {meta.droppedByCountry > 0 && (
+                  <>
+                    <span className="text-mutedText/30">→</span>
+                    <span className="text-destructive/70">−{meta.droppedByCountry} luar negeri</span>
+                  </>
+                )}
+                {meta.droppedByRegion > 0 && (
+                  <>
+                    <span className="text-mutedText/30">→</span>
+                    <span className="text-warning">−{meta.droppedByRegion} beda region</span>
+                  </>
+                )}
+                {meta.droppedByActivity > 0 && (
+                  <>
+                    <span className="text-mutedText/30">→</span>
+                    <span className="text-warning">−{meta.droppedByActivity} udah gak aktif</span>
+                  </>
+                )}
+                <span className="text-mutedText/30">→</span>
+                <span className="font-semibold text-text">{matched.length} cocok</span>
               </div>
 
-              {Object.keys(meta.tierSpread).length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5 border-t border-border pt-2">
-                  <span className="text-[11px] text-mutedText/70">Yang kebuang ada di tier:</span>
-                  {Object.entries(meta.tierSpread).map(([tier, count]) => (
-                    <button
-                      key={tier}
-                      type="button"
-                      onClick={() => {
-                        // Widen and re-run in one click. Re-running is cheap now:
-                        // the accounts are already cached from this sweep.
-                        const next = { ...filters, tiers: [...filters.tiers, tier as (typeof filters.tiers)[number]] }
-                        setFilters(next)
-                        setTimeout(() => searchWith(next), 0)
-                      }}
-                      className="rounded-full border border-warning/40 bg-warning/[0.06] px-2 py-0.5 font-data text-[10px] tabular-nums text-warning transition-colors hover:bg-warning/15"
-                      title={`Tambahin tier ${tier} terus cari ulang`}
-                    >
-                      +{count} {tier}
-                    </button>
-                  ))}
-                  <span className="text-[10px] text-mutedText/40">klik buat tambahin & cari ulang</span>
-                </div>
+              {meta.droppedByTier > 0 && (
+                <p className="border-t border-border pt-2 text-[11px] text-mutedText/70">
+                  {meta.droppedByTier} akun di luar tier yang kamu minta tetap ditampilin di bawah,
+                  ditandai — biar keliatan siapa aja yang ada di niche ini.
+                </p>
               )}
 
               {(meta.truncated || meta.warnings.length > 0) && (
@@ -427,7 +419,7 @@ export function KolFinder() {
             </div>
           )}
 
-          {sorted.length === 0 ? (
+          {sortedMatched.length === 0 && sortedNear.length === 0 ? (
             /* Name the filter that actually did it, and offer the one control
                that undoes it. "Semuanya kesaring, coba longgarin sesuatu" makes
                the reader re-run blind — which is how a working filter ends up
@@ -451,17 +443,50 @@ export function KolFinder() {
               )}
             </div>
           ) : (
-            <ul className="space-y-1.5">
-              {sorted.map((result, i) => (
-                <KolRow
-                  key={result.profile.handle}
-                  result={result}
-                  index={i}
-                  selected={selected.has(result.profile.handle)}
-                  onToggle={toggle}
-                />
-              ))}
-            </ul>
+            <>
+              {sortedMatched.length > 0 && (
+                <ul className="space-y-1.5">
+                  {sortedMatched.map((result, i) => (
+                    <KolRow
+                      key={result.profile.handle}
+                      result={result}
+                      index={i}
+                      selected={selected.has(result.profile.handle)}
+                      onToggle={toggle}
+                    />
+                  ))}
+                </ul>
+              )}
+
+              {sortedNear.length > 0 && (
+                <section className="pt-2">
+                  <div className="mb-2 flex items-center gap-3">
+                    <h3 className="shrink-0 text-xs font-semibold text-mutedText">
+                      {sortedMatched.length > 0 ? 'Gak persis cocok, tapi ada' : 'Yang paling mendekati'}
+                    </h3>
+                    <span className="h-px flex-1 bg-border" aria-hidden />
+                    <span className="shrink-0 font-data text-[11px] tabular-nums text-mutedText/50">
+                      {sortedNear.length}
+                    </span>
+                  </div>
+                  <p className="mb-2 text-[11px] leading-relaxed text-mutedText/60">
+                    Kreator ini beneran ada di niche yang kamu cari dan datanya udah diukur — cuma
+                    meleset di satu filter. Tiap barisnya ditandai melesetnya di mana.
+                  </p>
+                  <ul className="space-y-1.5">
+                    {sortedNear.map((result, i) => (
+                      <KolRow
+                        key={result.profile.handle}
+                        result={result}
+                        index={sortedMatched.length + i}
+                        selected={selected.has(result.profile.handle)}
+                        onToggle={toggle}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </>
           )}
 
           <p className="flex items-start gap-2 text-[10px] leading-relaxed text-mutedText/45">
@@ -476,7 +501,7 @@ export function KolFinder() {
 
       <KolShortlistBar selected={chosenResults} onClear={() => setSelected(new Set())} onExport={exportCsv} />
 
-      {!busy && !sorted && !error && (
+      {!busy && !results && !error && (
         <div className="rounded-xl border border-dashed border-border/40 px-4 py-12 text-center">
           <p className="text-sm font-medium text-text/70">Mau cari KOL di niche apa?</p>
           <div className="mt-3 flex flex-wrap justify-center gap-1.5">

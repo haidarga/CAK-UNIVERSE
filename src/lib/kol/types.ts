@@ -92,12 +92,27 @@ export interface KolNiche {
 /** Why an account is worth a second look, or worth skipping. Shown verbatim in the UI. */
 export interface KolFlag {
   kind: 'good' | 'warn'
-  code: 'dormant' | 'low-engagement' | 'high-engagement' | 'thin-sample' | 'private' | 'unresolved-region' | 'consistent' | 'occasional' | 'low-volume'
+  code:
+    | 'dormant' | 'low-engagement' | 'high-engagement' | 'thin-sample' | 'private'
+    | 'unresolved-region' | 'consistent' | 'occasional' | 'low-volume'
+    | 'off-tier' | 'unknown-country'
   message: string
 }
 
 export interface KolResult {
   platform: KolPlatform
+  /**
+   * Set when this row did NOT pass a filter but is shown anyway.
+   *
+   * A stack of narrow filters lands on zero results routinely, and an empty
+   * screen tells the reader nothing about how close they were. These rows are
+   * fully measured — only region and activity rejects qualify, because those
+   * filters run after enrichment — and the UI labels them plainly so nobody
+   * mistakes a near miss for a match.
+   */
+  missed?: 'region' | 'activity' | null
+  /** Did this creator's size match the requested tier? Ranks, never excludes. */
+  tierMatch?: boolean
   candidate: KolCandidate
   profile: KolProfile
   tier: KolTier | null
@@ -140,6 +155,10 @@ export interface KolSearchMeta {
   droppedNoFollowers: number
   /** Which tiers the tier-rejects sat in, so the reader knows what widening buys. */
   tierSpread: Record<string, number>
+  /** Dropped AFTER measurement, by region. These are fully measured accounts. */
+  droppedByRegion: number
+  /** Dropped AFTER measurement, for being dormant. Also fully measured. */
+  droppedByActivity: number
   enriched: number
   fromCache: number
   elapsedMs: number

@@ -29,8 +29,16 @@ import type { KolPerformance } from '@/lib/kol/types'
 // already cleared the cheap checks.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ENRICH_CONCURRENCY = 8
+const ENRICH_CONCURRENCY = 12
 const SAMPLE_SIZE = 20
+
+// A ceiling on the whole stage, matching the one on resolve. Measuring 80
+// creators at two seconds each is fine; measuring 80 where a dozen are cold and
+// each costs the full per-call timeout is what turned a sweep into 154 seconds.
+// Creators not reached keep their follower count and appear without performance
+// data, which the UI already renders as unknown rather than zero.
+const ENRICH_BUDGET_MS = 45_000
+const PER_CALL_TIMEOUT_MS = 15_000
 const MS_PER_DAY = 86_400_000
 
 function num(v: unknown): number | null {
@@ -118,8 +126,13 @@ export interface EnrichedCreator {
 
 export async function enrichHandles(handles: string[]): Promise<Map<string, EnrichedCreator>> {
   const out = new Map<string, EnrichedCreator>()
+  const deadline = Date.now() + ENRICH_BUDGET_MS
+
   const results = await mapWithConcurrency(handles, ENRICH_CONCURRENCY, async (handle) => {
     const clean = normalizeHandle(handle)
+    // Workers reaching the front of a deep queue after the budget is spent give
+    // up without opening a request.
+    if (Date.now() >= deadline) return { handle, performance: null, captions: [], geoTags: [] }
 
     // One retry, because the provider returns transient 503s under load —
     // observed live at roughly two failures in seven during a single sweep.
@@ -128,7 +141,9 @@ export async function enrichHandles(handles: string[]): Promise<Map<string, Enri
     // hiccup on our side.
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const payload = await fetchTikTokPosts(clean, SAMPLE_SIZE)
+        const left = deadline - Date.now()
+        if (left <= 0) break
+        const payload = await fetchTikTokPosts(clean, SAMPLE_SIZE, Math.min(PER_CALL_TIMEOUT_MS, left))
         const videos = extractVideos(payload)
         // An empty list is a real answer for a brand-new account, so it is not
         // retried — only a thrown error is.

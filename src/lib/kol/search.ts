@@ -22,10 +22,14 @@ import type { EnrichedCreator } from '@/lib/kol/enrich'
 // truth is "we looked at 61 and 49 did not match", and those are very different
 // answers for someone planning a campaign.
 
+// Raised across the board. The old ceilings were set when a sweep took two and a
+// half minutes; after the resolve rewrite the same work runs in about fifteen
+// seconds, and a "Cepat" search that surfaces 58 candidates and shows one row is
+// not fast, it is empty.
 const DEPTH_SETTINGS = {
-  cepat: { pagesPerHashtag: 2, pagesPerKeyword: 1, maxCandidates: 40, maxEnrich: 20 },
-  standar: { pagesPerHashtag: 5, pagesPerKeyword: 2, maxCandidates: 90, maxEnrich: 40 },
-  dalam: { pagesPerHashtag: 10, pagesPerKeyword: 4, maxCandidates: 180, maxEnrich: 70 },
+  cepat: { pagesPerHashtag: 4, pagesPerKeyword: 2, maxCandidates: 90, maxEnrich: 40 },
+  standar: { pagesPerHashtag: 6, pagesPerKeyword: 3, maxCandidates: 150, maxEnrich: 70 },
+  dalam: { pagesPerHashtag: 15, pagesPerKeyword: 5, maxCandidates: 320, maxEnrich: 140 },
 } as const
 
 // Instagram is billed per result and cannot filter by tier before the expensive
@@ -69,7 +73,7 @@ function emptyResponse(query: string, warnings: string[]): KolSearchResponse {
     resolvedProfiles: [],
     meta: {
       query, hashtagsUsed: [], keywordsUsed: [], candidatesFound: 0, resolved: 0,
-      filteredOut: 0, droppedByCountry: 0, droppedForeignEarly: 0, droppedByTier: 0, droppedNoFollowers: 0, tierSpread: {},
+      filteredOut: 0, droppedByCountry: 0, droppedForeignEarly: 0, droppedByTier: 0, droppedNoFollowers: 0, tierSpread: {}, droppedByRegion: 0, droppedByActivity: 0,
       enriched: 0, fromCache: 0, elapsedMs: 0, truncated: null, warnings,
     },
   }
@@ -170,10 +174,15 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
 
   report({ stage: 'filter', message: `Nyaring ${profiles.size} akun sesuai tier & negara…`, total: profiles.size })
   const wantedTiers = new Set(input.tiers)
-  const survivors: { handle: string; profile: KolProfile }[] = []
-  // Counted per reason. "85 gak masuk filter" is useless on its own — the reader
-  // cannot tell whether to widen the tier, drop the country filter, or give up
-  // on the hashtag, which is the only thing they actually wanted to know.
+  // Only COUNTRY still excludes. It is free, it runs before any measurement, and
+  // it keeps a hashtag's foreign half out of the pool entirely.
+  //
+  // Tier used to exclude here too. Stacked with region and activity downstream,
+  // that produced a chain of AND gates that landed on zero or one result as a
+  // matter of routine — every gate working correctly, and the reader staring at
+  // a blank screen with no way to tell how close they came. Tier now RANKS: an
+  // off-tier creator is measured, shown, and labelled, and the reader decides.
+  const survivors: { handle: string; profile: KolProfile; tierMatch: boolean }[] = []
   const dropped = { country: 0, tier: 0, noFollowers: 0 }
   const nearMiss = new Map<string, number>()
 
@@ -183,37 +192,27 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
       continue
     }
     const tier = tierOf(profile.followers)
-    if (wantedTiers.size && !tier) {
-      dropped.noFollowers++
-      continue
-    }
-    if (wantedTiers.size && tier && !wantedTiers.has(tier)) {
+    const tierMatch = !wantedTiers.size || (!!tier && wantedTiers.has(tier))
+    if (!tierMatch) {
       dropped.tier++
-      // Which tiers the rejects actually sat in, so the UI can say "ada 47 di
-      // tier Makro" instead of leaving the reader to guess and re-run blind.
-      nearMiss.set(tier, (nearMiss.get(tier) ?? 0) + 1)
-      continue
+      if (tier) nearMiss.set(tier, (nearMiss.get(tier) ?? 0) + 1)
     }
-    // Region is NOT checked here. It used to be, reading the bio alone — which
-    // detected a location for 0 of 58 real creators. The signal actually lives in
-    // captions and compound hashtags (#kulinerbandung), and those only exist
-    // after enrichment, so the region filter moved below stage 3.
-    //
-    // The cost is real: enriching accounts that a region filter will later drop.
-    // Worth it, because bio-only region was not a cheaper filter, it was a
-    // broken one.
-    survivors.push({ handle, profile })
+    if (wantedTiers.size && !tier) dropped.noFollowers++
+    survivors.push({ handle, profile, tierMatch })
   }
 
-  // Rank before truncating so the enrich budget is spent on the biggest
-  // accounts that matched, not on whichever ones the provider happened to
-  // return first.
-  survivors.sort((a, b) => (b.profile.followers ?? 0) - (a.profile.followers ?? 0))
+  // Creators who match the requested tier get the measurement budget first;
+  // everyone else fills whatever is left, so a search always has something to
+  // show even when the tier turns out to be the wrong guess for this niche.
+  survivors.sort(
+    (a, b) =>
+      Number(b.tierMatch) - Number(a.tierMatch) || (b.profile.followers ?? 0) - (a.profile.followers ?? 0),
+  )
   let truncated = discovery.truncated ?? igTruncated
   let toEnrich = survivors
   if (survivors.length > depth.maxEnrich) {
     toEnrich = survivors.slice(0, depth.maxEnrich)
-    truncated = `${survivors.length} akun lolos filter, ${depth.maxEnrich} teratas yang diukur performanya. Naikin ke "Dalam" buat lebih banyak.`
+    truncated = `${survivors.length} akun ketemu, ${depth.maxEnrich} teratas yang diukur performanya. Naikin ke "Dalam" buat lebih banyak.`
   }
 
   // ── Stage 3: measure performance on an unbiased sample ────────────────────
@@ -239,7 +238,7 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
       )
 
   // ── Assemble ──────────────────────────────────────────────────────────────
-  const results: KolResult[] = toEnrich.map(({ handle, profile }) => {
+  const results: KolResult[] = toEnrich.map(({ handle, profile, tierMatch }) => {
     const tier = tierOf(profile.followers)
     const enrichedRow = enriched.get(handle)
     // Every text signal at once: the handle, the bio, up to 20 captions, and any
@@ -253,7 +252,10 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
     })
     const performance = enrichedRow?.performance ?? null
     const niche = nicheMap.get(handle) ?? null
-    const flags = buildFlags(profile, tier, performance, region, niche)
+    const flags = buildFlags(profile, tier, performance, region, niche, {
+      tierMatch,
+      wantedCountry: input.country,
+    })
     return {
       platform: input.platform,
       candidate: discovery.candidates.get(handle) ?? { handle, sources: [], seenVideos: [] },
@@ -263,30 +265,54 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
       performance,
       niche,
       flags,
+      tierMatch,
       score: scoreResult(performance, niche, flags),
     }
   })
 
+  // The two filters that run AFTER measurement. Rejects here are fully measured,
+  // which is what makes them safe to offer back as near misses below.
   const active = input.maxDaysInactive
-  const afterActivity = active
-    ? results.filter((r) => r.performance?.daysSinceLastPost == null || r.performance.daysSinceLastPost <= active)
-    : results
-  const hiddenByActivity = results.length - afterActivity.length
-  if (hiddenByActivity > 0) {
-    warnings.push(`${hiddenByActivity} akun disembunyikan karena udah lama gak posting.`)
-  }
+  const passesActivity = (r: KolResult) =>
+    !active || r.performance?.daysSinceLastPost == null || r.performance.daysSinceLastPost <= active
+  const passesRegion = (r: KolResult) => !input.region || detectionMatches(r.region, input.region)
 
-  // Region filter, now that captions exist. Creators whose location could not be
-  // worked out are dropped by a specific filter — that is the honest behaviour,
-  // and the warning says how many so nobody reads a short list as a small niche.
-  const visible = input.region ? afterActivity.filter((r) => detectionMatches(r.region, input.region!)) : afterActivity
-  const hiddenByRegion = afterActivity.length - visible.length
-  if (hiddenByRegion > 0) {
-    const unknown = afterActivity.filter((r) => !r.region.area).length
+  const visible = results.filter((r) => passesActivity(r) && passesRegion(r))
+  const droppedByActivity = results.filter((r) => !passesActivity(r)).length
+  const droppedByRegion = results.filter((r) => passesActivity(r) && !passesRegion(r)).length
+
+  if (droppedByActivity > 0) warnings.push(`${droppedByActivity} akun disembunyikan karena udah lama gak posting.`)
+  if (droppedByRegion > 0) {
+    const unknown = results.filter((r) => passesActivity(r) && !passesRegion(r) && !r.region.area).length
     warnings.push(
-      `${hiddenByRegion} akun gak lolos filter region` +
+      `${droppedByRegion} akun gak lolos filter region` +
         (unknown ? ` (${unknown} di antaranya lokasinya emang gak ketahuan).` : '.'),
     )
+  }
+
+  // NEAR MISSES.
+  //
+  // Five filters stacked in series land on zero routinely — each one is working,
+  // and the reader still gets a blank screen with nothing to judge. Rows that
+  // failed exactly ONE of the two post-measurement filters are appended, clearly
+  // marked, so "gak ada yang cocok" always comes with "ini yang paling dekat".
+  //
+  // Only region and activity qualify. Tier and country rejects were dropped
+  // before enrichment, so they carry no engagement or activity data and would be
+  // rows of dashes pretending to be candidates.
+  const NEAR_MISS_FLOOR = 5
+  const NEAR_MISS_CAP = 12
+  const nearMisses: KolResult[] = []
+  if (visible.length < NEAR_MISS_FLOOR) {
+    for (const r of results) {
+      if (visible.includes(r)) continue
+      const failedRegion = passesActivity(r) && !passesRegion(r)
+      const failedActivity = !passesActivity(r) && passesRegion(r)
+      if (failedRegion) nearMisses.push({ ...r, missed: 'region' })
+      else if (failedActivity) nearMisses.push({ ...r, missed: 'activity' })
+      if (nearMisses.length >= NEAR_MISS_CAP) break
+    }
+    nearMisses.sort(compareResults)
   }
 
   if (discovery.droppedForeign > 0) {
@@ -307,7 +333,7 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
     // sweep could pay for 90 lookups and keep 4 — so the next search redid 86
     // lookups it had already bought.
     resolvedProfiles: [...profiles.values()],
-    results: visible,
+    results: [...visible, ...nearMisses],
     meta: {
       query: input.query,
       hashtagsUsed: hashtags,
@@ -320,6 +346,8 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
       droppedByTier: dropped.tier,
       droppedNoFollowers: dropped.noFollowers,
       tierSpread: Object.fromEntries([...nearMiss.entries()].sort((a, b) => b[1] - a[1])),
+      droppedByRegion,
+      droppedByActivity,
       enriched: toEnrich.length,
       // Only the TikTok path consults the cache. Instagram always makes a fresh
       // billed call, so counting set membership there reported cache hits that

@@ -385,3 +385,53 @@ describe('ambiguous place names inside handles and hashtags', () => {
     expect(detectRegion({ handle: 'lombokwisatatransport', bio: null, captions: [] }).area).toBe('nusa-tenggara')
   })
 })
+
+describe('filters rank, they do not gate', () => {
+  // The design failure this replaces: country AND tier AND region AND activity,
+  // each one a hard gate in series. Every gate worked correctly and the reader
+  // routinely got zero rows with no way to tell how close they came. A real
+  // search returning "0 KOL" is worse than useless — it reads as "this niche is
+  // empty" when the truth was "your four filters intersected at nothing".
+  it('scores an off-tier creator below a matching one instead of removing it', () => {
+    const perf = {
+      sampleSize: 20, avgViews: 50_000, avgLikes: 2_500, avgComments: 40,
+      engagementRate: 5, lastPostAt: null, daysSinceLastPost: 2, postingCadenceDays: 3,
+    }
+    const matching = scoreResult(perf, null, [])
+    const offTier = scoreResult(perf, null, [{ kind: 'warn', code: 'off-tier', message: '' }])
+    expect(offTier).toBeLessThan(matching)
+    // ...but still on the board, not zeroed out of existence.
+    expect(offTier).toBeGreaterThan(0)
+  })
+
+  it('says out loud when a country could not be read instead of assuming Indonesia', () => {
+    // A null country used to pass the "Indonesia doang" filter in silence, so
+    // foreign creators with blank metadata arrived looking local.
+    const flags = buildFlags(
+      { handle: 'x', displayName: null, bio: null, followers: 20_000, following: null, totalVideos: null, totalHearts: null, country: null, verified: false, isPrivate: false, avatarUrl: null, instagramHandle: null, profileUrl: '' },
+      'mikro', null, { area: null, confidence: null, evidence: null, dominance: 0, alternates: [] }, null,
+      { wantedCountry: 'ID' },
+    )
+    expect(flags.some((f) => f.code === 'unknown-country')).toBe(true)
+  })
+
+  it('does not warn about country when the reader did not ask for one', () => {
+    const flags = buildFlags(
+      { handle: 'x', displayName: null, bio: null, followers: 20_000, following: null, totalVideos: null, totalHearts: null, country: null, verified: false, isPrivate: false, avatarUrl: null, instagramHandle: null, profileUrl: '' },
+      'mikro', null, { area: null, confidence: null, evidence: null, dominance: 0, alternates: [] }, null,
+      { wantedCountry: null },
+    )
+    expect(flags.some((f) => f.code === 'unknown-country')).toBe(false)
+  })
+
+  it('labels an off-tier creator rather than silently reclassifying them', () => {
+    const flags = buildFlags(
+      { handle: 'x', displayName: null, bio: null, followers: 5_000_000, following: null, totalVideos: null, totalHearts: null, country: 'ID', verified: false, isPrivate: false, avatarUrl: null, instagramHandle: null, profileUrl: '' },
+      'mega', null, { area: null, confidence: null, evidence: null, dominance: 0, alternates: [] }, null,
+      { tierMatch: false },
+    )
+    const off = flags.find((f) => f.code === 'off-tier')
+    expect(off).toBeTruthy()
+    expect(off!.message).toContain('mega')
+  })
+})
