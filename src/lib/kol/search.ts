@@ -69,7 +69,7 @@ function emptyResponse(query: string, warnings: string[]): KolSearchResponse {
     resolvedProfiles: [],
     meta: {
       query, hashtagsUsed: [], keywordsUsed: [], candidatesFound: 0, resolved: 0,
-      filteredOut: 0, droppedByCountry: 0, droppedByTier: 0, droppedNoFollowers: 0, tierSpread: {},
+      filteredOut: 0, droppedByCountry: 0, droppedForeignEarly: 0, droppedByTier: 0, droppedNoFollowers: 0, tierSpread: {},
       enriched: 0, fromCache: 0, elapsedMs: 0, truncated: null, warnings,
     },
   }
@@ -97,13 +97,17 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
   report({ stage: 'discover', message: hashtags.length ? `Nyisir #${hashtags.join(', #')}…` : `Nyari "${keywords[0]}"…` })
 
   const discovery = isInstagram
-    ? { ...(await discoverInstagram(hashtags, IG_DEPTH[input.depth].postLimit)), preResolved: new Map(), truncated: null }
+    ? { ...(await discoverInstagram(hashtags, IG_DEPTH[input.depth].postLimit)), preResolved: new Map(), truncated: null, totalFound: 0, droppedForeign: 0 }
     : await discoverCandidates({
         hashtags,
         keywords,
         pagesPerHashtag: depth.pagesPerHashtag,
         pagesPerKeyword: depth.pagesPerKeyword,
         maxCandidates: depth.maxCandidates,
+        // Spend the candidate budget on accounts that can actually appear in the
+        // result. Without this, a globally-used hashtag fills all 90 slots with
+        // creators the country filter is guaranteed to reject moments later.
+        preferCountry: input.country,
       })
   warnings.push(...discovery.warnings)
 
@@ -264,6 +268,15 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
     )
   }
 
+  if (discovery.droppedForeign > 0) {
+    const share = Math.round((discovery.droppedForeign / Math.max(discovery.totalFound, 1)) * 100)
+    warnings.push(
+      share >= 60
+        ? `${discovery.droppedForeign} dari ${discovery.totalFound} akun (${share}%) itu kreator luar negeri — hashtag ini dipakai global. Coba hashtag versi Indonesia, misal tambahin "indonesia" atau nama kota.`
+        : `${discovery.droppedForeign} akun luar negeri dibuang sebelum diproses, jadi jatahnya kepakai buat akun Indonesia.`,
+    )
+  }
+
   visible.sort(compareResults)
   report({ stage: 'done', message: `${visible.length} KOL siap ditinjau.`, current: visible.length, total: visible.length })
 
@@ -278,7 +291,8 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
       query: input.query,
       hashtagsUsed: hashtags,
       keywordsUsed: keywords,
-      candidatesFound: discovery.candidates.size,
+      candidatesFound: discovery.totalFound || discovery.candidates.size,
+      droppedForeignEarly: discovery.droppedForeign,
       resolved: profiles.size,
       filteredOut: dropped.country + dropped.tier + dropped.noFollowers,
       droppedByCountry: dropped.country,

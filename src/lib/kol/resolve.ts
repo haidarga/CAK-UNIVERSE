@@ -36,8 +36,12 @@ import type { KolProfile } from '@/lib/kol/types'
 //           an upstream that is already doing real work.
 const PASS1_CONCURRENCY = 16
 const PASS1_TIMEOUT_MS = 10_000
-const PASS2_CONCURRENCY = 8
-const PASS2_TIMEOUT_MS = 45_000
+// Pass 2 is the tail, and the tail decides the wall clock: a handful of stubborn
+// handles at 45s each held a sweep to 108s. Tighter ceiling, wider lane — a
+// handle that is still not answering after 25s is one Zapi has not finished
+// scraping, and it will be there (warm, instant) on the next search.
+const PASS2_CONCURRENCY = 12
+const PASS2_TIMEOUT_MS = 25_000
 
 export function profileFromSearchUser(user: ZapiTikTokSearchUser): KolProfile {
   const handle = normalizeHandle(user.username || '')

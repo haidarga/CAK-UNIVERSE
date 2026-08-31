@@ -30,6 +30,19 @@ export interface DiscoverOptions {
   pagesPerKeyword: number
   /** Hard ceiling on candidates. Reaching it is reported, never silent. */
   maxCandidates: number
+  /**
+   * ISO country the caller wants, e.g. "ID".
+   *
+   * Every video row carries the country it was posted from, and that field is
+   * FREE — it arrives with discovery, long before the per-handle lookups. Using
+   * it here is the difference between spending the whole candidate budget on
+   * accounts that a later filter will certainly reject, and spending it on
+   * accounts that can actually appear in the result.
+   *
+   * Observed live: a home-decor hashtag returned 90 candidates, every one of
+   * them American or British, all resolved at full cost and then all discarded.
+   */
+  preferCountry?: string | null
 }
 
 export interface DiscoverOutcome {
@@ -38,6 +51,10 @@ export interface DiscoverOutcome {
   preResolved: Map<string, ZapiTikTokSearchUser>
   warnings: string[]
   truncated: string | null
+  /** Unique handles seen BEFORE any cap or country pass. */
+  totalFound: number
+  /** Dropped here because every video of theirs came from another country. */
+  droppedForeign: number
 }
 
 /** Splits free text into hashtags and plain keywords. "#skincare, glowing" → both. */
@@ -158,6 +175,26 @@ export async function discoverCandidates(opts: DiscoverOptions): Promise<Discove
   )
 
   await Promise.all([...hashtagWork, ...keywordVideoWork, ...keywordUserWork])
+  const totalFound = candidates.size
+
+  // Country pass, using the free per-video field. A creator whose every seen
+  // video came from somewhere else is almost certainly based there, and paying
+  // for a lookup to confirm it wastes a slot the caller needed.
+  //
+  // Deliberately conservative: a candidate with NO country on any video is kept,
+  // because absence of the field is not evidence of a foreign account. Only a
+  // unanimous foreign signal drops anyone.
+  let droppedForeign = 0
+  const want = opts.preferCountry?.toUpperCase() || null
+  if (want) {
+    for (const [handle, candidate] of [...candidates]) {
+      const seen = candidate.seenVideos.map((v) => v.region).filter(Boolean) as string[]
+      if (seen.length && !seen.some((r) => r.toUpperCase() === want)) {
+        candidates.delete(handle)
+        droppedForeign++
+      }
+    }
+  }
 
   if (candidates.size > opts.maxCandidates) {
     // Keep the ones seen most often first: appearing across several videos or
@@ -167,10 +204,10 @@ export async function discoverCandidates(opts: DiscoverOptions): Promise<Discove
       (a, b) => b.sources.length - a.sources.length || b.seenVideos.length - a.seenVideos.length,
     )
     const kept = ranked.slice(0, opts.maxCandidates)
-    truncated = `Ketemu ${candidates.size} akun, diproses ${opts.maxCandidates} teratas (yang paling sering muncul).`
+    truncated = `Ketemu ${candidates.size} akun yang cocok, diproses ${opts.maxCandidates} teratas (yang paling sering muncul).`
     candidates.clear()
     for (const c of kept) candidates.set(c.handle, c)
   }
 
-  return { candidates, preResolved, warnings, truncated }
+  return { candidates, preResolved, warnings, truncated, totalFound, droppedForeign }
 }

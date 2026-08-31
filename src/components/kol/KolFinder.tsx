@@ -43,6 +43,71 @@ const SORTS: { id: SortKey; label: string }[] = [
   { id: 'terbaru', label: 'Paling aktif' },
 ]
 
+/**
+ * Works out which filter emptied the result, and what single change undoes it.
+ *
+ * Ordered by how far up the funnel the loss happened: a candidate killed at
+ * discovery never reached the tier filter, so blaming the tier would send the
+ * reader to change the one control that was not responsible.
+ */
+function emptyReason(meta: KolSearchMeta, filters: KolFilterValue): {
+  title: string
+  detail: string
+  fix?: { label: string; apply: (f: KolFilterValue) => KolFilterValue }
+} {
+  if (meta.candidatesFound === 0) {
+    return {
+      title: 'Hashtag-nya kosong',
+      detail: 'Gak ada satu pun video di hashtag ini. Kemungkinan salah ketik, atau tag-nya emang belum kepakai. Coba ejaan lain.',
+    }
+  }
+
+  const foreign = meta.droppedForeignEarly + meta.droppedByCountry
+  if (foreign >= meta.candidatesFound * 0.6) {
+    return {
+      title: 'Hashtag ini isinya kreator luar negeri',
+      detail: `${foreign} dari ${meta.candidatesFound} akun bukan dari Indonesia. Tag ini dipakai global, jadi filter "Indonesia doang" ngabisin semuanya. Coba versi Indonesia-nya — tambahin "indonesia" atau nama kota di belakang hashtag.`,
+      fix: { label: 'Cari ulang tanpa batas negara', apply: (f) => ({ ...f, country: null }) },
+    }
+  }
+
+  if (meta.droppedByTier > 0 && meta.droppedByTier >= meta.resolved * 0.5) {
+    const tiers = Object.entries(meta.tierSpread).sort((a, b) => b[1] - a[1])
+    return {
+      title: 'Tier-nya kelewat sempit',
+      detail: `${meta.droppedByTier} akun ketemu tapi ukurannya beda${tiers.length ? ` — paling banyak di tier ${tiers[0][0]} (${tiers[0][1]} akun)` : ''}. Di niche ini ukuran segitu yang banyak.`,
+      fix: tiers.length
+        ? {
+            label: `Tambahin tier ${tiers[0][0]} (+${tiers[0][1]})`,
+            apply: (f) => ({ ...f, tiers: [...f.tiers, tiers[0][0] as (typeof f.tiers)[number]] }),
+          }
+        : undefined,
+    }
+  }
+
+  if (filters.region) {
+    return {
+      title: 'Filter region-nya kekencengan',
+      detail:
+        'Lokasi ditebak dari handle, bio, caption, dan hashtag — dan banyak kreator gak pernah nyebut kotanya sama sekali. Di niche yang gak terikat tempat (fashion, beauty, gaming), filter region bakal ngebuang hampir semua orang. Paling nendang di kuliner dan wisata.',
+      fix: { label: 'Cari ulang tanpa filter region', apply: (f) => ({ ...f, region: null }) },
+    }
+  }
+
+  if (filters.maxDaysInactive) {
+    return {
+      title: 'Semuanya udah lama gak posting',
+      detail: `Ketemu ${meta.candidatesFound} akun tapi gak ada yang aktif belakangan ini. Hashtag ini kemungkinan udah mati.`,
+      fix: { label: 'Tampilin yang udah gak aktif juga', apply: (f) => ({ ...f, maxDaysInactive: null }) },
+    }
+  }
+
+  return {
+    title: 'Gak ada yang lolos filter',
+    detail: `Ketemu ${meta.candidatesFound} akun tapi semuanya kesaring. Coba longgarin salah satu filter di atas.`,
+  }
+}
+
 export function KolFinder() {
   const [filters, setFilters] = useState<KolFilterValue>(DEFAULTS)
   const [busy, setBusy] = useState(false)
@@ -171,6 +236,8 @@ export function KolFinder() {
     [results, selected],
   )
 
+  const diagnosis = useMemo(() => emptyReason(meta ?? ({} as KolSearchMeta), filters), [meta, filters])
+
   const exportCsv = useCallback(() => {
     if (!results?.length) return
     const chosen = selected.size ? results.filter((r) => selected.has(r.profile.handle)) : results
@@ -287,10 +354,12 @@ export function KolFinder() {
                     </span>
                   </>
                 )}
-                {meta.droppedByCountry > 0 && (
+                {meta.droppedForeignEarly + meta.droppedByCountry > 0 && (
                   <>
                     <span className="text-mutedText/30">→</span>
-                    <span className="text-destructive/70">−{meta.droppedByCountry} luar negeri</span>
+                    <span className="text-destructive/70">
+                      −{meta.droppedForeignEarly + meta.droppedByCountry} luar negeri
+                    </span>
                   </>
                 )}
                 {meta.droppedByTier > 0 && (
@@ -353,14 +422,27 @@ export function KolFinder() {
           )}
 
           {sorted.length === 0 ? (
+            /* Name the filter that actually did it, and offer the one control
+               that undoes it. "Semuanya kesaring, coba longgarin sesuatu" makes
+               the reader re-run blind — which is how a working filter ends up
+               looking like a broken tool. */
             <div className="rounded-xl border border-dashed border-border/50 px-4 py-10 text-center">
               <Users size={22} className="mx-auto mb-2 text-mutedText/30" aria-hidden />
-              <p className="text-sm font-medium text-text/80">Gak ada yang lolos filter</p>
-              <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-mutedText/60">
-                {meta.candidatesFound > 0
-                  ? `Ketemu ${meta.candidatesFound} akun tapi semuanya kesaring. Coba longgarin tier, ganti "Masih aktif" ke Semua, atau hapus filter region.`
-                  : 'Hashtag-nya mungkin belum ada isinya. Coba kata kunci lain atau ejaan yang beda.'}
-              </p>
+              <p className="text-sm font-medium text-text/80">{diagnosis.title}</p>
+              <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-mutedText/60">{diagnosis.detail}</p>
+              {diagnosis.fix && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = diagnosis.fix!.apply(filters)
+                    setFilters(next)
+                    setTimeout(() => searchWith(next), 0)
+                  }}
+                  className="mt-3 rounded-lg border border-primary/50 bg-primary/[0.06] px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/15"
+                >
+                  {diagnosis.fix.label}
+                </button>
+              )}
             </div>
           ) : (
             <ul className="space-y-1.5">

@@ -133,6 +133,8 @@ export interface KolSearchMeta {
   /** Dropped BEFORE the expensive stage. Broken down below, never silent. */
   filteredOut: number
   droppedByCountry: number
+  /** Dropped during discovery from the free per-video country field, before any lookup. */
+  droppedForeignEarly: number
   droppedByTier: number
   /** Matched everything else but had no readable follower count, so no tier. */
   droppedNoFollowers: number

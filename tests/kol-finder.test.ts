@@ -302,3 +302,29 @@ describe('funnel reporting', () => {
     expect(Object.values(meta.tierSpread).reduce((a, b) => a + b, 0)).toBe(meta.droppedByTier)
   })
 })
+
+describe('discovery country pass', () => {
+  // Every video row carries the country it was posted from, and it arrives free
+  // with discovery. Ignoring it meant a globally-used hashtag filled all 90
+  // candidate slots with American creators, resolved every one at full cost,
+  // then discarded all of them — 2m25s to show zero results.
+  const keep = (regions: (string | null)[], want: string) => {
+    const seen = regions.filter(Boolean) as string[]
+    return !(seen.length && !seen.some((r) => r.toUpperCase() === want))
+  }
+
+  it('drops a creator whose every seen video came from elsewhere', () => {
+    expect(keep(['US', 'US', 'GB'], 'ID')).toBe(false)
+  })
+
+  it('keeps a creator with even one video from the target country', () => {
+    expect(keep(['US', 'ID'], 'ID')).toBe(true)
+  })
+
+  it('keeps a creator with no country on any video', () => {
+    // Absence of the field is not evidence of a foreign account, and dropping on
+    // silence would quietly delete real candidates.
+    expect(keep([null, null], 'ID')).toBe(true)
+    expect(keep([], 'ID')).toBe(true)
+  })
+})
