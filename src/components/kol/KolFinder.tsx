@@ -8,6 +8,7 @@ import { KolRow } from '@/components/kol/KolRow'
 import { KolShortlistBar } from '@/components/kol/KolShortlistBar'
 import type { KolResult, KolSearchMeta } from '@/lib/kol/types'
 import { compactCount, elapsed } from '@/lib/kol/format'
+import { createNdjsonParser, type KolStreamEvent } from '@/lib/kol/ndjson'
 
 // "Mencari KOL yang Hilang" — hashtag or keyword in, shortlist out.
 //
@@ -99,36 +100,33 @@ export function KolFinder() {
         throw new Error(text.slice(0, 200) || `Server balas ${res.status}`)
       }
 
-      // NDJSON: one JSON object per line. Buffered because a chunk boundary can
-      // land mid-line, and parsing a half-line would drop a real event.
+      // NDJSON: one JSON object per line. The parser buffers because a network
+      // chunk can end mid-line, and parsing eagerly would drop whichever event
+      // straddles the boundary — including, occasionally, the final result.
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
-      let buffer = ''
+      const parser = createNdjsonParser()
+
+      const apply = (events: KolStreamEvent[]) => {
+        for (const event of events) {
+          if (event.type === 'progress') {
+            setProgress(event as unknown as KolProgressState)
+          } else if (event.type === 'result') {
+            setResults((event.results as KolResult[]) ?? [])
+            setMeta((event.meta as KolSearchMeta) ?? null)
+          } else if (event.type === 'error') {
+            throw new Error(String(event.error || 'Pencarian gagal.'))
+          }
+        }
+      }
 
       for (;;) {
         const { done, value } = await reader.read()
         if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-        for (const line of lines) {
-          if (!line.trim()) continue
-          let payload: Record<string, unknown>
-          try {
-            payload = JSON.parse(line)
-          } catch {
-            continue
-          }
-          if (payload.type === 'progress') {
-            setProgress(payload as unknown as KolProgressState)
-          } else if (payload.type === 'result') {
-            setResults((payload.results as KolResult[]) ?? [])
-            setMeta((payload.meta as KolSearchMeta) ?? null)
-          } else if (payload.type === 'error') {
-            throw new Error(String(payload.error || 'Pencarian gagal.'))
-          }
-        }
+        apply(parser.push(decoder.decode(value, { stream: true })))
       }
+      // A final line can arrive without a trailing newline.
+      apply(parser.flush())
     } catch (e) {
       if ((e as Error)?.name === 'AbortError') return
       setError(e instanceof Error ? e.message : 'Pencarian gagal.')
