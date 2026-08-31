@@ -10,14 +10,19 @@ import type { KolProfile } from '@/lib/kol/types'
 // POST /api/kol/search — "Mencari KOL yang Hilang".
 //
 // One request runs the whole four-stage sweep, so the ceiling is generous: a
-// "dalam" search walks ten hashtag pages, resolves up to 180 handles at 8 in
-// flight, then measures the top 70 and classifies their niches. Measured on a
-// real cohort: ~100s for 61 candidates on the standard depth.
+// "dalam" TikTok search walks ten hashtag pages, resolves up to 180 handles at 8
+// in flight, then measures the top 70 and classifies their niches. Measured on a
+// real cohort: ~100s for 61 candidates on the standard depth, and 7.5s on a
+// repeat once the provider's own cache was warm.
+//
+// Instagram runs through Apify instead, which is billed per result — its depth
+// ceilings are lower for that reason, not because it is technically harder.
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
 const BodySchema = z.object({
+  platform: z.enum(['tiktok', 'instagram']).default('tiktok'),
   query: z.string().min(2).max(200),
   tiers: z.array(z.enum(KOL_TIER_IDS as unknown as [string, ...string[]])).default([]),
   region: z.string().max(60).nullable().default(null),
@@ -62,7 +67,7 @@ export async function POST(req: Request) {
     const { data } = await service
       .from('sw_kol_profiles')
       .select('handle, display_name, bio, followers, following, total_videos, total_hearts, country, verified, is_private, avatar_url, instagram_handle, profile_url')
-      .eq('platform', 'tiktok')
+      .eq('platform', input.platform)
       .gte('scraped_at', cutoff)
       .limit(5000)
     for (const row of data || []) {
@@ -79,7 +84,11 @@ export async function POST(req: Request) {
         isPrivate: !!row.is_private,
         avatarUrl: row.avatar_url,
         instagramHandle: row.instagram_handle,
-        profileUrl: row.profile_url || `https://www.tiktok.com/@${row.handle}`,
+        profileUrl:
+          row.profile_url ||
+          (input.platform === 'instagram'
+            ? `https://www.instagram.com/${row.handle}/`
+            : `https://www.tiktok.com/@${row.handle}`),
       })
     }
   }
@@ -106,7 +115,7 @@ export async function POST(req: Request) {
       try {
         const response = await runKolSearch(
           {
-            platform: 'tiktok',
+            platform: input.platform,
             query: input.query,
             tiers: input.tiers as never,
             region: input.region,
@@ -155,7 +164,7 @@ async function persist(
     if (response.results.length) {
       const now = new Date().toISOString()
       const rows = response.results.map((r) => ({
-        platform: 'tiktok',
+        platform: r.platform,
         handle: r.profile.handle,
         display_name: r.profile.displayName,
         bio: r.profile.bio,
@@ -179,7 +188,7 @@ async function persist(
     await service.from('sw_kol_searches').insert({
       client_id: clientId,
       created_by: userId,
-      platform: 'tiktok',
+      platform: input.platform,
       query: input.query,
       tiers: input.tiers,
       region: input.region,

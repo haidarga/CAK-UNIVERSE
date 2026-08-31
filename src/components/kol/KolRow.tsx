@@ -4,6 +4,7 @@ import { memo } from 'react'
 import { BadgeCheck, ExternalLink, Instagram } from 'lucide-react'
 import type { KolResult } from '@/lib/kol/types'
 import { tierEngagementFloor, tierLabel } from '@/lib/kol/tiers'
+import { engagementIsMeaningful } from '@/lib/kol/score'
 import { regionLabel } from '@/lib/kol/regions'
 import { compactCount, fullCount, percent, sinceDays, cadence, engagementFill, countryName, EMPTY } from '@/lib/kol/format'
 
@@ -30,6 +31,14 @@ const TIER_STYLES: Record<string, string> = {
   mega: 'border-fuchsia-500/35 bg-fuchsia-500/[0.07] text-fuchsia-700',
 }
 
+// Confidence is carried by colour weight, not by a label taking up a whole line:
+// a certain location reads as normal text, an uncertain one visibly recedes.
+const CONFIDENCE_TONE: Record<string, string> = {
+  tinggi: 'text-mutedText',
+  sedang: 'text-mutedText/70',
+  rendah: 'text-mutedText/45',
+}
+
 function scoreTone(score: number): string {
   if (score >= 75) return 'bg-emerald-500'
   if (score >= 55) return 'bg-primary'
@@ -51,8 +60,11 @@ export const KolRow = memo(function KolRow({
   const { profile, performance, niche, tier, region, flags } = result
   const floor = tierEngagementFloor(tier)
   const er = performance?.engagementRate ?? null
-  const fill = engagementFill(er, floor)
-  const strong = er !== null && er >= floor
+  // Same guard the scorer uses: a ratio off a handful of views is arithmetic,
+  // not a signal, and must not render as a green number.
+  const trustworthy = engagementIsMeaningful(performance)
+  const fill = trustworthy ? engagementFill(er, floor) : 0
+  const strong = trustworthy && er !== null && er >= floor
 
   return (
     <li
@@ -103,7 +115,7 @@ export const KolRow = memo(function KolRow({
               <ExternalLink size={11} className="shrink-0 opacity-0 transition-opacity group-hover/link:opacity-60" aria-hidden />
             </a>
             {profile.verified && <BadgeCheck size={13} className="shrink-0 text-primary" aria-label="terverifikasi" />}
-            {profile.instagramHandle && (
+            {profile.instagramHandle && result.platform !== 'instagram' && (
               <a
                 href={`https://instagram.com/${profile.instagramHandle}`}
                 target="_blank"
@@ -162,8 +174,14 @@ export const KolRow = memo(function KolRow({
         <div className="col-start-3 sm:col-start-5 sm:w-24">
           <div className="flex items-baseline justify-between gap-2 sm:justify-end">
             <span className="text-[10px] uppercase tracking-wide text-mutedText/50 sm:hidden">Engagement</span>
-            <span className={`font-data text-xs font-semibold tabular-nums ${strong ? 'text-emerald-600' : er === null ? 'text-mutedText/50' : 'text-text/80'}`}>
+            <span
+              className={`font-data text-xs font-semibold tabular-nums ${
+                strong ? 'text-emerald-600' : er === null || !trustworthy ? 'text-mutedText/50' : 'text-text/80'
+              }`}
+              title={!trustworthy && er !== null ? 'Sampel view-nya terlalu kecil buat dipercaya' : undefined}
+            >
               {percent(er)}
+              {er !== null && !trustworthy && <span className="text-mutedText/40"> ?</span>}
             </span>
           </div>
           <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-zinc-200" role="presentation">
@@ -173,7 +191,7 @@ export const KolRow = memo(function KolRow({
             />
           </div>
           <p className="mt-0.5 text-[9px] text-mutedText/40 sm:text-right">
-            {er === null ? 'gak keukur' : `normal ${floor}%`}
+            {er === null ? 'gak keukur' : !trustworthy ? 'view kekecilan' : `normal ${floor}%`}
           </p>
         </div>
 
@@ -192,11 +210,21 @@ export const KolRow = memo(function KolRow({
               <span className="text-mutedText/35">niche {EMPTY}</span>
             )}
           </p>
-          <p className="text-[10px] text-mutedText/50">
+          {/* Location always shows HOW it was worked out. A confident read from a
+              geotag and a shaky read from one caption must never look alike. */}
+          <p className="text-[10px]">
             {region.area ? (
-              <span title={`Ketebak dari bio: "${region.evidence}"`}>{regionLabel(region.area)} <span className="text-mutedText/35">(bio)</span></span>
+              <span
+                className={CONFIDENCE_TONE[region.confidence ?? 'rendah']}
+                title={region.evidence ? `Dari: ${region.evidence} · ${Math.round(region.dominance * 100)}% sinyal` : undefined}
+              >
+                {regionLabel(region.area)}
+                {region.confidence !== 'tinggi' && <span className="text-mutedText/40"> ?</span>}
+              </span>
             ) : (
-              <span className="text-mutedText/30">lokasi {EMPTY}</span>
+              <span className="text-mutedText/30" title={region.evidence ?? undefined}>
+                lokasi {EMPTY}
+              </span>
             )}
           </p>
         </div>

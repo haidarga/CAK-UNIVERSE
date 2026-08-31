@@ -1,5 +1,5 @@
 import type { KolTier } from '@/lib/kol/tiers'
-import type { RegionGuess } from '@/lib/kol/regions'
+import type { RegionDetection } from '@/lib/kol/region-detect'
 
 // KOL Finder — shared shapes.
 //
@@ -13,7 +13,7 @@ import type { RegionGuess } from '@/lib/kol/regions'
 //   KolNiche      → INFERRED by an LLM from bio + captions. Always labelled.
 //   KolResult     → all of the above, plus the filters it passed.
 
-export type KolPlatform = 'tiktok'
+export type KolPlatform = 'tiktok' | 'instagram'
 
 /** Which discovery path surfaced this handle. Kept because it predicts quality. */
 export type KolSource = 'hashtag' | 'keyword-video' | 'keyword-user'
@@ -92,7 +92,7 @@ export interface KolNiche {
 /** Why an account is worth a second look, or worth skipping. Shown verbatim in the UI. */
 export interface KolFlag {
   kind: 'good' | 'warn'
-  code: 'dormant' | 'low-engagement' | 'high-engagement' | 'thin-sample' | 'private' | 'unresolved-region' | 'consistent' | 'occasional'
+  code: 'dormant' | 'low-engagement' | 'high-engagement' | 'thin-sample' | 'private' | 'unresolved-region' | 'consistent' | 'occasional' | 'low-volume'
   message: string
 }
 
@@ -101,7 +101,7 @@ export interface KolResult {
   candidate: KolCandidate
   profile: KolProfile
   tier: KolTier | null
-  region: RegionGuess
+  region: RegionDetection
   performance: KolPerformance | null
   niche: KolNiche | null
   flags: KolFlag[]

@@ -1,11 +1,13 @@
 import { discoverCandidates, parseQuery } from '@/lib/kol/discover'
+import { discoverInstagram, resolveAndEnrichInstagram, instagramConfigured } from '@/lib/kol/instagram'
 import { resolveHandles } from '@/lib/kol/resolve'
 import { enrichHandles } from '@/lib/kol/enrich'
 import { classifyNiches } from '@/lib/kol/niche'
 import { buildFlags, compareResults, scoreResult } from '@/lib/kol/score'
-import { guessRegionFromBio, regionMatches } from '@/lib/kol/regions'
+import { detectRegion, detectionMatches } from '@/lib/kol/region-detect'
 import { tierOf } from '@/lib/kol/tiers'
 import type { KolProfile, KolResult, KolSearchInput, KolSearchResponse } from '@/lib/kol/types'
+import type { EnrichedCreator } from '@/lib/kol/enrich'
 
 // The pipeline. Four stages, in a deliberate order.
 //
@@ -24,6 +26,15 @@ const DEPTH_SETTINGS = {
   cepat: { pagesPerHashtag: 2, pagesPerKeyword: 1, maxCandidates: 40, maxEnrich: 20 },
   standar: { pagesPerHashtag: 5, pagesPerKeyword: 2, maxCandidates: 90, maxEnrich: 40 },
   dalam: { pagesPerHashtag: 10, pagesPerKeyword: 4, maxCandidates: 180, maxEnrich: 70 },
+} as const
+
+// Instagram is billed per result and cannot filter by tier before the expensive
+// call, so its ceilings are lower across the board. Roughly $0.10-0.25 per
+// search at these sizes.
+const IG_DEPTH = {
+  cepat: { postLimit: 30, maxEnrich: 20 },
+  standar: { postLimit: 60, maxEnrich: 40 },
+  dalam: { postLimit: 120, maxEnrich: 70 },
 } as const
 
 /**
@@ -52,6 +63,16 @@ export interface SearchDeps {
   now?: number
 }
 
+function emptyResponse(query: string, warnings: string[]): KolSearchResponse {
+  return {
+    results: [],
+    meta: {
+      query, hashtagsUsed: [], keywordsUsed: [], candidatesFound: 0, resolved: 0,
+      filteredOut: 0, enriched: 0, fromCache: 0, elapsedMs: 0, truncated: null, warnings,
+    },
+  }
+}
+
 export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {}): Promise<KolSearchResponse> {
   const startedAt = Date.now()
   const depth = DEPTH_SETTINGS[input.depth] ?? DEPTH_SETTINGS.standar
@@ -59,33 +80,63 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
   const warnings: string[] = []
   const report = deps.onProgress ?? (() => {})
 
-  if (!hashtags.length && !keywords.length) {
-    return {
-      results: [],
-      meta: {
-        query: input.query, hashtagsUsed: [], keywordsUsed: [], candidatesFound: 0, resolved: 0,
-        filteredOut: 0, enriched: 0, fromCache: 0, elapsedMs: 0, truncated: null,
-        warnings: ['Kata kunci kosong.'],
-      },
-    }
+  if (!hashtags.length && !keywords.length) return emptyResponse(input.query, ['Kata kunci kosong.'])
+
+  const isInstagram = input.platform === 'instagram'
+  if (isInstagram && !instagramConfigured()) {
+    return emptyResponse(input.query, ['Instagram butuh APIFY_TOKEN yang belum diset.'])
+  }
+  if (isInstagram && !hashtags.length) {
+    // Instagram has no keyword search at any price — only hashtags.
+    return emptyResponse(input.query, ['Instagram cuma bisa dicari lewat hashtag. Tulis pakai #, contoh: #skincareindonesia'])
   }
 
   // ── Stage 1: discover ──────────────────────────────────────────────────────
   report({ stage: 'discover', message: hashtags.length ? `Nyisir #${hashtags.join(', #')}…` : `Nyari "${keywords[0]}"…` })
-  const discovery = await discoverCandidates({
-    hashtags,
-    keywords,
-    pagesPerHashtag: depth.pagesPerHashtag,
-    pagesPerKeyword: depth.pagesPerKeyword,
-    maxCandidates: depth.maxCandidates,
-  })
+
+  const discovery = isInstagram
+    ? { ...(await discoverInstagram(hashtags, IG_DEPTH[input.depth].postLimit)), preResolved: new Map(), truncated: null }
+    : await discoverCandidates({
+        hashtags,
+        keywords,
+        pagesPerHashtag: depth.pagesPerHashtag,
+        pagesPerKeyword: depth.pagesPerKeyword,
+        maxCandidates: depth.maxCandidates,
+      })
   warnings.push(...discovery.warnings)
 
   // ── Stage 2: resolve, then filter on the cheap dimensions ─────────────────
+  //
+  // On TikTok this is a cheap lookup and the tier filter runs straight after,
+  // before the expensive stage. Instagram cannot do that: Apify returns the
+  // profile and its posts in the SAME call, so by the time follower count is
+  // known the measurement has already been paid for. Hence the lower ceilings.
   const cached = deps.cachedProfiles ?? new Map()
-  const handles = [...discovery.candidates.keys()]
+  let handles = [...discovery.candidates.keys()]
+  let igEnriched: Map<string, EnrichedCreator> | null = null
+
+  if (isInstagram && handles.length > IG_DEPTH[input.depth].maxEnrich) {
+    // Rank by how often a creator appeared under the hashtag before spending
+    // money on them.
+    handles = handles
+      .sort((a, b) => (discovery.candidates.get(b)?.seenVideos.length ?? 0) - (discovery.candidates.get(a)?.seenVideos.length ?? 0))
+      .slice(0, IG_DEPTH[input.depth].maxEnrich)
+  }
+
   report({ stage: 'resolve', message: `${handles.length} akun ketemu, lagi ambil jumlah follower-nya…`, total: handles.length })
-  const { profiles, unresolved } = await resolveHandles(handles, discovery.preResolved, cached)
+
+  let profiles: Map<string, KolProfile>
+  let unresolved: string[]
+  if (isInstagram) {
+    const ig = await resolveAndEnrichInstagram(handles)
+    profiles = ig.profiles
+    unresolved = ig.unresolved
+    igEnriched = ig.enriched
+  } else {
+    const tt = await resolveHandles(handles, discovery.preResolved, cached)
+    profiles = tt.profiles
+    unresolved = tt.unresolved
+  }
   if (unresolved.length) {
     warnings.push(`${unresolved.length} akun gak bisa diambil datanya, dilewat.`)
   }
@@ -105,13 +156,14 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
       filteredOut++
       continue
     }
-    // Region is checked here too, but only when the caller asked for one.
-    // A creator whose bio names no city fails a specific region filter — that is
-    // correct and honest, since we genuinely do not know where they are.
-    if (input.region && !regionMatches(guessRegionFromBio(profile.bio), input.region)) {
-      filteredOut++
-      continue
-    }
+    // Region is NOT checked here. It used to be, reading the bio alone — which
+    // detected a location for 0 of 58 real creators. The signal actually lives in
+    // captions and compound hashtags (#kulinerbandung), and those only exist
+    // after enrichment, so the region filter moved below stage 3.
+    //
+    // The cost is real: enriching accounts that a region filter will later drop.
+    // Worth it, because bio-only region was not a cheaper filter, it was a
+    // broken one.
     survivors.push({ handle, profile })
   }
 
@@ -128,7 +180,9 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
 
   // ── Stage 3: measure performance on an unbiased sample ────────────────────
   report({ stage: 'enrich', message: `${survivors.length} akun lolos filter — ngukur performa asli ${toEnrich.length} akun…`, current: 0, total: toEnrich.length })
-  const enriched = await enrichHandles(toEnrich.map((s) => s.handle))
+  // Instagram's posts arrived with the profile, so re-fetching would be a second
+  // billed call for data already in hand.
+  const enriched = igEnriched ?? (await enrichHandles(toEnrich.map((s) => s.handle)))
 
   // ── Stage 4: niche consistency (optional, LLM) ────────────────────────────
   const topic = [...hashtags, ...keywords][0] || input.query
@@ -149,12 +203,21 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
   // ── Assemble ──────────────────────────────────────────────────────────────
   const results: KolResult[] = toEnrich.map(({ handle, profile }) => {
     const tier = tierOf(profile.followers)
-    const region = guessRegionFromBio(profile.bio)
-    const performance = enriched.get(handle)?.performance ?? null
+    const enrichedRow = enriched.get(handle)
+    // Every text signal at once: the handle, the bio, up to 20 captions, and any
+    // real place tags. Weighted voting, so a food creator who filmed once in Bali
+    // is not relocated there.
+    const region = detectRegion({
+      handle,
+      bio: profile.bio,
+      captions: enrichedRow?.captions ?? [],
+      geoTags: enrichedRow?.geoTags ?? [],
+    })
+    const performance = enrichedRow?.performance ?? null
     const niche = nicheMap.get(handle) ?? null
     const flags = buildFlags(profile, tier, performance, region, niche)
     return {
-      platform: 'tiktok' as const,
+      platform: input.platform,
       candidate: discovery.candidates.get(handle) ?? { handle, sources: [], seenVideos: [] },
       profile,
       tier,
@@ -167,12 +230,25 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
   })
 
   const active = input.maxDaysInactive
-  const visible = active
+  const afterActivity = active
     ? results.filter((r) => r.performance?.daysSinceLastPost == null || r.performance.daysSinceLastPost <= active)
     : results
-  const hiddenByActivity = results.length - visible.length
+  const hiddenByActivity = results.length - afterActivity.length
   if (hiddenByActivity > 0) {
     warnings.push(`${hiddenByActivity} akun disembunyikan karena udah lama gak posting.`)
+  }
+
+  // Region filter, now that captions exist. Creators whose location could not be
+  // worked out are dropped by a specific filter — that is the honest behaviour,
+  // and the warning says how many so nobody reads a short list as a small niche.
+  const visible = input.region ? afterActivity.filter((r) => detectionMatches(r.region, input.region!)) : afterActivity
+  const hiddenByRegion = afterActivity.length - visible.length
+  if (hiddenByRegion > 0) {
+    const unknown = afterActivity.filter((r) => !r.region.area).length
+    warnings.push(
+      `${hiddenByRegion} akun gak lolos filter region` +
+        (unknown ? ` (${unknown} di antaranya lokasinya emang gak ketahuan).` : '.'),
+    )
   }
 
   visible.sort(compareResults)

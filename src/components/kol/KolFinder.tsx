@@ -5,6 +5,7 @@ import { AlertTriangle, Download, Info, Users } from 'lucide-react'
 import { KolFilters, type KolFilterValue } from '@/components/kol/KolFilters'
 import { KolProgress, type KolProgressState } from '@/components/kol/KolProgress'
 import { KolRow } from '@/components/kol/KolRow'
+import { KolShortlistBar } from '@/components/kol/KolShortlistBar'
 import type { KolResult, KolSearchMeta } from '@/lib/kol/types'
 import { compactCount, elapsed } from '@/lib/kol/format'
 
@@ -23,6 +24,7 @@ import { compactCount, elapsed } from '@/lib/kol/format'
 //      at 61 and 49 did not match" — very different answers for a campaign plan.
 
 const DEFAULTS: KolFilterValue = {
+  platform: 'tiktok',
   query: '',
   tiers: [],
   region: null,
@@ -82,6 +84,7 @@ export function KolFinder() {
         headers: { 'content-type': 'application/json' },
         signal: controller.signal,
         body: JSON.stringify({
+          platform: filters.platform,
           query: filters.query,
           tiers: filters.tiers,
           region: filters.region,
@@ -163,11 +166,17 @@ export function KolFinder() {
     }
   }, [results, sort])
 
+  const chosenResults = useMemo(
+    () => (results ?? []).filter((r) => selected.has(r.profile.handle)),
+    [results, selected],
+  )
+
   const exportCsv = useCallback(() => {
     if (!results?.length) return
     const chosen = selected.size ? results.filter((r) => selected.has(r.profile.handle)) : results
-    const head = ['handle', 'nama', 'follower', 'tier', 'engagement_persen', 'rata_views', 'terakhir_posting_hari', 'niche_cocok', 'niche_total', 'region_tebakan', 'negara', 'instagram', 'link']
+    const head = ['platform', 'handle', 'nama', 'follower', 'tier', 'engagement_persen', 'rata_views', 'terakhir_posting_hari', 'niche_cocok', 'niche_total', 'region', 'keyakinan_region', 'negara', 'instagram', 'link']
     const rows = chosen.map((r) => [
+      r.platform,
       r.profile.handle,
       r.profile.displayName ?? '',
       r.profile.followers ?? '',
@@ -178,6 +187,7 @@ export function KolFinder() {
       r.niche?.matched ?? '',
       r.niche?.total ?? '',
       r.region.area ?? '',
+      r.region.confidence ?? '',
       r.profile.country ?? '',
       r.profile.instagramHandle ?? '',
       r.profile.profileUrl,
@@ -308,6 +318,8 @@ export function KolFinder() {
           </p>
         </section>
       )}
+
+      <KolShortlistBar selected={chosenResults} onClear={() => setSelected(new Set())} onExport={exportCsv} />
 
       {!busy && !sorted && !error && (
         <div className="rounded-xl border border-dashed border-border/40 px-4 py-12 text-center">

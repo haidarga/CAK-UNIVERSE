@@ -1,7 +1,7 @@
 import { tierEngagementFloor } from '@/lib/kol/tiers'
 import type { KolFlag, KolNiche, KolPerformance, KolProfile, KolResult } from '@/lib/kol/types'
 import type { KolTier } from '@/lib/kol/tiers'
-import type { RegionGuess } from '@/lib/kol/regions'
+import type { RegionDetection } from '@/lib/kol/region-detect'
 
 // Stage 4 — turn measurements into a ranking, and say why.
 //
@@ -14,11 +14,24 @@ const DORMANT_DAYS = 60
 const VERY_DORMANT_DAYS = 180
 const THIN_SAMPLE = 5
 
+// Below this many average views, a like ratio is arithmetic without meaning.
+// Observed live on Instagram: an 805-follower account averaging 11 views and 3
+// likes scores 27.3% engagement and would out-rank every serious creator in the
+// list. The ratio is correct; it is the sample that is too small to say
+// anything, and a headline percentage hides that completely.
+const MIN_MEANINGFUL_VIEWS = 200
+
+/** Is this engagement rate built on enough reach to mean anything? */
+export function engagementIsMeaningful(performance: KolPerformance | null): boolean {
+  if (!performance || performance.engagementRate === null) return false
+  return performance.avgViews !== null && performance.avgViews >= MIN_MEANINGFUL_VIEWS
+}
+
 export function buildFlags(
   profile: KolProfile,
   tier: KolTier | null,
   performance: KolPerformance | null,
-  region: RegionGuess,
+  region: RegionDetection,
   niche: KolNiche | null,
 ): KolFlag[] {
   const flags: KolFlag[] = []
@@ -41,7 +54,13 @@ export function buildFlags(
       flags.push({ kind: 'warn', code: 'thin-sample', message: `Cuma ${performance.sampleSize} post buat diukur — angkanya belum stabil` })
     }
     const er = performance.engagementRate
-    if (er !== null) {
+    if (er !== null && !engagementIsMeaningful(performance)) {
+      flags.push({
+        kind: 'warn',
+        code: 'low-volume',
+        message: `Engagement ${er}% cuma dari rata-rata ${performance.avgViews ?? 0} view — angkanya belum berarti apa-apa`,
+      })
+    } else if (er !== null) {
       const floor = tierEngagementFloor(tier)
       if (er >= floor * 1.5) {
         flags.push({ kind: 'good', code: 'high-engagement', message: `Engagement ${er}% — di atas rata-rata tier ${tier ?? '-'}` })
@@ -61,7 +80,10 @@ export function buildFlags(
   }
 
   if (!region.area) {
-    flags.push({ kind: 'warn', code: 'unresolved-region', message: 'Lokasi gak ketebak dari bio' })
+    flags.push({ kind: 'warn', code: 'unresolved-region', message: region.evidence || 'Lokasi gak ketebak' })
+  } else if (region.confidence === 'rendah' && region.alternates.length) {
+    // A weak win is still shown, but never as if it were settled.
+    flags.push({ kind: 'warn', code: 'unresolved-region', message: `Lokasi kurang yakin — juga nyebut ${region.alternates.length} daerah lain` })
   }
 
   return flags
@@ -94,7 +116,9 @@ export function scoreResult(
     score -= 8
   }
 
-  const er = performance?.engagementRate
+  // A high ratio off a handful of views must not out-rank a real creator, so the
+  // engagement bonus is only paid when the sample can carry it.
+  const er = engagementIsMeaningful(performance) ? performance!.engagementRate : null
   if (er !== null && er !== undefined) {
     if (er >= 6) score += 20
     else if (er >= 3) score += 12

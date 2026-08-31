@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { tierOf, tierLabel, KOL_TIERS } from '@/lib/kol/tiers'
-import { guessRegionFromBio, regionMatches, regionsByIsland } from '@/lib/kol/regions'
+import { regionsByIsland } from '@/lib/kol/regions'
+import { detectRegion, detectionMatches } from '@/lib/kol/region-detect'
 import { parseQuery } from '@/lib/kol/discover'
 import { performanceFromVideos } from '@/lib/kol/enrich'
-import { buildFlags, scoreResult, compareResults } from '@/lib/kol/score'
+import { buildFlags, scoreResult, compareResults, engagementIsMeaningful } from '@/lib/kol/score'
 import { profileFromSearchUser, mapWithConcurrency } from '@/lib/kol/resolve'
 import type { KolResult } from '@/lib/kol/types'
 
@@ -36,53 +37,99 @@ describe('tier boundaries', () => {
   })
 })
 
-describe('region inference', () => {
-  it('reads an explicit city out of a bio and shows its evidence', () => {
-    const g = guessRegionFromBio('Content creator | Bandung 📍 | DM for endorse')
-    expect(g.area).toBe('jawa-barat')
-    expect(g.source).toBe('bio')
-    expect(g.evidence).toBe('bandung')
+describe('region detection', () => {
+  // Every case below is a real creator the first (bio-only, first-match-wins)
+  // version got wrong.
+
+  it('reads a city out of a compound hashtag, which a word boundary cannot', () => {
+    // #kulinerbandung is one token — "bandung" has no separator around it.
+    const d = detectRegion({ handle: 'sabibiin', bio: null, captions: ['enak banget #seblakbandung #kulinerbandung'] })
+    expect(d.area).toBe('jawa-barat')
+    expect(d.evidence).toContain('#')
   })
 
-  it('returns unknown rather than guessing when the bio names no place', () => {
-    // The common case by a wide margin: 0 of 58 real Indonesian creators named
-    // a city. Silence here must stay silence, never a default region.
-    const g = guessRegionFromBio('✨spill skincare, haircare, bodycare, etc🪞')
-    expect(g.area).toBeNull()
-    expect(g.source).toBe('none')
+  it('lets the dominant city win instead of whichever was mentioned first', () => {
+    // @kulinerkabandung landed in Bali because one post carried #bali.
+    const d = detectRegion({
+      handle: 'kulinerkabandung',
+      bio: 'Kuliner Bandung tiap hari',
+      captions: ['liburan ke #bali', '#kulinerbandung', '#cafebandung', '#bandungfoodies'],
+    })
+    expect(d.area).toBe('jawa-barat')
+    expect(d.alternates).not.toContain('jawa-barat')
+  })
+
+  it('trusts the handle, which often names the city outright', () => {
+    const d = detectRegion({ handle: 'lombokwisatatransport', bio: null, captions: ['trip seru bareng kami'] })
+    expect(d.area).toBe('nusa-tenggara')
+  })
+
+  it('weighs a real post geo tag above loose prose', () => {
+    const d = detectRegion({
+      handle: 'x',
+      bio: 'sering ke bandung',
+      captions: [],
+      geoTags: ['Jakarta, Indonesia', 'Jakarta, Indonesia'],
+    })
+    expect(d.area).toBe('dki-jakarta')
+  })
+
+  it('refuses to place a creator who roams the whole country', () => {
+    // A travel account naming six provinces has no home province, and inventing
+    // one is worse than saying so.
+    const d = detectRegion({
+      handle: 'jalanjalanindo',
+      bio: null,
+      captions: ['#wisatabali', '#wisatalombok', '#wisatajogja', '#wisatamedan', '#wisatapapua', '#wisatamakassar'],
+    })
+    expect(d.area).toBeNull()
+    expect(d.evidence).toMatch(/dominan/i)
+  })
+
+  it('ignores place names that are ordinary Indonesian words', () => {
+    // "medan perang" is a battlefield, not North Sumatra. This exact phrase put
+    // a Kalimantan creator in Sumatera Utara.
+    expect(detectRegion({ bio: 'terjun ke medan perang tiap hari', captions: [] }).area).toBeNull()
+    // "nasib malang" is bad luck, not the city of Malang.
+    expect(detectRegion({ bio: 'cerita nasib malang', captions: [] }).area).toBeNull()
+    // ...but marked properly it counts.
+    expect(detectRegion({ bio: 'kuliner di medan', captions: [], handle: 'x' }).area).toBe('sumatera-utara')
   })
 
   it('does not let a substring create a false location', () => {
-    // "bali" inside "balikpapan" would put a Kalimantan creator in Bali.
-    expect(guessRegionFromBio('Kuliner Balikpapan').area).toBe('kalimantan-timur')
-    // "solo" inside "solopreneur" would invent a Central Java creator.
-    expect(guessRegionFromBio('solopreneur & digital nomad').area).toBeNull()
+    const d = detectRegion({ bio: 'Kuliner Balikpapan', captions: [] })
+    expect(d.area).toBe('kalimantan-timur')
   })
 
-  it('prefers a specific province over the Jabodetabek umbrella', () => {
-    expect(guessRegionFromBio('Bandung, Jawa Barat').area).toBe('jawa-barat')
+  it('reports low confidence rather than silence when the win is narrow', () => {
+    const d = detectRegion({ handle: 'x', bio: null, captions: ['#kulinerjakarta', '#kulinerbandung', '#kulinerjakarta'] })
+    expect(d.area).toBe('dki-jakarta')
+    expect(d.dominance).toBeLessThan(1)
   })
 
   it('treats an unknown location as failing a specific filter', () => {
-    const unknown = guessRegionFromBio('')
-    expect(regionMatches(unknown, 'bali')).toBe(false)
-    // ...but passing no filter at all still lets everyone through.
-    expect(regionMatches(unknown, null)).toBe(true)
+    const unknown = detectRegion({ bio: '', captions: [] })
+    expect(detectionMatches(unknown, 'bali')).toBe(false)
+    expect(detectionMatches(unknown, null)).toBe(true)
   })
 
-  it('accepts DKI Jakarta under the Jabodetabek umbrella', () => {
-    expect(regionMatches({ area: 'dki-jakarta', source: 'bio' }, 'jabodetabek')).toBe(true)
+  it('keeps Jabodetabek a campaign scope, not a province', () => {
+    const jakarta = detectRegion({ bio: 'kuliner jakarta', captions: [], handle: 'x' })
+    expect(detectionMatches(jakarta, 'jabodetabek')).toBe(true)
+    // Bandung is Jawa Barat and must never pass a Jabodetabek filter.
+    const bandung = detectRegion({ bio: 'kuliner bandung', captions: [], handle: 'x' })
+    expect(detectionMatches(bandung, 'jabodetabek')).toBe(false)
   })
 
   it('accepts any province on an island when an island is requested', () => {
-    expect(regionMatches({ area: 'jawa-timur', source: 'bio' }, 'Jawa')).toBe(true)
-    expect(regionMatches({ area: 'bali', source: 'bio' }, 'Jawa')).toBe(false)
+    const surabaya = detectRegion({ bio: 'kuliner surabaya', captions: [], handle: 'x' })
+    expect(detectionMatches(surabaya, 'Jawa')).toBe(true)
+    expect(detectionMatches(surabaya, 'Sumatera')).toBe(false)
   })
 
   it('groups every region under an island with none orphaned', () => {
     const grouped = regionsByIsland()
-    const total = grouped.reduce((a, g) => a + g.regions.length, 0)
-    expect(total).toBeGreaterThan(20)
+    expect(grouped.reduce((a, g) => a + g.regions.length, 0)).toBeGreaterThan(20)
     expect(grouped.every((g) => g.regions.length > 0)).toBe(true)
   })
 })
@@ -132,7 +179,7 @@ describe('performance measurement', () => {
     expect(perf.avgViews).toBe(663)
     const flags = buildFlags(
       { handle: 'x', displayName: null, bio: null, followers: 18_016, following: null, totalVideos: null, totalHearts: null, country: 'ID', verified: false, isPrivate: false, avatarUrl: null, instagramHandle: null, profileUrl: '' },
-      'mikro', perf, { area: null, source: 'none' }, null,
+      'mikro', perf, { area: null, confidence: null, evidence: null, dominance: 0, alternates: [] }, null,
     )
     expect(flags.some((f) => f.code === 'dormant')).toBe(true)
   })
@@ -179,6 +226,28 @@ describe('scoring', () => {
     const consistent = scoreResult(perf({}), { matched: 11, total: 12, label: null, reason: null }, [])
     const occasional = scoreResult(perf({}), { matched: 1, total: 12, label: null, reason: null }, [])
     expect(consistent).toBeGreaterThan(occasional)
+  })
+
+  it('refuses to reward a huge ratio built on a handful of views', () => {
+    // Live on Instagram: an 805-follower account averaging 11 views and 3 likes
+    // scored 27.3% and would have topped the list. The ratio is arithmetically
+    // right and completely meaningless.
+    const noise = perf({ engagementRate: 27.3, avgViews: 11, avgLikes: 3 })
+    expect(engagementIsMeaningful(noise)).toBe(false)
+    const real = perf({ engagementRate: 5, avgViews: 50_000 })
+    expect(scoreResult(real, null, [])).toBeGreaterThan(scoreResult(noise, null, []))
+  })
+
+  it('says out loud when engagement rests on too little reach', () => {
+    const flags = buildFlags(
+      { handle: 'x', displayName: null, bio: null, followers: 805, following: null, totalVideos: null, totalHearts: null, country: null, verified: false, isPrivate: false, avatarUrl: null, instagramHandle: null, profileUrl: '' },
+      'nano',
+      perf({ engagementRate: 27.3, avgViews: 11, avgLikes: 3 }),
+      { area: null, confidence: null, evidence: null, dominance: 0, alternates: [] },
+      null,
+    )
+    expect(flags.some((f) => f.code === 'low-volume')).toBe(true)
+    expect(flags.some((f) => f.code === 'high-engagement')).toBe(false)
   })
 
   it('stays inside 0-100 at both extremes', () => {

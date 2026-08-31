@@ -109,6 +109,11 @@ export interface EnrichedCreator {
   performance: KolPerformance | null
   /** Captions from the unbiased sample, for niche classification downstream. */
   captions: string[]
+  /**
+   * Real place tags attached to posts. Instagram supplies these; TikTok does
+   * not, so on TikTok this is always empty and location falls back to text.
+   */
+  geoTags: string[]
 }
 
 export async function enrichHandles(handles: string[]): Promise<Map<string, EnrichedCreator>> {
@@ -127,11 +132,12 @@ export async function enrichHandles(handles: string[]): Promise<Map<string, Enri
         const videos = extractVideos(payload)
         // An empty list is a real answer for a brand-new account, so it is not
         // retried — only a thrown error is.
-        if (!videos.length) return { handle, performance: null, captions: [] }
+        if (!videos.length) return { handle, performance: null, captions: [], geoTags: [] }
         return {
           handle,
           performance: performanceFromVideos(videos),
           captions: videos.map((v) => v.title || '').filter(Boolean).slice(0, SAMPLE_SIZE),
+          geoTags: [],
         }
       } catch {
         if (attempt === 0) await new Promise((r) => setTimeout(r, 1_200))
@@ -141,7 +147,7 @@ export async function enrichHandles(handles: string[]): Promise<Map<string, Enri
     // A creator we cannot measure still belongs in the list with their measured
     // follower count — they just carry no performance data, and the UI shows
     // that gap rather than a zero.
-    return { handle, performance: null, captions: [] }
+    return { handle, performance: null, captions: [], geoTags: [] }
   })
   for (const r of results) out.set(r.handle, r)
   return out

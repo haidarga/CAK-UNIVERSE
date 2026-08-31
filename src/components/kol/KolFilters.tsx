@@ -1,6 +1,6 @@
 'use client'
 
-import { Search, Loader2, SlidersHorizontal } from 'lucide-react'
+import { Search, Loader2, SlidersHorizontal, Music2, Instagram } from 'lucide-react'
 import { KOL_TIERS, type KolTier } from '@/lib/kol/tiers'
 import { regionsByIsland, ISLANDS } from '@/lib/kol/regions'
 
@@ -12,6 +12,7 @@ import { regionsByIsland, ISLANDS } from '@/lib/kol/regions'
 // and it deserves to be one click, not a menu.
 
 export interface KolFilterValue {
+  platform: 'tiktok' | 'instagram'
   query: string
   tiers: KolTier[]
   region: string | null
@@ -60,22 +61,52 @@ export function KolFilters({
       }}
       className="space-y-5"
     >
+      {/* Platform first, because it changes what the rest of the form can do:
+          Instagram has no keyword search at any price, only hashtags. */}
+      <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
+        {([
+          { id: 'tiktok', label: 'TikTok', Icon: Music2 },
+          { id: 'instagram', label: 'Instagram', Icon: Instagram },
+        ] as const).map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => set('platform', id)}
+            aria-pressed={value.platform === id}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors duration-150 ${
+              value.platform === id ? 'bg-primary/15 text-primary' : 'text-mutedText hover:text-text'
+            }`}
+          >
+            <Icon size={13} aria-hidden />
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="relative">
         <Search size={18} className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-mutedText/40" aria-hidden />
         <input
           value={value.query}
           onChange={(e) => set('query', e.target.value)}
-          placeholder="#skincareindonesia, review skincare"
+          placeholder={value.platform === 'instagram' ? '#skincareindonesia' : '#skincareindonesia, review skincare'}
           aria-label="Hashtag atau kata kunci"
           spellCheck={false}
           className="w-full border-0 border-b border-border/50 bg-transparent py-2.5 pl-7 pr-3 text-xl font-medium text-text placeholder:text-mutedText/25 focus:border-primary/60 focus:outline-none sm:text-2xl"
         />
       </div>
-      <p className="-mt-3 text-[11px] text-mutedText/60">
-        Pisahin pakai koma buat nyisir beberapa sekaligus. Hashtag nemu kreator yang{' '}
-        <em className="not-italic text-mutedText">beneran bikin</em> konten itu — kata kunci biasa nemu akun yang{' '}
-        <em className="not-italic text-mutedText">namanya</em> mirip.
-      </p>
+      {value.platform === 'instagram' ? (
+        <p className="-mt-3 text-[11px] leading-relaxed text-mutedText/60">
+          Instagram <strong className="font-semibold text-mutedText">cuma bisa lewat hashtag</strong> — tulis pakai
+          tanda #. Gak ada pencarian kata kunci di Instagram, berapa pun bayarnya. Pencarian IG lewat
+          Apify yang berbayar per hasil, jadi sekali cari sekitar Rp1.500–4.000.
+        </p>
+      ) : (
+        <p className="-mt-3 text-[11px] leading-relaxed text-mutedText/60">
+          Pisahin pakai koma buat nyisir beberapa sekaligus. Hashtag nemu kreator yang{' '}
+          <em className="not-italic text-mutedText">beneran bikin</em> konten itu — kata kunci biasa nemu akun yang{' '}
+          <em className="not-italic text-mutedText">namanya</em> mirip.
+        </p>
+      )}
 
       {/* Tier — the most-changed filter, so it costs one click and never hides
           in a menu. */}
@@ -138,8 +169,9 @@ export function KolFilters({
               behaves differently from the others and silence here would let it
               read as measured data. */}
           <p className="mt-1.5 text-[10px] leading-snug text-mutedText/45">
-            Ditebak dari bio, dan kebanyakan kreator gak nulis kotanya. Milih region bakal
-            nyembunyiin akun yang lokasinya gak ketahuan.
+            {value.platform === 'instagram'
+              ? 'Dibaca dari lokasi yang di-tag di post, plus caption dan bio. Akun yang lokasinya gak ketahuan bakal kesembunyi.'
+              : 'Dibaca dari handle, bio, caption, dan hashtag. Akurat di niche kuliner/wisata (90%+), lemah di fashion/beauty. Yang gak ketahuan bakal kesembunyi.'}
           </p>
         </div>
 
@@ -174,12 +206,15 @@ export function KolFilters({
             value={value.country ?? ''}
             onChange={(e) => set('country', e.target.value || null)}
             className={inputClass}
+            disabled={value.platform === 'instagram'}
           >
             <option value="ID">Indonesia doang</option>
             <option value="">Semua negara</option>
           </select>
           <p className="mt-1.5 text-[10px] leading-snug text-mutedText/45">
-            Hashtag &ldquo;indonesia&rdquo; tetap kemasukan kreator Malaysia dan Thailand.
+            {value.platform === 'instagram'
+              ? 'Instagram gak ngasih kode negara, jadi filter ini mati di IG. Pakai filter region kalau butuh batas wilayah.'
+              : 'Hashtag “indonesia” tetap kemasukan kreator Malaysia dan Thailand.'}
           </p>
         </div>
       </div>
