@@ -1,36 +1,50 @@
 -- Tighten the KOL Finder RLS policies.
 --
 -- Migration 026 shipped `using (true) with check (true)` on all three tables:
--- RLS was enabled but restricted nothing. The API routes all go through the
--- service-role client, which bypasses RLS entirely, so this changed nothing in
--- practice — but it left the tables wide open to any authenticated session that
--- talked to PostgREST directly with its own JWT rather than through the app.
+-- RLS was enabled but restricted nothing, so any authenticated session that
+-- talked to PostgREST directly — bypassing the app entirely — could read, edit
+-- and delete every row, including other clients' shortlists.
 --
--- No route depends on these policies, so tightening them cannot break the
--- feature. This is defence in depth, not a fix for a live break.
+-- WHY THE POLICIES BELOW ARE BLUNT RATHER THAN PER-USER
 --
--- Safe to run more than once.
+-- The obvious tightening is `created_by = auth.uid()`. It does not work here.
+-- `requireUser()` in src/lib/cakgpt/auth.ts is a single-tenant shim that returns
+-- a FIXED id (00000000-0000-4000-8000-000000000001) for every staff member, so
+-- `created_by` is that constant on every row while `auth.uid()` is the real
+-- Supabase user id. They can never match, and a policy named "own rows" would
+-- silently mean "no rows" — a lie sitting in the schema.
+--
+-- So the honest version: these two tables are reachable ONLY through the API
+-- routes, which use the service-role client and enforce client scoping in
+-- application code. RLS enabled with no permissive policy denies everything
+-- else, which is exactly the intent.
+--
+-- Nothing in the app reads these tables with a user JWT, so this cannot break
+-- the feature. Safe to run more than once.
 
 -- ── sw_kol_profiles ─────────────────────────────────────────────────────────
--- A shared cache of PUBLIC creator statistics, keyed by handle. Nothing here is
--- private to a client, so authenticated read stays open — but writes belong to
--- the service role only, since a poisoned follower count would silently corrupt
--- every future tier filter.
+-- A shared cache of PUBLIC creator statistics, keyed by handle. Nothing here
+-- belongs to one client, so authenticated read stays open — it is the same data
+-- anyone can see on TikTok. Writes stay service-role only: a poisoned follower
+-- count would quietly corrupt every future tier filter.
 drop policy if exists sw_kol_profiles_auth_read on public.sw_kol_profiles;
 create policy sw_kol_profiles_auth_read
   on public.sw_kol_profiles for select to authenticated using (true);
 
 -- ── sw_kol_searches ─────────────────────────────────────────────────────────
--- Search history belongs to whoever ran it.
+-- Search history. No direct access; the app does not read it with a user JWT.
 drop policy if exists sw_kol_searches_auth_all on public.sw_kol_searches;
-create policy sw_kol_searches_own_read
-  on public.sw_kol_searches for select to authenticated using (created_by = auth.uid());
+drop policy if exists sw_kol_searches_own_read on public.sw_kol_searches;
 
 -- ── sw_kol_shortlists ───────────────────────────────────────────────────────
--- The deliverable. Direct writes are removed entirely: every legitimate change
--- goes through the API route, which scopes by the active client. A permissive
--- policy here would let a session delete another client's shortlist by id —
--- the same hole that was just closed at the application layer.
+-- The deliverable, and the table the application-level ownership hole was in.
+-- A permissive policy here would hand back the same hole at the database layer:
+-- any session could delete another client's shortlist by id.
 drop policy if exists sw_kol_shortlists_auth_all on public.sw_kol_shortlists;
-create policy sw_kol_shortlists_own_read
-  on public.sw_kol_shortlists for select to authenticated using (created_by = auth.uid());
+drop policy if exists sw_kol_shortlists_own_read on public.sw_kol_shortlists;
+
+-- Belt and braces: RLS must stay ON, or dropping the policies above would open
+-- the tables rather than close them.
+alter table public.sw_kol_profiles enable row level security;
+alter table public.sw_kol_searches enable row level security;
+alter table public.sw_kol_shortlists enable row level security;
