@@ -35,7 +35,14 @@ import type { KolProfile } from '@/lib/kol/types'
 //   Pass 2  only the misses, generous ceiling, narrower so we are not hammering
 //           an upstream that is already doing real work.
 const PASS1_CONCURRENCY = 16
-const PASS1_TIMEOUT_MS = 10_000
+// A warm handle answers in about 1.4s. Ten seconds was therefore not a timeout
+// for warm handles at all — it was purely how long each COLD one held a lane,
+// and with 150 candidates that alone accounted for a minute and a half. Six
+// seconds still clears every warm handle with room to spare, and a cold one
+// falls through to pass 2 either way.
+const PASS1_TIMEOUT_MS = 6_000
+// Pass 1 had per-call limits but no ceiling on the queue behind them.
+const PASS1_BUDGET_MS = 50_000
 // Pass 2 is the tail, and the tail decides the wall clock: a handful of stubborn
 // handles at 45s each held a sweep to 108s. Tighter ceiling, wider lane — a
 // handle that is still not answering after 25s is one Zapi has not finished
@@ -145,9 +152,12 @@ export async function resolveHandles(
   }
 
   // Pass 1 — wide and impatient. Sweeps up everything already warm.
-  const firstPass = await mapWithConcurrency(needsLookup, PASS1_CONCURRENCY, (h) =>
-    resolveHandle(h, PASS1_TIMEOUT_MS),
-  )
+  const pass1Deadline = Date.now() + PASS1_BUDGET_MS
+  const firstPass = await mapWithConcurrency(needsLookup, PASS1_CONCURRENCY, (h) => {
+    const left = pass1Deadline - Date.now()
+    if (left <= 0) return Promise.resolve(null)
+    return resolveHandle(h, Math.min(PASS1_TIMEOUT_MS, left))
+  })
   const missed: string[] = []
   firstPass.forEach((profile, i) => {
     if (profile) profiles.set(needsLookup[i], profile)
