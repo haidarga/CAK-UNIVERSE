@@ -87,11 +87,13 @@ export async function POST(req: Request) {
   const now = new Date().toISOString()
 
   if (input.shortlist_id) {
-    const { data: existing, error: readErr } = await service
-      .from('sw_kol_shortlists')
-      .select('entries')
-      .eq('id', input.shortlist_id)
-      .maybeSingle()
+    // Scoped to the active client, exactly as GET is. Without this a shortlist id
+    // pasted from anywhere — a chat message, browser history — merges into
+    // another client's list, because the service-role client bypasses RLS.
+    let read = service.from('sw_kol_shortlists').select('entries, client_id').eq('id', input.shortlist_id)
+    if (clientId) read = read.eq('client_id', clientId)
+
+    const { data: existing, error: readErr } = await read.maybeSingle()
     if (readErr || !existing) {
       return NextResponse.json({ ok: false, error: 'Shortlist-nya gak ketemu.' }, { status: 404 })
     }
@@ -110,10 +112,13 @@ export async function POST(req: Request) {
       }
     }
 
-    const { error } = await service
+    let write = service
       .from('sw_kol_shortlists')
       .update({ entries: merged, updated_at: now })
       .eq('id', input.shortlist_id)
+    if (clientId) write = write.eq('client_id', clientId)
+
+    const { error } = await write
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true, id: input.shortlist_id, total: merged.length, added })
   }
@@ -150,7 +155,21 @@ export async function DELETE(req: Request) {
   if (!id) return NextResponse.json({ ok: false, error: 'id wajib diisi' }, { status: 400 })
 
   const service = createServiceClient()
-  const { error } = await service.from('sw_kol_shortlists').delete().eq('id', id)
+  const clientId = await getActiveClientId().catch(() => null)
+
+  // Same scoping as GET and the merge path. Deleting purely by id let anyone
+  // holding a shortlist UUID remove another client's list, since the
+  // service-role client bypasses RLS and the policies are permissive.
+  let query = service.from('sw_kol_shortlists').delete().eq('id', id)
+  if (clientId) query = query.eq('client_id', clientId)
+
+  // `.select()` after a delete returns the rows that were actually removed, so
+  // an empty array means the id existed but belonged to someone else — a 404
+  // rather than a silent success that looks like the delete worked.
+  const { data, error } = await query.select('id')
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+  if (!data || data.length === 0) {
+    return NextResponse.json({ ok: false, error: 'Shortlist-nya gak ketemu.' }, { status: 404 })
+  }
   return NextResponse.json({ ok: true })
 }

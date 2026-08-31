@@ -43,6 +43,16 @@ const PASS1_TIMEOUT_MS = 10_000
 const PASS2_CONCURRENCY = 12
 const PASS2_TIMEOUT_MS = 25_000
 
+// A ceiling on the whole second pass, not just each call inside it.
+//
+// Per-call timeouts bound one request but not the queue behind them: 20 cold
+// handles at 25s over 12 lanes still ran two rounds, and a sweep measured at
+// 122s spent most of it here. Past this point the remaining handles are ones
+// Zapi has not finished scraping — and pass 1 has already left it warming them,
+// so they will be instant on the next search. Whatever is unfinished is reported
+// as unresolved, never silently dropped.
+const PASS2_BUDGET_MS = 30_000
+
 export function profileFromSearchUser(user: ZapiTikTokSearchUser): KolProfile {
   const handle = normalizeHandle(user.username || '')
   return {
@@ -148,9 +158,15 @@ export async function resolveHandles(
   // own timeouts left Zapi warming these, so many now return immediately.
   const unresolved: string[] = []
   if (missed.length) {
-    const secondPass = await mapWithConcurrency(missed, PASS2_CONCURRENCY, (h) =>
-      resolveHandle(h, PASS2_TIMEOUT_MS),
-    )
+    const deadline = Date.now() + PASS2_BUDGET_MS
+    const secondPass = await mapWithConcurrency(missed, PASS2_CONCURRENCY, (h) => {
+      // Workers that reach the front of the queue after the budget is spent give
+      // up without opening a request, so the pass cannot run long past its
+      // ceiling just because the queue was deep.
+      const left = deadline - Date.now()
+      if (left <= 0) return Promise.resolve(null)
+      return resolveHandle(h, Math.min(PASS2_TIMEOUT_MS, left))
+    })
     secondPass.forEach((profile, i) => {
       if (profile) profiles.set(missed[i], profile)
       else unresolved.push(missed[i])

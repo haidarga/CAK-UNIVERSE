@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { BookmarkPlus, Check, Loader2, Trash2, X } from 'lucide-react'
 import type { KolResult } from '@/lib/kol/types'
 import { compactCount } from '@/lib/kol/format'
@@ -60,6 +60,7 @@ export function KolShortlistBar({
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const toggleRef = useRef<HTMLButtonElement>(null)
 
   const loadLists = useCallback(async () => {
     try {
@@ -109,6 +110,9 @@ export function KolShortlistBar({
       setSaved(`Kesimpen — ${json.added} KOL baru, total ${json.total}.`)
       setName('')
       setOpen(false)
+      // Closing the panel unmounts the button that had focus, dropping keyboard
+      // users onto document.body right after a successful save.
+      toggleRef.current?.focus()
       onClear()
       setTimeout(() => setSaved(null), 6000)
     } catch (e) {
@@ -130,7 +134,11 @@ export function KolShortlistBar({
   if (saved) {
     return (
       <div className="pointer-events-none fixed inset-x-0 bottom-5 z-40 flex justify-center px-4">
-        <p className="kol-dock pointer-events-auto flex items-center gap-2 rounded-full border border-emerald-500/40 bg-surface px-4 py-2 text-xs font-medium text-emerald-700 shadow-lg">
+        <p
+          role="status"
+          aria-live="polite"
+          className="kol-dock pointer-events-auto flex items-center gap-2 rounded-full border border-emerald-500/40 bg-surface px-4 py-2 text-xs font-medium text-emerald-700 shadow-lg"
+        >
           <Check size={14} aria-hidden />
           {saved}
         </p>
@@ -160,8 +168,11 @@ export function KolShortlistBar({
               Ekspor CSV
             </button>
             <button
+              ref={toggleRef}
               type="button"
               onClick={() => setOpen((v) => !v)}
+              aria-expanded={open}
+              aria-controls="kol-shortlist-panel"
               className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-semibold text-onPrimary transition-opacity hover:opacity-90"
             >
               <BookmarkPlus size={13} aria-hidden />
@@ -179,7 +190,14 @@ export function KolShortlistBar({
         </div>
 
         {open && (
-          <div className="border-t border-border px-4 py-3">
+          <form
+            id="kol-shortlist-panel"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void save()
+            }}
+            className="border-t border-border px-4 py-3"
+          >
             <div className="flex flex-col gap-2 sm:flex-row">
               <select
                 value={target}
@@ -198,7 +216,6 @@ export function KolShortlistBar({
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && void save()}
                   placeholder="Nama shortlist, misal: Campaign Ramadan — Mikro Jabodetabek"
                   className="flex-1 rounded-lg border border-border bg-background px-2.5 py-2 text-xs text-text placeholder:text-mutedText/40 focus:border-primary focus:outline-none"
                   autoFocus
@@ -206,8 +223,7 @@ export function KolShortlistBar({
               )}
 
               <button
-                type="button"
-                onClick={() => void save()}
+                type="submit"
                 disabled={saving}
                 className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-onPrimary transition-opacity hover:opacity-90 disabled:opacity-50"
               >
@@ -240,7 +256,7 @@ export function KolShortlistBar({
             )}
 
             {error && <p role="alert" className="mt-2 text-[11px] text-destructive">{error}</p>}
-          </div>
+          </form>
         )}
       </div>
     </div>

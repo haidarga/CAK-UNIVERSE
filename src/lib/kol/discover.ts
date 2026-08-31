@@ -55,10 +55,28 @@ export interface DiscoverOutcome {
   totalFound: number
   /** Dropped here because every video of theirs came from another country. */
   droppedForeign: number
+  /** Discovery paths that errored out. Distinguishes "provider down" from "no such tag". */
+  sourceFailures: number
+  /** How many discovery paths were attempted in total. */
+  sourcesAttempted: number
 }
 
+// Hard caps on how far one request may fan out.
+//
+// Each hashtag opens its own paged sweep and each keyword opens two more, all in
+// parallel. The query string was bounded to 200 characters but the NUMBER of
+// terms inside it was not, so a comma-separated list fit 60-90 hashtags — up to
+// ~900 outbound TikTok requests, or 60-90 simultaneous Apify runs at up to 120
+// billed results each. That is tens of dollars from a single POST, and there is
+// no rate limiting in front of it.
+//
+// Five hashtags is well beyond what a real search needs; anything past that is
+// reported, never silently dropped.
+export const MAX_HASHTAGS = 5
+export const MAX_KEYWORDS = 3
+
 /** Splits free text into hashtags and plain keywords. "#skincare, glowing" → both. */
-export function parseQuery(query: string): { hashtags: string[]; keywords: string[] } {
+export function parseQuery(query: string): { hashtags: string[]; keywords: string[]; dropped: number } {
   const parts = (query || '')
     .split(/[,\n]+/)
     .map((s) => s.trim())
@@ -77,10 +95,18 @@ export function parseQuery(query: string): { hashtags: string[]; keywords: strin
     // and that collapsed form is how Indonesian creators actually tag things
     // ("skincare indonesia" → #skincareindonesia). Cheap extra coverage.
     const collapsed = part.replace(/\s+/g, '').toLowerCase()
-    if (collapsed.length >= 4 && collapsed !== part.toLowerCase()) hashtags.push(collapsed)
-    else if (collapsed.length >= 4) hashtags.push(collapsed)
+    if (collapsed.length >= 4) hashtags.push(collapsed)
   }
-  return { hashtags: [...new Set(hashtags)], keywords: [...new Set(keywords)] }
+  const uniqueHashtags = [...new Set(hashtags)]
+  const uniqueKeywords = [...new Set(keywords)]
+  const dropped =
+    Math.max(0, uniqueHashtags.length - MAX_HASHTAGS) + Math.max(0, uniqueKeywords.length - MAX_KEYWORDS)
+
+  return {
+    hashtags: uniqueHashtags.slice(0, MAX_HASHTAGS),
+    keywords: uniqueKeywords.slice(0, MAX_KEYWORDS),
+    dropped,
+  }
 }
 
 function addVideo(map: Map<string, KolCandidate>, video: ZapiTikTokVideo, source: KolSource): void {
@@ -106,7 +132,15 @@ function addVideo(map: Map<string, KolCandidate>, video: ZapiTikTokVideo, source
   if (!existing) map.set(handle, entry)
 }
 
-/** Walks a paged endpoint, stopping on hasMore=false, a page cap, or an error. */
+/**
+ * Walks a paged endpoint, stopping on hasMore=false, a page cap, or a hard error.
+ *
+ * Page 1 gets a retry. Zapi returns transient "Temporarily unavailable" under
+ * load — observed live killing a whole search — and losing page 1 means losing
+ * the entire hashtag, which then reads to the user as "hashtag ini kosong".
+ * Later pages are not retried: by then we already have candidates, and a partial
+ * sweep beats a slow one.
+ */
 async function walkPages<T>(
   maxPages: number,
   fetchPage: (page: number) => Promise<{ hasMore?: boolean; nextPage?: number | null } & T>,
@@ -116,12 +150,24 @@ async function walkPages<T>(
   let next: number | null = 1
   for (let i = 0; i < maxPages && next !== null; i++) {
     const page: number = next
-    try {
-      const res = await fetchPage(page)
-      onPage(res)
-      next = res.hasMore && res.nextPage ? res.nextPage : null
-    } catch (e) {
-      onError(e, page)
+    let lastError: unknown = null
+    const attempts = page === 1 ? 2 : 1
+
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      try {
+        const res = await fetchPage(page)
+        onPage(res)
+        next = res.hasMore && res.nextPage ? res.nextPage : null
+        lastError = null
+        break
+      } catch (e) {
+        lastError = e
+        if (attempt + 1 < attempts) await new Promise((r) => setTimeout(r, 1_500))
+      }
+    }
+
+    if (lastError) {
+      onError(lastError, page)
       return
     }
   }
@@ -132,6 +178,9 @@ export async function discoverCandidates(opts: DiscoverOptions): Promise<Discove
   const preResolved = new Map<string, ZapiTikTokSearchUser>()
   const warnings: string[] = []
   let truncated: string | null = null
+  // Counted separately from warnings: an empty result caused by the provider
+  // being down must never be reported to the user as a misspelled hashtag.
+  let sourceFailures = 0
 
   const hashtagWork = opts.hashtags.map((tag) =>
     walkPages(
@@ -140,7 +189,10 @@ export async function discoverCandidates(opts: DiscoverOptions): Promise<Discove
       (res) => (res.videos || []).forEach((v) => addVideo(candidates, v, 'hashtag')),
       // One dead hashtag must not sink a multi-hashtag search — record it and
       // let the other paths carry the result.
-      (e) => warnings.push(`Hashtag #${tag} gagal dibaca: ${e instanceof Error ? e.message : 'error'}`),
+      (e) => {
+        sourceFailures++
+        warnings.push(`Hashtag #${tag} gagal dibaca: ${e instanceof Error ? e.message : 'error'}`)
+      },
     ),
   )
 
@@ -149,7 +201,10 @@ export async function discoverCandidates(opts: DiscoverOptions): Promise<Discove
       opts.pagesPerKeyword,
       (page) => searchTikTokVideos(kw, page),
       (res) => (res.videos || []).forEach((v) => addVideo(candidates, v, 'keyword-video')),
-      (e) => warnings.push(`Pencarian video "${kw}" gagal: ${e instanceof Error ? e.message : 'error'}`),
+      (e) => {
+        sourceFailures++
+        warnings.push(`Pencarian video "${kw}" gagal: ${e instanceof Error ? e.message : 'error'}`)
+      },
     ),
   )
 
@@ -170,7 +225,10 @@ export async function discoverCandidates(opts: DiscoverOptions): Promise<Discove
           }
         }
       },
-      (e) => warnings.push(`Pencarian akun "${kw}" gagal: ${e instanceof Error ? e.message : 'error'}`),
+      (e) => {
+        sourceFailures++
+        warnings.push(`Pencarian akun "${kw}" gagal: ${e instanceof Error ? e.message : 'error'}`)
+      },
     ),
   )
 
@@ -209,5 +267,9 @@ export async function discoverCandidates(opts: DiscoverOptions): Promise<Discove
     for (const c of kept) candidates.set(c.handle, c)
   }
 
-  return { candidates, preResolved, warnings, truncated, totalFound, droppedForeign }
+  return {
+    candidates, preResolved, warnings, truncated, totalFound, droppedForeign,
+    sourceFailures,
+    sourcesAttempted: opts.hashtags.length + opts.keywords.length * 2,
+  }
 }

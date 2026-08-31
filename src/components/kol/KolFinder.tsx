@@ -7,7 +7,7 @@ import { KolProgress, type KolProgressState } from '@/components/kol/KolProgress
 import { KolRow } from '@/components/kol/KolRow'
 import { KolShortlistBar } from '@/components/kol/KolShortlistBar'
 import type { KolResult, KolSearchMeta } from '@/lib/kol/types'
-import { compactCount, elapsed } from '@/lib/kol/format'
+import { elapsed } from '@/lib/kol/format'
 import { createNdjsonParser, type KolStreamEvent } from '@/lib/kol/ndjson'
 
 // "Mencari KOL yang Hilang" — hashtag or keyword in, shortlist out.
@@ -196,8 +196,14 @@ export function KolFinder() {
       if ((e as Error)?.name === 'AbortError') return
       setError(e instanceof Error ? e.message : 'Pencarian gagal.')
     } finally {
-      setBusy(false)
-      setProgress(null)
+      // Only the CURRENT search may clear the busy state. A superseded call
+      // reaches here after its abort and would otherwise switch off the progress
+      // panel belonging to the search that replaced it — a live sweep that looks
+      // finished, or hung.
+      if (abortRef.current === controller) {
+        setBusy(false)
+        setProgress(null)
+      }
     }
   }, [])
 

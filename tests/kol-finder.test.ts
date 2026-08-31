@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { tierOf, tierLabel, KOL_TIERS } from '@/lib/kol/tiers'
 import { regionsByIsland } from '@/lib/kol/regions'
 import { detectRegion, detectionMatches } from '@/lib/kol/region-detect'
-import { parseQuery } from '@/lib/kol/discover'
+import { parseQuery, MAX_HASHTAGS, MAX_KEYWORDS } from '@/lib/kol/discover'
 import { performanceFromVideos } from '@/lib/kol/enrich'
 import { buildFlags, scoreResult, compareResults, engagementIsMeaningful } from '@/lib/kol/score'
 import { profileFromSearchUser, mapWithConcurrency } from '@/lib/kol/resolve'
@@ -326,5 +326,62 @@ describe('discovery country pass', () => {
     // silence would quietly delete real candidates.
     expect(keep([null, null], 'ID')).toBe(true)
     expect(keep([], 'ID')).toBe(true)
+  })
+})
+
+describe('fan-out caps', () => {
+  // A security audit found the query string was bounded to 200 characters but
+  // the NUMBER of terms inside it was not. A comma-separated list fit 60-90
+  // hashtags, each opening its own paged sweep in parallel — up to ~900 TikTok
+  // requests, or 60-90 simultaneous Apify runs at up to 120 BILLED results each,
+  // from a single POST with no rate limiting in front of it.
+  it('caps how many terms one request may fan out to', () => {
+    const many = Array.from({ length: 40 }, (_, i) => `#tag${i}`).join(',')
+    const { hashtags, dropped } = parseQuery(many)
+    expect(hashtags.length).toBeLessThanOrEqual(MAX_HASHTAGS)
+    expect(dropped).toBeGreaterThan(0)
+  })
+
+  it('caps keywords as well as hashtags', () => {
+    const { keywords, dropped } = parseQuery('satu dua, tiga empat, lima enam, tujuh delapan, sembilan sepuluh')
+    expect(keywords.length).toBeLessThanOrEqual(MAX_KEYWORDS)
+    expect(dropped).toBeGreaterThan(0)
+  })
+
+  it('reports nothing dropped for an ordinary query', () => {
+    // The cap must be invisible in normal use, or it becomes noise people learn
+    // to ignore.
+    expect(parseQuery('#skincareindonesia').dropped).toBe(0)
+    expect(parseQuery('#kuliner, #kulinerbandung, jajanan bandung').dropped).toBe(0)
+  })
+})
+
+describe('ambiguous place names inside handles and hashtags', () => {
+  // An audit found the ambiguous-word guard only ran on prose. Handles and
+  // hashtags used bare substring matching, so "@soloqueen_mua" cast a weight-6
+  // vote for Surakarta and came back as a HIGH-confidence location — a measured-
+  // looking answer manufactured from an unrelated English word.
+
+  it('does not turn an unrelated handle into a location', () => {
+    expect(detectRegion({ handle: 'soloqueen_mua', bio: null, captions: [] }).area).toBeNull()
+    expect(detectRegion({ handle: 'metrolifestyle', bio: null, captions: [] }).area).toBeNull()
+  })
+
+  it('does not read a hashtag that merely contains an ambiguous word', () => {
+    // Solo travel, not the city of Solo.
+    expect(detectRegion({ handle: 'x', bio: null, captions: ['#solotravel #solotrip'] }).area).toBeNull()
+    // Guitar solo.
+    expect(detectRegion({ handle: 'x', bio: null, captions: ['#gitarsolo #musik'] }).area).toBeNull()
+  })
+
+  it('still reads an ambiguous word when the tag marks it as a place', () => {
+    expect(detectRegion({ handle: 'x', bio: null, captions: ['#kulinersolo', '#kulinersolo'] }).area).toBe('jawa-tengah')
+    expect(detectRegion({ handle: 'x', bio: null, captions: ['#wisatamedan', '#kulinermedan'] }).area).toBe('sumatera-utara')
+  })
+
+  it('leaves unambiguous city names working exactly as before', () => {
+    // The guard must not cost coverage on the names that were never a problem.
+    expect(detectRegion({ handle: 'x', bio: null, captions: ['#kulinerbandung'] }).area).toBe('jawa-barat')
+    expect(detectRegion({ handle: 'lombokwisatatransport', bio: null, captions: [] }).area).toBe('nusa-tenggara')
   })
 })

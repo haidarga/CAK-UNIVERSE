@@ -58,6 +58,19 @@ export interface RegionSignals {
 // "medan perang". They only count when something marks them as a place.
 const AMBIGUOUS = new Set(['medan', 'padang', 'solo', 'malang', 'kudus', 'serang', 'metro', 'tegal', 'bali'])
 
+// Inside a hashtag or handle there is no grammar to lean on, so an ambiguous
+// word needs a companion that makes it a PLACE. "#kulinersolo" and "#exploresolo"
+// are Surakarta; "#solotravel" and "@soloqueen_mua" are not.
+//
+// Without this the guard only covered prose, and a handle vote — the second
+// heaviest signal there is — assigned Solo to @soloqueen_mua at "tinggi"
+// confidence off one unrelated English word.
+const LOCALITY_MARKERS = [
+  'kuliner', 'wisata', 'explore', 'eksplor', 'jajanan', 'kota', 'kab', 'info', 'seputar',
+  'makan', 'cafe', 'kafe', 'resto', 'warung', 'hotel', 'tempat', 'liburan', 'pasar',
+  'event', 'daerah', 'asli', 'khas', 'orang', 'anak', 'warga', 'update',
+]
+
 // What each kind of evidence is worth. A GPS tag beats a passing mention by a
 // wide margin, and one hashtag the creator chose for themselves beats several
 // incidental words.
@@ -99,10 +112,16 @@ function voteFromTokens(text: string, weight: number, kind: 'hashtag' | 'handle'
   const votes: Vote[] = []
   for (const token of tokens) {
     for (const { area, alias } of COMPACT_ALIASES) {
-      if (token.includes(alias)) {
-        votes.push({ area, weight, label: kind === 'hashtag' ? `#${token}` : `handle @${text}` })
-        break // one vote per token; the longest alias already won
+      if (!token.includes(alias)) continue
+      // An ambiguous word only counts when the rest of the token marks it as a
+      // place. Checked against the token with the alias removed, so "#solotravel"
+      // cannot satisfy the guard using letters that belong to "solo" itself.
+      if (AMBIGUOUS.has(alias)) {
+        const rest = token.split(alias).join('')
+        if (!LOCALITY_MARKERS.some((m) => rest.includes(m))) continue
       }
+      votes.push({ area, weight, label: kind === 'hashtag' ? `#${token}` : `handle @${text}` })
+      break // one vote per token; the longest alias already won
     }
   }
   return votes

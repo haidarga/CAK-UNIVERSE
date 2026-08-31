@@ -1,4 +1,4 @@
-import { discoverCandidates, parseQuery } from '@/lib/kol/discover'
+import { discoverCandidates, parseQuery, MAX_HASHTAGS, MAX_KEYWORDS } from '@/lib/kol/discover'
 import { discoverInstagram, resolveAndEnrichInstagram, instagramConfigured } from '@/lib/kol/instagram'
 import { resolveHandles } from '@/lib/kol/resolve'
 import { enrichHandles } from '@/lib/kol/enrich'
@@ -78,11 +78,16 @@ function emptyResponse(query: string, warnings: string[]): KolSearchResponse {
 export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {}): Promise<KolSearchResponse> {
   const startedAt = Date.now()
   const depth = DEPTH_SETTINGS[input.depth] ?? DEPTH_SETTINGS.standar
-  const { hashtags, keywords } = parseQuery(input.query)
+  const { hashtags, keywords, dropped: droppedTerms } = parseQuery(input.query)
   const warnings: string[] = []
   const report = deps.onProgress ?? (() => {})
 
   if (!hashtags.length && !keywords.length) return emptyResponse(input.query, ['Kata kunci kosong.'])
+  if (droppedTerms > 0) {
+    warnings.push(
+      `${droppedTerms} kata kunci gak diproses — maksimal ${MAX_HASHTAGS} hashtag dan ${MAX_KEYWORDS} kata kunci sekali cari, biar gak kelamaan dan gak boros kuota.`,
+    )
+  }
 
   const isInstagram = input.platform === 'instagram'
   if (isInstagram && !instagramConfigured()) {
@@ -121,12 +126,24 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
   let handles = [...discovery.candidates.keys()]
   let igEnriched: Map<string, EnrichedCreator> | null = null
 
+  let igTruncated: string | null = null
   if (isInstagram && handles.length > IG_DEPTH[input.depth].maxEnrich) {
     // Rank by how often a creator appeared under the hashtag before spending
     // money on them.
+    const cap = IG_DEPTH[input.depth].maxEnrich
+    igTruncated = `Ketemu ${handles.length} akun, diproses ${cap} teratas (yang paling sering muncul). Instagram berbayar per akun, jadi dibatasi.`
     handles = handles
       .sort((a, b) => (discovery.candidates.get(b)?.seenVideos.length ?? 0) - (discovery.candidates.get(a)?.seenVideos.length ?? 0))
-      .slice(0, IG_DEPTH[input.depth].maxEnrich)
+      .slice(0, cap)
+  }
+
+  // Instagram exposes no country field at all, so the country filter below can
+  // never fire on this path. Reporting "0 dibuang karena negara" would read as
+  // "we checked and everyone was Indonesian" — a measurement we did not take.
+  if (isInstagram && input.country) {
+    warnings.push(
+      'Instagram gak ngasih kode negara, jadi filter negara gak jalan di sini. Hasilnya bisa kemasukan kreator luar — pakai filter region kalau butuh batas wilayah.',
+    )
   }
 
   report({ stage: 'resolve', message: `${handles.length} akun ketemu, lagi ambil jumlah follower-nya…`, total: handles.length })
@@ -144,7 +161,11 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
     unresolved = tt.unresolved
   }
   if (unresolved.length) {
-    warnings.push(`${unresolved.length} akun gak bisa diambil datanya, dilewat.`)
+    // Named plainly, because the usual cause is Zapi still scraping them for the
+    // first time — and they will be instant on the next search rather than gone.
+    warnings.push(
+      `${unresolved.length} akun belum sempat kebaca (biasanya akun yang baru pertama kali dicek). Cari lagi bentar, biasanya udah kebaca.`,
+    )
   }
 
   report({ stage: 'filter', message: `Nyaring ${profiles.size} akun sesuai tier & negara…`, total: profiles.size })
@@ -188,7 +209,7 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
   // accounts that matched, not on whichever ones the provider happened to
   // return first.
   survivors.sort((a, b) => (b.profile.followers ?? 0) - (a.profile.followers ?? 0))
-  let truncated = discovery.truncated
+  let truncated = discovery.truncated ?? igTruncated
   let toEnrich = survivors
   if (survivors.length > depth.maxEnrich) {
     toEnrich = survivors.slice(0, depth.maxEnrich)
@@ -300,7 +321,10 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
       droppedNoFollowers: dropped.noFollowers,
       tierSpread: Object.fromEntries([...nearMiss.entries()].sort((a, b) => b[1] - a[1])),
       enriched: toEnrich.length,
-      fromCache: cached.size ? handles.filter((h) => cached.has(h)).length : 0,
+      // Only the TikTok path consults the cache. Instagram always makes a fresh
+      // billed call, so counting set membership there reported cache hits that
+      // never happened.
+      fromCache: isInstagram ? 0 : handles.filter((h) => cached.has(h)).length,
       elapsedMs: Date.now() - startedAt,
       truncated,
       warnings,
