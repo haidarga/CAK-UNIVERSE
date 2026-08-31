@@ -398,8 +398,9 @@ export function KolFinder() {
 
               {meta.droppedByTier > 0 && (
                 <p className="border-t border-border pt-2 text-[11px] text-mutedText/70">
-                  {meta.droppedByTier} akun di luar tier yang kamu minta tetap ditampilin di bawah,
-                  ditandai — biar keliatan siapa aja yang ada di niche ini.
+                  {meta.droppedByTier} akun di luar tier yang kamu minta juga ikut diukur. Yang
+                  sempat keukur ada di bagian bawah, ditandai — biar keliatan siapa aja yang ada
+                  di niche ini.
                 </p>
               )}
 

@@ -320,32 +320,26 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
     }
   }
 
-  // NEAR MISSES.
+  // EVERY creator we measured is returned, marked with the filter it missed.
   //
-  // Five filters stacked in series land on zero routinely — each one is working,
-  // and the reader still gets a blank screen with nothing to judge. Rows that
-  // failed exactly ONE of the two post-measurement filters are appended, clearly
-  // marked, so "gak ada yang cocok" always comes with "ini yang paling dekat".
+  // This used to append at most twelve near misses, and only when the matched
+  // list was nearly empty. The result contradicted the tool's own text: the page
+  // said "43 akun di luar tier tetap ditampilin di bawah" and then rendered
+  // twelve rows, while 37 creators we had already paid to measure were dropped
+  // on the floor.
   //
-  // Only region and activity qualify. Tier and country rejects were dropped
-  // before enrichment, so they carry no engagement or activity data and would be
-  // rows of dashes pretending to be candidates.
-  const NEAR_MISS_FLOOR = 5
-  const NEAR_MISS_CAP = 12
-  const nearMisses: KolResult[] = []
-  if (visible.length < NEAR_MISS_FLOOR) {
-    for (const r of results) {
-      if (visible.includes(r)) continue
-      const failedRegion = passesActivity(r) && !passesRegion(r)
-      const failedActivity = !passesActivity(r) && passesRegion(r)
-      // Two different reasons, and calling both "beda region" contradicted the
-      // "lokasi gak ketebak" chip sitting on the same row.
-      if (failedRegion) nearMisses.push({ ...r, missed: r.region.area ? 'region' : 'region-unknown' })
-      else if (failedActivity) nearMisses.push({ ...r, missed: 'activity' })
-      if (nearMisses.length >= NEAR_MISS_CAP) break
-    }
-    nearMisses.sort(compareResults)
-  }
+  // There is no reason to throw away a measurement. Matched rows come first,
+  // near misses sit below their own heading, and every row says which filter it
+  // failed — the reader scrolls or stops, which is their call, not the filter's.
+  const nearMisses: KolResult[] = results
+    .filter((r) => !visible.includes(r))
+    .map((r) => ({
+      ...r,
+      // Only region and activity are near-miss REASONS; an off-tier creator is
+      // already labelled by tierMatch and needs no missed marker.
+      missed: !passesActivity(r) ? ('activity' as const) : !passesRegion(r) ? (r.region.area ? ('region' as const) : ('region-unknown' as const)) : null,
+    }))
+    .sort(compareResults)
 
   if (discovery.droppedForeign > 0) {
     const share = Math.round((discovery.droppedForeign / Math.max(discovery.totalFound, 1)) * 100)
