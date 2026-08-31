@@ -174,6 +174,134 @@ export function fetchTikTokFollowing(handle: string, count = 30, page = 1): Prom
   return zapiGet(TIKTOK_SERVICE, 'following', normalizeHandle(handle), { count, page })
 }
 
+// ── TikTok discovery (KOL Finder) ───────────────────────────────────────────
+//
+// The only endpoints in the whole Zapi surface that answer "who should I even
+// look at?" rather than "tell me about this handle". Instagram has no
+// equivalent — all seven of its endpoints require a handle you already know.
+//
+// Param names are NOT guessable and cost a round of 400s to find: both search
+// endpoints take `keywords` (plural), not `keyword`/`q`/`query`.
+
+/** A user row from search-users. Unusually complete for a list endpoint. */
+export interface ZapiTikTokSearchUser {
+  id?: string
+  username?: string
+  nickname?: string
+  url?: string
+  signature?: string // bio
+  region?: string // ISO country code, e.g. "ID" — country only, never a province
+  verified?: boolean
+  privateAccount?: boolean
+  followerCount?: number
+  followingCount?: number
+  videoCount?: number
+  heartCount?: number
+  instagramId?: string // cross-platform handle, when the creator linked one
+}
+
+export interface ZapiTikTokSearchUsersPage {
+  query?: string
+  page?: number
+  nextPage?: number | null
+  count?: number
+  hasMore?: boolean
+  users?: ZapiTikTokSearchUser[]
+}
+
+/** The author stub embedded in hashtag/search video rows — no stats, by design. */
+export interface ZapiTikTokVideoAuthor {
+  id?: string
+  username?: string
+  nickname?: string
+  avatar?: string
+}
+
+export interface ZapiTikTokVideo {
+  videoId?: string
+  url?: string
+  region?: string // country the video was posted from
+  title?: string // the caption, despite the name
+  playCount?: number
+  diggCount?: number
+  commentCount?: number
+  shareCount?: number
+  collectCount?: number
+  isAd?: boolean
+  isSlideshow?: boolean
+  createTimeIso?: string
+  author?: ZapiTikTokVideoAuthor
+}
+
+export interface ZapiTikTokVideoPage {
+  hashtag?: string
+  hashtagId?: string
+  query?: string
+  page?: number
+  nextPage?: number | null
+  count?: number
+  hasMore?: boolean
+  videos?: ZapiTikTokVideo[]
+}
+
+// Rejected server-side above 20 with a 400 — passing 30 silently returns
+// nothing usable, which reads as "hashtag kosong" instead of "bad request".
+const MAX_LIST_COUNT = 20
+
+function clampCount(n: number): number {
+  return Math.max(1, Math.min(MAX_LIST_COUNT, Math.floor(n) || MAX_LIST_COUNT))
+}
+
+/**
+ * Accounts whose username or display name matches a keyword.
+ *
+ * Carries followerCount, region and bio INLINE, which is what makes tier
+ * filtering free — no follow-up profile call needed to know how big someone is.
+ *
+ * Shallow on its own: "gaming" exhausted at 51 unique accounts over 3 pages, and
+ * it matches on NAME, so it surfaces accounts called "gaming" rather than
+ * accounts that make gaming content. Pair it with hashtag discovery.
+ */
+export function searchTikTokUsers(keywords: string, page = 1, timeoutMs?: number): Promise<ZapiTikTokSearchUsersPage> {
+  return zapiGet<ZapiTikTokSearchUsersPage>(TIKTOK_SERVICE, 'search-users', undefined, { keywords, page }, timeoutMs)
+}
+
+/** Videos matching a keyword. Author stub only — resolve stats separately. */
+export function searchTikTokVideos(keywords: string, page = 1, timeoutMs?: number): Promise<ZapiTikTokVideoPage> {
+  return zapiGet<ZapiTikTokVideoPage>(TIKTOK_SERVICE, 'search', undefined, { keywords, page }, timeoutMs)
+}
+
+/**
+ * Videos posted under a hashtag — the richest source of genuine creators.
+ *
+ * Ranked by TikTok's own virality, NOT recency. That ordering is a trap for any
+ * metric derived from this feed: see kol/enrich.ts.
+ */
+export function fetchTikTokHashtagPosts(hashtag: string, page = 1, count = MAX_LIST_COUNT, timeoutMs?: number): Promise<ZapiTikTokVideoPage> {
+  const clean = hashtag.replace(/^#/, '').trim()
+  return zapiGet<ZapiTikTokVideoPage>(TIKTOK_SERVICE, 'hashtag-posts', clean, { page, count: clampCount(count) }, timeoutMs)
+}
+
+export interface ZapiTikTokHashtagInfo {
+  hashtag?: string
+  hashtagId?: string
+  url?: string
+  userCount?: number
+  viewCount?: number
+  description?: string
+}
+
+/**
+ * Size stats for a hashtag.
+ *
+ * Best-effort: verified live returning 404 for #skincareindonesia while
+ * hashtag-posts returned 18 videos for that exact tag, so a miss here says
+ * nothing about whether the hashtag has content.
+ */
+export function fetchTikTokHashtagInfo(hashtag: string, timeoutMs?: number): Promise<ZapiTikTokHashtagInfo> {
+  return zapiGet<ZapiTikTokHashtagInfo>(TIKTOK_SERVICE, 'hashtag', hashtag.replace(/^#/, '').trim(), undefined, timeoutMs)
+}
+
 // ── Instagram ───────────────────────────────────────────────────────────────
 
 export function fetchInstagramProfile(handle: string, timeoutMs?: number): Promise<unknown> {

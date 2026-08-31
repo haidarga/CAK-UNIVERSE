@@ -338,3 +338,73 @@ p {
   font-family: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
   letter-spacing: normal;
 }
+
+/* ============================================================
+   KOL Finder ("Mencari KOL yang Hilang")
+   Motion is limited to transform/opacity so it stays on the
+   compositor — a 90-second search must not cost frames, and the
+   results list can run to 70 rows.
+   ============================================================ */
+@keyframes kol-row-in {
+  from { opacity: 0; transform: translate3d(0, 6px, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+.kol-row {
+  animation: kol-row-in 320ms var(--ease-out-soft) both;
+}
+
+@keyframes kol-bar-grow {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+/* Grown from the left so the bar reads as a measurement filling up rather
+   than a shape fading in. */
+.kol-bar {
+  transform-origin: left center;
+  animation: kol-bar-grow 620ms var(--ease-spring) both;
+  animation-delay: 180ms;
+}
+
+@keyframes kol-sweep-move {
+  from { transform: translate3d(-100%, 0, 0); }
+  to   { transform: translate3d(100%, 0, 0); }
+}
+
+/* One travelling highlight along the top edge of the progress panel. A single
+   element, no repaint, and it reads as "still working" without pretending to
+   measure progress it does not have. */
+.kol-sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgb(var(--primary) / 0.55), transparent);
+  animation: kol-sweep-move 2.4s linear infinite;
+}
+
+@keyframes kol-pulse-beat {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.45; transform: scale(0.72); }
+}
+
+.kol-pulse {
+  animation: kol-pulse-beat 1.4s var(--ease-out-soft) infinite;
+}
+
+/* Long result lists: skip layout and paint for rows outside the viewport.
+   contain-intrinsic-size keeps the scrollbar honest while they are skipped. */
+.kol-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 84px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kol-row,
+  .kol-bar,
+  .kol-pulse,
+  .kol-sweep::after {
+    animation: none !important;
+  }
+  .kol-bar { transform: none; }
+}

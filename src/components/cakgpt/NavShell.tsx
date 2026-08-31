@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutGrid, Users, FileText, Lightbulb, Settings, ArrowLeft, Building2, TrendingUp, Wand2, Radar, Brain } from 'lucide-react'
+import { LayoutGrid, Users, FileText, Lightbulb, Settings, ArrowLeft, Building2, TrendingUp, Wand2, Radar, Brain, UserSearch } from 'lucide-react'
 import { ClientSwitcher } from '@/components/cakgpt/ClientSwitcher'
 
 const ROOT = '/studio/script'
@@ -14,6 +14,9 @@ const NAV_ITEMS = [
   { href: `${ROOT}/knowledge`, label: 'Knowledge Base', icon: Brain },
   { href: `${ROOT}/trends`, label: 'Trend Radar', icon: TrendingUp },
   { href: `${ROOT}/strategist`, label: 'Strategist', icon: Radar },
+  // Sits directly under Strategist: same job of sizing up creators, but this one
+  // starts from a niche instead of from a handle you already have.
+  { href: `${ROOT}/kol`, label: 'Cari KOL', icon: UserSearch },
   { href: `${ROOT}/translator`, label: 'Content Translator', icon: Wand2 },
   { href: `${ROOT}/ideas`, label: 'Ideas', icon: Lightbulb },
   { href: `${ROOT}/settings`, label: 'Settings', icon: Settings },
