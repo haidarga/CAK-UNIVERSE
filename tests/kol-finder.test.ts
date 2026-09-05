@@ -573,3 +573,39 @@ describe('dialect words must not be ordinary language', () => {
     expect(d.area).toBe('jawa-barat')
   })
 })
+
+describe('engagement pairs views with likes from the SAME posts', () => {
+  const now = Date.parse('2026-08-31T00:00:00Z')
+
+  it('ignores posts that carry a like count but no views', () => {
+    // The Instagram bug, reproduced on TikTok's shape: averaging likes across
+    // every post and dividing by views taken from the videos alone compared two
+    // different populations and reported 802%.
+    const perf = performanceFromVideos(
+      [
+        { playCount: 10_000, diggCount: 500, createTimeIso: new Date(now).toISOString() },
+        { diggCount: 500, createTimeIso: new Date(now).toISOString() }, // slideshow: no views
+        { diggCount: 500, createTimeIso: new Date(now).toISOString() },
+      ],
+      now,
+    )
+    // 500/10000 = 5%, not the 15% a mismatched pairing would produce.
+    expect(perf.engagementRate).toBeCloseTo(5, 1)
+  })
+
+  it('reports nothing rather than a ratio when no post carries both numbers', () => {
+    const perf = performanceFromVideos([{ diggCount: 500 }, { diggCount: 300 }], now)
+    expect(perf.engagementRate).toBeNull()
+  })
+
+  it('still reports the honest ratio when every post is complete', () => {
+    const perf = performanceFromVideos(
+      [
+        { playCount: 1000, diggCount: 30, createTimeIso: new Date(now).toISOString() },
+        { playCount: 2000, diggCount: 60, createTimeIso: new Date(now).toISOString() },
+      ],
+      now,
+    )
+    expect(perf.engagementRate).toBeCloseTo(3, 1)
+  })
+})

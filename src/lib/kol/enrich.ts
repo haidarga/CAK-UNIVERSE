@@ -74,6 +74,17 @@ export function performanceFromVideos(videos: ZapiTikTokVideo[], now = Date.now(
   const avgLikes = average(organic.map((v) => num(v.diggCount)))
   const avgComments = average(organic.map((v) => num(v.commentCount)))
 
+  // Engagement is computed ONLY over posts that carry BOTH numbers.
+  //
+  // Averaging views over one set of posts and likes over another produces a
+  // ratio between two different populations. On Instagram, where photos have no
+  // view count at all, that yielded figures like 802%. TikTok has a milder form
+  // of the same flaw — slideshow posts often carry no playCount — and the fix is
+  // identical: pair them first, divide second.
+  const paired = organic.filter((v) => num(v.playCount) !== null && num(v.diggCount) !== null && (v.playCount ?? 0) > 0)
+  const pairedViews = average(paired.map((v) => num(v.playCount)))
+  const pairedLikes = average(paired.map((v) => num(v.diggCount)))
+
   // Likes ÷ VIEWS, never likes ÷ followers.
   //
   // TikTok distributes through the For You feed, so reach is largely decoupled
@@ -82,8 +93,8 @@ export function performanceFromVideos(videos: ZapiTikTokVideo[], now = Date.now(
   // number that would rank it above every honest account in the list. On a view
   // basis the same creator reads 3.3%, directly comparable to everyone else.
   const engagementRate =
-    avgViews !== null && avgViews > 0 && avgLikes !== null
-      ? Math.round((avgLikes / avgViews) * 1000) / 10
+    pairedViews !== null && pairedViews > 0 && pairedLikes !== null
+      ? Math.round((pairedLikes / pairedViews) * 1000) / 10
       : null
 
   const dates = organic.map((v) => v.createTimeIso).filter((d): d is string => !!d)

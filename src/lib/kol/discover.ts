@@ -245,12 +245,18 @@ export async function discoverCandidates(opts: DiscoverOptions): Promise<Discove
   let droppedForeign = 0
   const want = opts.preferCountry?.toUpperCase() || null
   if (want) {
-    for (const [handle, candidate] of [...candidates]) {
+    const foreign: string[] = []
+    for (const [handle, candidate] of candidates) {
       const seen = candidate.seenVideos.map((v) => v.region).filter(Boolean) as string[]
-      if (seen.length && !seen.some((r) => r.toUpperCase() === want)) {
-        candidates.delete(handle)
-        droppedForeign++
-      }
+      if (seen.length && !seen.some((r) => r.toUpperCase() === want)) foreign.push(handle)
+    }
+    // Never let this pass empty the sweep. On a globally-used tag like #gaming it
+    // matched all 66 candidates, and returning zero rows reads as "this niche is
+    // empty" when the truth is "you pointed at a global hashtag". Keeping them
+    // lets the country column say so on each row instead.
+    if (foreign.length < candidates.size) {
+      for (const handle of foreign) candidates.delete(handle)
+      droppedForeign = foreign.length
     }
   }
 

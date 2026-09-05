@@ -70,36 +70,50 @@ export async function POST(req: Request) {
   // Warm the cache from previously scraped creators. Best-effort: a cache read
   // that fails must cost speed, never correctness, so it degrades to an empty
   // map and the sweep just does the work again.
-  const cachedProfiles = new Map<string, KolProfile>()
-  if (input.use_cache && service) {
-    const cutoff = new Date(Date.now() - CACHE_MAX_AGE_DAYS * 86_400_000).toISOString()
-    const { data } = await service
-      .from('sw_kol_profiles')
-      .select('handle, display_name, bio, followers, following, total_videos, total_hearts, country, verified, is_private, avatar_url, instagram_handle, profile_url')
-      .eq('platform', input.platform)
-      .gte('scraped_at', cutoff)
-      .limit(5000)
-    for (const row of data || []) {
-      cachedProfiles.set(row.handle, {
-        handle: row.handle,
-        displayName: row.display_name,
-        bio: row.bio,
-        followers: row.followers,
-        following: row.following,
-        totalVideos: row.total_videos,
-        totalHearts: row.total_hearts,
-        country: row.country,
-        verified: !!row.verified,
-        isPrivate: !!row.is_private,
-        avatarUrl: row.avatar_url,
-        instagramHandle: row.instagram_handle,
-        profileUrl:
-          row.profile_url ||
-          (input.platform === 'instagram'
-            ? `https://www.instagram.com/${row.handle}/`
-            : `https://www.tiktok.com/@${row.handle}`),
-      })
+  // The cache is now looked up BY HANDLE, after discovery, instead of being
+  // preloaded blind.
+  //
+  // The old version selected the whole table with .limit(5000) — and PostgREST
+  // silently caps a request at 1000 rows, so what actually arrived was 1000
+  // ARBITRARY creators. As the table grew past a thousand, which ones came back
+  // changed from search to search, so the same query hit a different slice of
+  // cache each time and produced different results. That is precisely the
+  // "makin diulang makin ngaco" the user reported.
+  const cacheMaxAge = new Date(Date.now() - CACHE_MAX_AGE_DAYS * 86_400_000).toISOString()
+  const lookupCache = async (handles: string[]): Promise<Map<string, KolProfile>> => {
+    const found = new Map<string, KolProfile>()
+    if (!service || !input.use_cache || !handles.length) return found
+    // Chunked: a very long IN() list is rejected, and the URL has a length limit.
+    for (let i = 0; i < handles.length; i += 200) {
+      const { data } = await service
+        .from('sw_kol_profiles')
+        .select('handle, display_name, bio, followers, following, total_videos, total_hearts, country, verified, is_private, avatar_url, instagram_handle, profile_url')
+        .eq('platform', input.platform)
+        .gte('scraped_at', cacheMaxAge)
+        .in('handle', handles.slice(i, i + 200))
+      for (const row of data || []) {
+        found.set(row.handle, {
+          handle: row.handle,
+          displayName: row.display_name,
+          bio: row.bio,
+          followers: row.followers,
+          following: row.following,
+          totalVideos: row.total_videos,
+          totalHearts: row.total_hearts,
+          country: row.country,
+          verified: !!row.verified,
+          isPrivate: !!row.is_private,
+          avatarUrl: row.avatar_url,
+          instagramHandle: row.instagram_handle,
+          profileUrl:
+            row.profile_url ||
+            (input.platform === 'instagram'
+              ? `https://www.instagram.com/${row.handle}/`
+              : `https://www.tiktok.com/@${row.handle}`),
+        })
+      }
     }
+    return found
   }
 
   // Streamed as newline-delimited JSON rather than returned in one shot.
@@ -133,7 +147,7 @@ export async function POST(req: Request) {
             depth: input.depth,
           },
           {
-            cachedProfiles,
+            lookupCache,
             classifyNiche: input.classify_niche,
             onProgress: (event) => send({ type: 'progress', ...event }),
           },

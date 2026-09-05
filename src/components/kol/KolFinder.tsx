@@ -270,7 +270,8 @@ export function KolFinder() {
       r.region.area ?? '',
       r.region.confidence ?? '',
       r.profile.country ?? '',
-      r.profile.instagramHandle ?? '',
+      // Self-link on an Instagram search; the handle column already has it.
+      r.platform === 'instagram' ? '' : (r.profile.instagramHandle ?? ''),
       r.profile.profileUrl,
     ])
     const csv = [head, ...rows]

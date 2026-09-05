@@ -121,6 +121,34 @@ export function regionHashtags(regionId: string | null, topics: string[], max = 
   return [...new Set(out)]
 }
 
+/**
+ * Indonesian variants of a topic, for when the country filter is on.
+ *
+ * "#gaming" is a global tag: swept live it returned 66 creators and every single
+ * one was foreign, so the country filter left zero results and the search looked
+ * broken. "#gamingindonesia" is the same topic with the audience the filter is
+ * asking for, and Indonesian creators tag it themselves.
+ *
+ * Same principle as regionHashtags: steer the sweep instead of trimming its
+ * output afterwards.
+ */
+export function countryHashtags(country: string | null, topics: string[], max = 2): string[] {
+  if (!country || country.toUpperCase() !== 'ID') return []
+  const suffixes = ['indonesia', 'indo']
+  const out: string[] = []
+  for (const topic of topics) {
+    const clean = topic.toLowerCase().replace(/[^a-z0-9]/g, '')
+    if (clean.length < 3) continue
+    // A topic that already says Indonesia needs no help.
+    if (suffixes.some((sfx) => clean.includes(sfx))) continue
+    for (const sfx of suffixes) {
+      out.push(`${clean}${sfx}`)
+      if (out.length >= max) return [...new Set(out)]
+    }
+  }
+  return [...new Set(out)]
+}
+
 export function regionLabel(id: string | null): string {
   if (!id) return '—'
   return REGIONS.find((r) => r.id === id)?.label ?? id

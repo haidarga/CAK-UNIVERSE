@@ -5,7 +5,7 @@ import { enrichHandles } from '@/lib/kol/enrich'
 import { classifyNiches } from '@/lib/kol/niche'
 import { buildFlags, compareResults, scoreResult } from '@/lib/kol/score'
 import { detectRegion, detectionMatches } from '@/lib/kol/region-detect'
-import { regionHashtags, regionLabel } from '@/lib/kol/regions'
+import { regionHashtags, regionLabel, countryHashtags } from '@/lib/kol/regions'
 import { tierOf } from '@/lib/kol/tiers'
 import type { KolProfile, KolResult, KolSearchInput, KolSearchResponse } from '@/lib/kol/types'
 import type { EnrichedCreator } from '@/lib/kol/enrich'
@@ -62,6 +62,15 @@ export interface KolProgressEvent {
 export interface SearchDeps {
   /** Previously scraped profiles, keyed by handle. Skips the resolve call. */
   cachedProfiles?: Map<string, KolProfile>
+  /**
+   * Looks the cache up by the handles this sweep actually found.
+   *
+   * Preferred over `cachedProfiles`, which required loading the whole table up
+   * front — and PostgREST caps that at 1000 rows, so past a thousand creators
+   * the preload returned an arbitrary slice that changed between identical
+   * searches.
+   */
+  lookupCache?: (handles: string[]) => Promise<Map<string, KolProfile>>
   /** Turn off the LLM niche pass — used by tests and by the cheap depth setting. */
   classifyNiche?: boolean
   onProgress?: (event: KolProgressEvent) => void
@@ -116,12 +125,20 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
   // blowout the cap exists to prevent.
   const REGION_TAG_SLOTS = 2
   const localTags = regionHashtags(input.region, [...hashtags, ...keywords], REGION_TAG_SLOTS)
-  const ownTags = localTags.length ? hashtags.slice(0, MAX_HASHTAGS - localTags.length) : hashtags
-  const sweepHashtags = [...new Set([...ownTags, ...localTags])]
+  // The country filter steers too. Without it, "#gaming" swept 66 creators, every
+  // one of them foreign, and the Indonesia filter left nothing — a search that
+  // looked broken when it had simply been pointed at a global tag.
+  const idTags = localTags.length ? [] : countryHashtags(input.country, [...hashtags, ...keywords], 2)
+  const steerTags = [...localTags, ...idTags]
+  const ownTags = steerTags.length ? hashtags.slice(0, MAX_HASHTAGS - steerTags.length) : hashtags
+  const sweepHashtags = [...new Set([...ownTags, ...steerTags])]
   if (localTags.length) {
     warnings.push(
       `Ditambahin hashtag lokal biar hasilnya nyambung sama ${regionLabel(input.region)}: #${localTags.join(', #')}`,
     )
+  }
+  if (idTags.length) {
+    warnings.push(`Ditambahin versi Indonesia-nya biar gak ketimbun kreator luar: #${idTags.join(', #')}`)
   }
   if (hashtags.length > ownTags.length) {
     warnings.push(
@@ -153,8 +170,8 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
   // before the expensive stage. Instagram cannot do that: Apify returns the
   // profile and its posts in the SAME call, so by the time follower count is
   // known the measurement has already been paid for. Hence the lower ceilings.
-  const cached = deps.cachedProfiles ?? new Map()
   let handles = [...discovery.candidates.keys()]
+  const cached = deps.lookupCache ? await deps.lookupCache(handles) : (deps.cachedProfiles ?? new Map())
   let igEnriched: Map<string, EnrichedCreator> | null = null
 
   let igTruncated: string | null = null
@@ -291,7 +308,10 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
     const niche = nicheMap.get(handle) ?? null
     const flags = buildFlags(profile, tier, performance, region, niche, {
       tierMatch,
-      wantedCountry: input.country,
+      // Suppressed on Instagram: Apify returns no country for ANY IG account, so
+      // the flag fired on every row and quietly docked every score by the same
+      // ten points — a platform limitation, not a signal about the creator.
+      wantedCountry: isInstagram ? null : input.country,
       // The near-miss badge on the row already says the location is unknown; a
       // chip repeating it is noise, and the two used to contradict each other.
       suppressRegionFlag: !!input.region,

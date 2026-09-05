@@ -83,15 +83,30 @@ export function igPerformanceFrom(posts: NonNullable<ApifyIgProfile['latestPosts
   const videos = organic.filter((p) => p.type === 'Video' || p.productType === 'clips')
 
   const avgViews = average(videos.map((p) => num(p.videoViewCount)))
-  const likeValues = organic.map((p) => num(p.likesCount)).filter((v) => v !== null && v > 0)
-  const avgLikes = average(likeValues)
   const avgComments = average(organic.map((p) => num(p.commentsCount)))
 
-  // Reels carry a view count, so likes-per-view works exactly as on TikTok. A
-  // photo-only account has no views at all, and reporting nothing is better than
-  // switching silently to a follower basis that is not comparable.
+  // Engagement uses ONLY posts carrying BOTH a view count and a like count.
+  //
+  // The previous version averaged likes across every post — photos included —
+  // and divided by views taken from the videos alone. Those are two different
+  // populations: eight photos at 500 likes over two Reels at 50 views reported
+  // 802% engagement. Pair them first, then divide.
+  const paired = videos.filter((p) => num(p.videoViewCount) !== null && (p.videoViewCount ?? 0) > 0 && num(p.likesCount) !== null && (p.likesCount ?? 0) > 0)
+  const pairedViews = average(paired.map((p) => num(p.videoViewCount)))
+  const pairedLikes = average(paired.map((p) => num(p.likesCount)))
+
+  // Reported likes across everything, purely for display. Posts showing 0 are
+  // excluded because Instagram hides counts on many posts and a hidden count is
+  // not a measured zero — but that exclusion biases the average UPWARD, so when
+  // a lot of posts hide their likes the number is unreliable and the sample size
+  // below says so rather than the average pretending otherwise.
+  const visibleLikes = organic.map((p) => num(p.likesCount)).filter((v) => v !== null && v > 0)
+  const avgLikes = average(visibleLikes)
+
   const engagementRate =
-    avgViews !== null && avgViews > 0 && avgLikes !== null ? Math.round((avgLikes / avgViews) * 1000) / 10 : null
+    pairedViews !== null && pairedViews > 0 && pairedLikes !== null
+      ? Math.round((pairedLikes / pairedViews) * 1000) / 10
+      : null
 
   const times = organic
     .map((p) => Date.parse(p.timestamp || ''))
@@ -109,7 +124,10 @@ export function igPerformanceFrom(posts: NonNullable<ApifyIgProfile['latestPosts
   }
 
   return {
-    sampleSize: organic.length,
+    // The sample that actually backs the engagement figure, not the raw post
+    // count — a 12-post account whose ratio rests on two Reels must not look
+    // like a 12-post measurement.
+    sampleSize: paired.length || organic.length,
     avgViews,
     avgLikes,
     avgComments,

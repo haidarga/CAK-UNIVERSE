@@ -39,7 +39,9 @@ function snapshot(r: KolResult) {
     niche_matched: r.niche?.matched ?? null,
     niche_total: r.niche?.total ?? null,
     country: r.profile.country,
-    instagram_handle: r.profile.instagramHandle,
+    // On an Instagram search this equals the handle itself, so it would fill
+    // the column with self-links.
+    instagram_handle: r.platform === 'instagram' ? null : r.profile.instagramHandle,
     profile_url: r.profile.profileUrl,
   }
 }

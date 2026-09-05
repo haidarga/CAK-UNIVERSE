@@ -26,8 +26,14 @@ vi.mock('@/lib/cakgpt/supabase/server', () => ({
       if (table === 'sw_kol_profiles') {
         return {
           upsert,
+          // Mirrors the real chain: .select().eq(platform).gte(scraped_at).in(handles)
           select: () => ({
-            eq: () => ({ gte: () => ({ limit: () => Promise.resolve({ data: cacheRows }) }) }),
+            eq: () => ({
+              gte: () => ({
+                in: (_col: string, handles: string[]) =>
+                  Promise.resolve({ data: cacheRows.filter((r) => handles.includes((r as { handle: string }).handle)) }),
+              }),
+            }),
           }),
         }
       }
@@ -173,13 +179,15 @@ describe('POST /api/kol/search', () => {
   it('survives a cache read that returns nothing', async () => {
     // Migration not run yet, or an empty table: the sweep must still run.
     runKolSearch.mockResolvedValue({ results: [], resolvedProfiles: [], meta })
-    const res = await POST(req({ query: '#x' }))
-    const lines = await readLines(res)
+    const lines = await readLines(await POST(req({ query: '#x' })))
     expect(lines.at(-1)!.type).toBe('result')
-    expect(runKolSearch.mock.calls[0][1].cachedProfiles.size).toBe(0)
+    expect((await runKolSearch.mock.calls[0][1].lookupCache(['nobody'])).size).toBe(0)
   })
 
-  it('passes cached profiles through so a repeat search can skip lookups', async () => {
+  it('looks the cache up BY HANDLE instead of preloading the table', async () => {
+    // The preload asked for 5000 rows and PostgREST silently capped it at 1000,
+    // so past a thousand creators an identical search hit a different arbitrary
+    // slice of cache each time — the reported "makin diulang makin ngaco".
     cacheRows.push({
       handle: 'warm', display_name: 'Warm', bio: null, followers: 12_345, following: null,
       total_videos: null, total_hearts: null, country: 'ID', verified: false, is_private: false,
@@ -187,10 +195,14 @@ describe('POST /api/kol/search', () => {
     })
     runKolSearch.mockResolvedValue({ results: [], resolvedProfiles: [], meta })
     await POST(req({ query: '#x' }))
-    const cached = runKolSearch.mock.calls[0][1].cachedProfiles
-    expect(cached.get('warm').followers).toBe(12_345)
-    // A missing profile_url must be rebuilt for the right platform.
-    expect(cached.get('warm').profileUrl).toContain('tiktok.com')
+
+    const lookup = runKolSearch.mock.calls[0][1].lookupCache
+    const hit = await lookup(['warm'])
+    expect(hit.get('warm').followers).toBe(12_345)
+    // A missing profile_url is rebuilt for the right platform.
+    expect(hit.get('warm').profileUrl).toContain('tiktok.com')
+    // A handle this sweep did not find must never come back.
+    expect((await lookup(['someone-else'])).size).toBe(0)
   })
 
   it('rebuilds an Instagram profile URL when the cached row has none', async () => {
@@ -201,6 +213,7 @@ describe('POST /api/kol/search', () => {
     })
     runKolSearch.mockResolvedValue({ results: [], resolvedProfiles: [], meta })
     await POST(req({ query: '#x', platform: 'instagram' }))
-    expect(runKolSearch.mock.calls[0][1].cachedProfiles.get('warm').profileUrl).toContain('instagram.com')
+    const hit = await runKolSearch.mock.calls[0][1].lookupCache(['warm'])
+    expect(hit.get('warm').profileUrl).toContain('instagram.com')
   })
 })
