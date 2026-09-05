@@ -95,7 +95,7 @@ export interface KolFlag {
   code:
     | 'dormant' | 'low-engagement' | 'high-engagement' | 'thin-sample' | 'private'
     | 'unresolved-region' | 'consistent' | 'occasional' | 'low-volume'
-    | 'off-tier' | 'unknown-country'
+    | 'off-tier' | 'unknown-country' | 'business'
   message: string
 }
 
@@ -110,7 +110,7 @@ export interface KolResult {
    * filters run after enrichment — and the UI labels them plainly so nobody
    * mistakes a near miss for a match.
    */
-  missed?: 'region' | 'region-unknown' | 'activity' | null
+  missed?: 'region' | 'region-unknown' | 'activity' | 'off-topic' | null
   /** Did this creator's size match the requested tier? Ranks, never excludes. */
   tierMatch?: boolean
   candidate: KolCandidate

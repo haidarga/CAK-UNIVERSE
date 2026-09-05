@@ -3,7 +3,7 @@ import { discoverInstagram, resolveAndEnrichInstagram, instagramConfigured } fro
 import { resolveHandles } from '@/lib/kol/resolve'
 import { enrichHandles } from '@/lib/kol/enrich'
 import { classifyNiches } from '@/lib/kol/niche'
-import { buildFlags, compareResults, scoreResult } from '@/lib/kol/score'
+import { buildFlags, compareResults, scoreResult, looksLikeBusiness, isTooSmallToUse, missedReason } from '@/lib/kol/score'
 import { detectRegion, detectionMatches } from '@/lib/kol/region-detect'
 import { regionHashtags, regionLabel, countryHashtags } from '@/lib/kol/regions'
 import { tierOf } from '@/lib/kol/tiers'
@@ -227,12 +227,16 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
   // a blank screen with no way to tell how close they came. Tier now RANKS: an
   // off-tier creator is measured, shown, and labelled, and the reader decides.
   const survivors: { handle: string; profile: KolProfile; tierMatch: boolean }[] = []
-  const dropped = { country: 0, tier: 0, noFollowers: 0 }
+  const dropped = { country: 0, tier: 0, noFollowers: 0, tooSmall: 0 }
   const nearMiss = new Map<string, number>()
 
   for (const [handle, profile] of profiles) {
     if (input.country && profile.country && profile.country.toUpperCase() !== input.country.toUpperCase()) {
       dropped.country++
+      continue
+    }
+    if (isTooSmallToUse(profile)) {
+      dropped.tooSmall++
       continue
     }
     const tier = tierOf(profile.followers)
@@ -308,6 +312,7 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
     const niche = nicheMap.get(handle) ?? null
     const flags = buildFlags(profile, tier, performance, region, niche, {
       tierMatch,
+      business: looksLikeBusiness(profile),
       // Suppressed on Instagram: Apify returns no country for ANY IG account, so
       // the flag fired on every row and quietly docked every score by the same
       // ten points — a platform limitation, not a signal about the creator.
@@ -341,10 +346,27 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
   // 90%+ on food and travel but near zero on beauty and fashion — and letting an
   // estimate delete rows produced "0 KOL cocok" on searches that had found
   // perfectly good creators. It now ranks and labels, exactly like tier.
-  const visible = results.filter((r) => passesActivity(r) && passesRegion(r))
-  const droppedByActivity = results.filter((r) => !passesActivity(r)).length
-  const droppedByRegion = results.filter((r) => passesActivity(r) && !passesRegion(r)).length
+  // A creator only counts as a match when they pass every deliberate filter AND
+  // actually make the content being searched for. Relevance used to live only in
+  // the score, so an off-topic account could still occupy the matched section by
+  // being the right size.
+  const missOf = (r: KolResult) =>
+    missedReason(r.niche, passesActivity(r), passesRegion(r), !!r.region.area)
 
+  const visible = results.filter((r) => missOf(r) === null)
+  const droppedByActivity = results.filter((r) => missOf(r) === 'activity').length
+  const droppedByRegion = results.filter((r) => missOf(r) === 'region' || missOf(r) === 'region-unknown').length
+  const droppedOffTopic = results.filter((r) => missOf(r) === 'off-topic').length
+
+  if (droppedOffTopic > 0) {
+    warnings.push(
+      `${droppedOffTopic} akun ada di hashtag ini tapi gak ada satu pun post-nya yang beneran soal topik itu — ditaruh di bawah, ditandai.`,
+    )
+  }
+
+  if (dropped.tooSmall > 0) {
+    warnings.push(`${dropped.tooSmall} akun di bawah 1.000 follower dibuang — kekecilan buat dipakai kampanye.`)
+  }
   if (droppedByActivity > 0) warnings.push(`${droppedByActivity} akun disembunyikan karena udah lama gak posting.`)
   if (droppedByRegion > 0) {
     const unknown = results.filter((r) => passesActivity(r) && !passesRegion(r) && !r.region.area).length
@@ -385,12 +407,7 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
   // failed — the reader scrolls or stops, which is their call, not the filter's.
   const nearMisses: KolResult[] = results
     .filter((r) => !visible.includes(r))
-    .map((r) => ({
-      ...r,
-      // Only region and activity are near-miss REASONS; an off-tier creator is
-      // already labelled by tierMatch and needs no missed marker.
-      missed: !passesActivity(r) ? ('activity' as const) : !passesRegion(r) ? (r.region.area ? ('region' as const) : ('region-unknown' as const)) : null,
-    }))
+    .map((r) => ({ ...r, missed: missOf(r) }))
     .sort(compareResults)
 
   if (discovery.droppedForeign > 0) {
@@ -419,7 +436,7 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
       candidatesFound: discovery.totalFound || discovery.candidates.size,
       droppedForeignEarly: discovery.droppedForeign,
       resolved: profiles.size,
-      filteredOut: dropped.country + dropped.tier + dropped.noFollowers,
+      filteredOut: dropped.country + dropped.tier + dropped.noFollowers + dropped.tooSmall,
       droppedByCountry: dropped.country,
       droppedByTier: dropped.tier,
       droppedNoFollowers: dropped.noFollowers,

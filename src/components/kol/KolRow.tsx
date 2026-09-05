@@ -66,6 +66,8 @@ export const KolRow = memo(function KolRow({
       ? 'Beda region'
       : result.missed === 'region-unknown'
         ? 'Lokasi gak ketahuan'
+      : result.missed === 'off-topic'
+        ? 'Gak nyambung sama topiknya'
       : result.missed === 'activity'
         ? 'Udah lama gak posting'
         : result.tierMatch === false
@@ -120,6 +122,11 @@ export const KolRow = memo(function KolRow({
             grid track out and the whole row scrolls sideways. */}
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {flags.some((f) => f.code === 'business') && (
+              <span className="shrink-0 rounded bg-mutedText/15 px-1.5 py-px text-[10px] font-medium text-mutedText">
+                Toko/brand
+              </span>
+            )}
             {missLabel && (
               <span className="shrink-0 rounded bg-warning/15 px-1.5 py-px text-[10px] font-medium text-warning">
                 {missLabel}
