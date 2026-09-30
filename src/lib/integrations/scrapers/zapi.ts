@@ -334,8 +334,34 @@ export async function fetchInstagramProfile(handle: string, timeoutMs?: number):
   return unwrapped
 }
 
-export function fetchInstagramPosts(handle: string, page = 1, timeoutMs?: number): Promise<unknown> {
-  return zapiGet(INSTAGRAM_SERVICE, 'posts', normalizeHandle(handle), { page }, timeoutMs)
+export async function fetchInstagramPosts(handle: string, pageOrCount: number = 30, timeoutMs?: number): Promise<unknown> {
+  // If explicitly called with a small page number (e.g. page=1 or page=2 in tests)
+  // or count request: Zapi returns 12 posts per page.
+  // To get up to 30 recent posts for accurate metrics, fetch page 1 and page 2.
+  if (pageOrCount === 1) {
+    return zapiGet(INSTAGRAM_SERVICE, 'posts', normalizeHandle(handle), { page: 1 }, timeoutMs)
+  }
+
+  const p1 = await zapiGet<Record<string, unknown>>(INSTAGRAM_SERVICE, 'posts', normalizeHandle(handle), { page: 1 }, timeoutMs)
+  const posts1 = (p1 && typeof p1 === 'object' && Array.isArray((p1 as Record<string, unknown>).posts)
+    ? (p1 as Record<string, unknown>).posts
+    : []) as unknown[]
+
+  if (posts1.length < 12) return p1
+
+  try {
+    const p2 = await zapiGet<Record<string, unknown>>(INSTAGRAM_SERVICE, 'posts', normalizeHandle(handle), { page: 2 }, timeoutMs)
+    const posts2 = (p2 && typeof p2 === 'object' && Array.isArray((p2 as Record<string, unknown>).posts)
+      ? (p2 as Record<string, unknown>).posts
+      : []) as unknown[]
+
+    return {
+      ...(p1 as Record<string, unknown>),
+      posts: [...posts1, ...posts2],
+    }
+  } catch {
+    return p1
+  }
 }
 
 export function fetchInstagramPost(idOrUrl: string, timeoutMs?: number): Promise<unknown> {
