@@ -6,7 +6,7 @@ import {
   Users, Eye, Heart, MessageCircle, CalendarClock, Sparkles, ShieldCheck, TriangleAlert,
 } from 'lucide-react'
 import { StrategistReportSchema } from '@/lib/cakgpt/strategist/schemas'
-import type { StrategistReport, RangeIDR } from '@/lib/cakgpt/strategist/types'
+import type { StrategistReport, RangeIDR, FeedScope } from '@/lib/cakgpt/strategist/types'
 
 // ── Formatters (id-ID) ────────────────────────────────────────────────────────
 const nf = new Intl.NumberFormat('id-ID')
@@ -34,8 +34,9 @@ export function StrategistMode() {
   const [report, setReport] = useState<StrategistReport | null>(null)
   const [copied, setCopied] = useState(false)
   const [sampleSize, setSampleSize] = useState(15)
+  const [feedScope, setFeedScope] = useState<FeedScope>('all')
 
-  async function analyze(forceRefresh = false, size = sampleSize) {
+  async function analyze(forceRefresh = false, size = sampleSize, scope = feedScope) {
     // Internal guard — the disabled attribute only applies after re-render, so a
     // fast Enter+click could otherwise fire two calls against a scarce quota.
     if (loading) return
@@ -48,7 +49,7 @@ export function StrategistMode() {
       const res = await fetch('/api/scriptwriter/strategist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim(), force_refresh: forceRefresh, sample_size: size }),
+        body: JSON.stringify({ url: url.trim(), force_refresh: forceRefresh, sample_size: size, feed: scope }),
       })
       const data = await res.json()
       if (!data.ok) throw new Error(data.error || 'Gagal menganalisis akun.')
@@ -57,6 +58,7 @@ export function StrategistMode() {
       const validated = StrategistReportSchema.safeParse(data.report)
       if (!validated.success) throw new Error('Response dari server tidak valid.')
       setReport(validated.data as StrategistReport)
+      if (validated.data.meta?.feed) setFeedScope(validated.data.meta.feed)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'network error')
       // Drop the previous report. Leaving it on screen under an error message
@@ -106,13 +108,26 @@ export function StrategistMode() {
             onChange={(e) => {
               const s = Number(e.target.value)
               setSampleSize(s)
-              if (report) analyze(false, s) // re-analyze from cache, no re-scrape
+              if (report) analyze(false, s, feedScope) // re-analyze from cache, no re-scrape
             }}
             className="rounded-md border border-border bg-background px-2.5 py-2 text-sm text-text focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
           >
             <option value={7}>7 konten</option>
             <option value={15}>15 konten</option>
             <option value={30}>30 konten</option>
+          </select>
+          <select
+            aria-label="Filter jenis konten"
+            value={feedScope}
+            onChange={(e) => {
+              const f = e.target.value as FeedScope
+              setFeedScope(f)
+              if (report) analyze(false, sampleSize, f) // re-analyze with new scope
+            }}
+            className="rounded-md border border-border bg-background px-2.5 py-2 text-sm text-text focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+          >
+            <option value="all">Semua Konten</option>
+            <option value="reels">Reels / Video</option>
           </select>
           <button
             onClick={() => analyze()}

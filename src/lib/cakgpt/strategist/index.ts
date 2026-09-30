@@ -160,21 +160,37 @@ export async function analyzeAccountUrl(params: {
   clientId?: string | null
   forceRefresh?: boolean
   sampleSize?: number
+  feed?: FeedScope
 }): Promise<AnalyzeResult> {
   const clientId = params.clientId ?? null
   const parsed = parseAccountUrl(params.url)
   if (!parsed.ok) return { ok: false, error: parsed.error, status: 400 }
-  const { platform, handle, normalizedUrl, feed } = parsed
+  const { platform, handle, normalizedUrl } = parsed
+  const feed: FeedScope = params.feed || parsed.feed
 
   // 1. Reuse the cached SCRAPE when fresh (or within the refresh floor on a
   // forced refresh). The chosen sample size only affects downstream metrics, so
   // switching sizes recomputes from this cached scrape — it never re-scrapes.
   const cached = await readCache(params.supabase, params.userId, clientId, platform, handle)
+
+  // Invalidate cache if it was saved by legacy code (e.g. inverted followers or 1-page IG posts)
+  const isCacheCorrupt =
+    cached &&
+    platform === 'instagram' &&
+    ((typeof cached.scraped?.followers === 'number' &&
+      cached.scraped.followers < 2000 &&
+      typeof cached.scraped?.totalPosts === 'number' &&
+      cached.scraped.totalPosts > 10000) ||
+      (Array.isArray(cached.scraped?.recentPosts) &&
+        cached.scraped.recentPosts.length <= 12 &&
+        (cached.scraped.totalPosts ?? 0) > 12))
+
   const useCachedScrape =
     !!cached &&
+    !isCacheCorrupt &&
     (!params.forceRefresh
       ? !isStale(cached.fetched_at)
-      : Date.now() - Date.parse(cached.fetched_at) < MIN_REFRESH_MINUTES * 60 * 1000)
+      : false)
 
   let account: ScrapedAccount
   let scrapeFromCache = false
