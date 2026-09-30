@@ -304,8 +304,34 @@ export function fetchTikTokHashtagInfo(hashtag: string, timeoutMs?: number): Pro
 
 // ── Instagram ───────────────────────────────────────────────────────────────
 
-export function fetchInstagramProfile(handle: string, timeoutMs?: number): Promise<unknown> {
-  return zapiGet(INSTAGRAM_SERVICE, 'profile', normalizeHandle(handle), undefined, timeoutMs)
+export async function fetchInstagramProfile(handle: string, timeoutMs?: number): Promise<unknown> {
+  const unwrapped = await zapiGet<Record<string, unknown>>(INSTAGRAM_SERVICE, 'profile', normalizeHandle(handle), undefined, timeoutMs)
+  const raw = (unwrapped && typeof unwrapped === 'object' && 'data' in unwrapped && !('followerCount' in unwrapped)
+    ? (unwrapped as Record<string, unknown>).data
+    : unwrapped) as Record<string, unknown>
+
+  if (raw && typeof raw === 'object') {
+    // Zapi backend bug workaround:
+    // Zapi's instagram-scraper endpoint (/v1/social-media:instagram-scraper/profile/:username)
+    // inverts `followerCount` and `postCount`, and leaves `followingCount` null:
+    // - `raw.postCount` is actually the real Followers count (e.g. 47,500 / 679,300,000)
+    // - `raw.followerCount` is actually the real Following count (e.g. 1,541 / 636)
+    // - `raw.followingCount` is null
+    if (
+      (raw.followingCount === null || raw.followingCount === undefined) &&
+      typeof raw.followerCount === 'number' &&
+      typeof raw.postCount === 'number'
+    ) {
+      return {
+        ...raw,
+        followerCount: raw.postCount,
+        followingCount: raw.followerCount,
+        postCount: null, // real post count is missing from Zapi profile; filled downstream or from public counts
+        _zapiSwappedFixed: true,
+      }
+    }
+  }
+  return unwrapped
 }
 
 export function fetchInstagramPosts(handle: string, page = 1, timeoutMs?: number): Promise<unknown> {

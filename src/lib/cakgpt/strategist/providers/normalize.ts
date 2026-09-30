@@ -133,8 +133,31 @@ export function normalizeAccount(
   postsRaw: unknown,
   provider: string,
 ): ScrapedAccount {
+  // Defensive check for raw Zapi Instagram objects where fields are inverted:
+  let effectiveAccountRaw = accountRaw
+  if (
+    platform === 'instagram' &&
+    accountRaw &&
+    typeof accountRaw === 'object' &&
+    !(accountRaw as Record<string, unknown>)._zapiSwappedFixed
+  ) {
+    const raw = accountRaw as Record<string, unknown>
+    if (
+      (raw.followingCount === null || raw.followingCount === undefined) &&
+      typeof raw.followerCount === 'number' &&
+      typeof raw.postCount === 'number'
+    ) {
+      effectiveAccountRaw = {
+        ...raw,
+        followerCount: raw.postCount,
+        followingCount: raw.followerCount,
+        postCount: null,
+      }
+    }
+  }
+
   const followers = num(
-    pull(accountRaw, [
+    pull(effectiveAccountRaw, [
       'data.stats.followerCount', 'stats.followerCount', // tiktok-scraper7
       'follower_count', 'data.follower_count',
       'edge_followed_by.count', 'user.edge_followed_by.count', 'data.user.edge_followed_by.count',
@@ -150,31 +173,31 @@ export function normalizeAccount(
   return {
     platform,
     handle,
-    displayName: str(pull(accountRaw, [
+    displayName: str(pull(effectiveAccountRaw, [
       'data.user.nickname', 'user.nickname', 'nickname', 'full_name', 'data.full_name',
       'data.user.full_name', 'result.user.full_name', 'user.full_name', 'name', 'screenName',
       'fullName', 'data.nickname', // Zapi: TikTok=nickname, Instagram=fullName
     ])),
-    bio: str(pull(accountRaw, [
+    bio: str(pull(effectiveAccountRaw, [
       'data.user.signature', 'user.signature', 'signature', 'biography', 'data.biography',
       'data.user.biography', 'result.user.biography', 'user.biography', 'description',
       'data.signature', 'bio', // Zapi Instagram uses `biography`, already listed above
     ])),
     followers,
-    following: num(pull(accountRaw, [
+    following: num(pull(effectiveAccountRaw, [
       'data.stats.followingCount', 'following_count', 'edge_follow.count', 'user.edge_follow.count',
       'followingCount', 'data.followingCount',
     ])),
-    totalPosts: num(pull(accountRaw, [
+    totalPosts: num(pull(effectiveAccountRaw, [
       'data.stats.videoCount', 'media_count', 'edge_owner_to_timeline_media.count',
       'data.user.edge_owner_to_timeline_media.count', 'result.user.edge_owner_to_timeline_media.count', 'aweme_count',
       'videoCount', 'data.videoCount', 'postCount', 'mediaCount', // Zapi: TikTok=videoCount, Instagram=postCount
     ])),
-    verified: truthy(pull(accountRaw, [
+    verified: truthy(pull(effectiveAccountRaw, [
       'data.user.verified', 'is_verified', 'verified', 'data.user.is_verified',
       'user.is_verified', 'result.user.is_verified', 'data.verified', 'isVerified',
     ])),
-    avatarUrl: str(pull(accountRaw, [
+    avatarUrl: str(pull(effectiveAccountRaw, [
       'data.user.avatarLarger', 'profile_pic_url_hd', 'profile_pic_url', 'avatar_url',
       'data.user.profile_pic_url', 'result.user.profile_pic_url', 'hd_profile_pic_url_info.url', 'image',
       'avatarLarger', 'avatarMedium', 'avatarThumb', 'data.avatarLarger', 'profilePicUrl',

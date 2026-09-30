@@ -15,6 +15,7 @@
 import type { Platform, ScrapedAccount, ScraperProvider } from '@/lib/cakgpt/strategist/types'
 import { ScraperError } from '@/lib/cakgpt/strategist/errors'
 import { normalizeAccount } from '@/lib/cakgpt/strategist/providers/normalize'
+import { fetchInstagramPublicCounts } from '@/lib/integrations/scrapers/instagram-public'
 import {
   ZapiError,
   fetchTikTokProfile,
@@ -63,11 +64,21 @@ async function scrape(platform: Platform, rawHandle: string): Promise<ScrapedAcc
     // usable profile, and returning followers with an empty post list beats
     // failing the whole report. normalizeAccount already treats missing posts
     // as "unknown" rather than zero.
-    const [profile, posts] = await Promise.all([
+    const [profile, posts, publicCounts] = await Promise.all([
       platform === 'tiktok' ? fetchTikTokProfile(handle) : fetchInstagramProfile(handle),
       (platform === 'tiktok' ? fetchTikTokPosts(handle, POST_COUNT) : fetchInstagramPosts(handle)).catch(() => null),
+      platform === 'instagram' ? fetchInstagramPublicCounts(handle).catch(() => null) : null,
     ])
-    return normalizeAccount(platform, handle, profile, posts, 'zapi')
+    const account = normalizeAccount(platform, handle, profile, posts, 'zapi')
+    if (platform === 'instagram' && publicCounts) {
+      if ((account.totalPosts === null || account.totalPosts === 0) && publicCounts.posts) {
+        account.totalPosts = publicCounts.posts
+      }
+      if ((account.followers === null || account.followers === 0) && publicCounts.followers) {
+        account.followers = publicCounts.followers
+      }
+    }
+    return account
   } catch (e) {
     if (e instanceof ScraperError) throw e
     throw toScraperError(e, platform)

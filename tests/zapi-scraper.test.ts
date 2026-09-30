@@ -464,3 +464,51 @@ describe('zapi cold-scrape timeout', () => {
     expect(Date.now() - started).toBeLessThan(3_000)
   })
 })
+
+// ── Zapi Instagram Field Inversion Bug Defense ──────────────────────────────
+import { fetchInstagramProfile } from '@/lib/integrations/scrapers/zapi'
+
+describe('Zapi Instagram inverted field workaround', () => {
+  it('correctly un-swaps postCount and followerCount when followingCount is null', async () => {
+    vi.stubEnv('ZAPI_KEY', 'zpi_test')
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      json: async () => ({
+        project: 'social-media:instagram-scraper:profile',
+        timestamp: '2026-09-30T00:00:00.000Z',
+        data: {
+          username: 'hardiyantijuliani',
+          fullName: 'Hardiyanti Juliani',
+          followerCount: 1541, // In Zapi this is following
+          followingCount: null,
+          postCount: 47500, // In Zapi this is followers
+        },
+      }),
+    })))
+
+    const profile = await fetchInstagramProfile('hardiyantijuliani') as Record<string, unknown>
+    expect(profile.followerCount).toBe(47500)
+    expect(profile.followingCount).toBe(1541)
+    expect(profile._zapiSwappedFixed).toBe(true)
+
+    // Normalize to ScrapedAccount
+    const acc = normalizeAccount('instagram', 'hardiyantijuliani', profile, [], 'zapi')
+    expect(acc.followers).toBe(47500)
+    expect(acc.following).toBe(1541)
+  })
+
+  it('normalizes raw inverted payload even if passed directly to normalizeAccount', () => {
+    const rawZapi = {
+      username: 'cristiano',
+      fullName: 'Cristiano Ronaldo',
+      followerCount: 636, // following
+      followingCount: null,
+      postCount: 679300000, // followers
+    }
+    const acc = normalizeAccount('instagram', 'cristiano', rawZapi, [], 'zapi')
+    expect(acc.followers).toBe(679300000)
+    expect(acc.following).toBe(636)
+  })
+})

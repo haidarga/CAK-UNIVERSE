@@ -154,7 +154,8 @@ describe('nextVersionNo', () => {
   })
 
   it('starts at 1 when no versions exist', () => {
-    expect((null ?? 0) + 1).toBe(1)
+    const initialVer: number | null = null
+    expect((initialVer ?? 0) + 1).toBe(1)
   })
 
   it('uses max of curVer and queried max', () => {
@@ -240,6 +241,7 @@ describe('Google Sheets row truncation handling', () => {
     // But with an explicit 0: String(0 || '') → '' vs String(0 ?? '') → '0'
     // For cell values this matters when the cell contains '0'
     expect(String(row[9] ?? '')).toBe('')
-    expect(String(undefined ?? '')).toBe('')
+    const missingCell: string | undefined = undefined
+    expect(String(missingCell ?? '')).toBe('')
   })
 })
