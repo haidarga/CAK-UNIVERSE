@@ -145,7 +145,8 @@ export function normalizeAccount(
     if (
       (raw.followingCount === null || raw.followingCount === undefined) &&
       typeof raw.followerCount === 'number' &&
-      typeof raw.postCount === 'number'
+      typeof raw.postCount === 'number' &&
+      raw.postCount > raw.followerCount
     ) {
       effectiveAccountRaw = {
         ...raw,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { looksUnreadable, followersLookBroken } from '@/lib/cakgpt/strategist/scraper'
+import { looksUnreadable, followersLookBroken, viewsLookMissing } from '@/lib/cakgpt/strategist/scraper'
 import { computeMetrics } from '@/lib/cakgpt/strategist/metrics'
 import type { ScrapedAccount, ScrapedPost } from '@/lib/cakgpt/strategist/types'
 
@@ -76,5 +76,21 @@ describe('computeMetrics with an unreadable follower count', () => {
   it('still prefers followers on Instagram when they ARE readable', () => {
     const m = computeMetrics(acc(10000, posts), 30)
     expect(m.engagementBasis).toBe('followers')
+  })
+})
+
+describe('viewsLookMissing', () => {
+  it('flags an Instagram feed that has likes but no view counts anywhere', () => {
+    expect(viewsLookMissing(acc(5000, [{ views: null, likes: 90 }, { views: null, likes: 40 }]))).toBe(true)
+  })
+
+  it('accepts an Instagram feed where at least one post carries views', () => {
+    expect(viewsLookMissing(acc(5000, [{ views: null, likes: 90 }, { views: 1200, likes: 40 }]))).toBe(false)
+  })
+
+  it('never applies to TikTok or to an empty feed', () => {
+    expect(viewsLookMissing(acc(5000, [{ views: null, likes: 90 }], 'tiktok'))).toBe(false)
+    expect(viewsLookMissing(acc(5000, []))).toBe(false)
+    expect(viewsLookMissing(null)).toBe(false)
   })
 })

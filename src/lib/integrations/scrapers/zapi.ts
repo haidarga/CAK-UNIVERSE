@@ -320,7 +320,8 @@ export async function fetchInstagramProfile(handle: string, timeoutMs?: number):
     if (
       (raw.followingCount === null || raw.followingCount === undefined) &&
       typeof raw.followerCount === 'number' &&
-      typeof raw.postCount === 'number'
+      typeof raw.postCount === 'number' &&
+      raw.postCount > raw.followerCount
     ) {
       return {
         ...raw,

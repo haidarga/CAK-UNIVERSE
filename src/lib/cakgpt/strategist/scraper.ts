@@ -133,6 +133,20 @@ function downgradeBrokenFollowers(a: ScrapedAccount): ScrapedAccount {
   return followersLookBroken(a) ? { ...a, followers: null } : a
 }
 
+/**
+ * An Instagram scrape whose posts carry no view counts at all.
+ *
+ * Some providers (RapidAPI's IG statistics in particular) return a full feed of
+ * likes/comments but leave every Reel's views empty. That passed every check
+ * above and surfaced as "Avg views: N/A" — a hole in the one metric people open
+ * this tool for. It is treated as a soft failure so the chain tries the next
+ * provider, which keeps whichever result actually has views.
+ */
+export function viewsLookMissing(a: ScrapedAccount | null): boolean {
+  if (!hasPosts(a) || a.platform !== 'instagram') return false
+  return !a.recentPosts.some((p) => typeof p.views === 'number' && p.views > 0)
+}
+
 /** Nothing usable at all — no posts is the only unrecoverable case now. */
 export function looksUnreadable(a: ScrapedAccount | null): boolean {
   return !hasPosts(a)
@@ -162,15 +176,21 @@ export async function scrapeAccount(platform: Platform, handle: string): Promise
   // first good result, so the paid provider at the end is only reached when
   // every cheaper one has genuinely failed.
   for (const alt of chain) {
-    if (account && !looksUnreadable(account) && !followersLookBroken(account)) break
+    if (account && !looksUnreadable(account) && !followersLookBroken(account) && !viewsLookMissing(account)) break
     const why = primaryErr
       ? (primaryErr instanceof Error ? primaryErr.message : String(primaryErr))
-      : hasPosts(account) ? 'returned 0 followers alongside live posts' : 'returned no posts'
+      : !hasPosts(account) ? 'returned no posts'
+      : viewsLookMissing(account) ? 'returned posts without any view counts'
+      : 'returned 0 followers alongside live posts'
     console.warn(`[strategist] ${provider.name} ${why} — trying ${alt.name}`)
     try {
       const next = await alt.scrape(platform, handle)
       // Only take it if strictly better than what we already hold.
-      if (!account || (!looksUnreadable(next) && !followersLookBroken(next))) account = next
+      const nextClean = !looksUnreadable(next) && !followersLookBroken(next)
+      // A view-less primary is replaced only by a result that really has views,
+      // so a photo-only account never swaps good data for an equally empty one.
+      const improves = !viewsLookMissing(next) || !hasPosts(account)
+      if (!account || (nextClean && improves)) account = next
     } catch (fallbackErr) {
       console.warn(`[strategist] ${alt.name} also failed:`, fallbackErr instanceof Error ? fallbackErr.message : fallbackErr)
     }
