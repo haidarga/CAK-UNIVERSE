@@ -294,10 +294,10 @@ export function detectionMatches(d: RegionDetection, wanted: string | null): boo
   if (!wanted) return true
   if (!d.area) return false
   if (d.area === wanted) return true
+  if (d.alternates && d.alternates.includes(wanted)) return true
   // Jabodetabek is a campaign scope, not a province: the satellite cities have
-  // their own area id, and Jakarta itself is inside it. Jawa Barat is NOT — a
-  // Bandung creator has no business in a Jabodetabek shortlist.
-  if (wanted === 'jabodetabek') return d.area === 'dki-jakarta'
+  // their own area id, and Jakarta itself is inside it.
+  if (wanted === 'jabodetabek') return d.area === 'dki-jakarta' || d.area === 'banten'
   if (wanted === 'dki-jakarta') return d.area === 'jabodetabek'
   const island = REGIONS.find((r) => r.id === d.area)?.island
   return island === wanted

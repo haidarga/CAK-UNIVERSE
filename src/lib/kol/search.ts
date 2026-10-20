@@ -128,7 +128,7 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
   // The country filter steers too. Without it, "#gaming" swept 66 creators, every
   // one of them foreign, and the Indonesia filter left nothing — a search that
   // looked broken when it had simply been pointed at a global tag.
-  const idTags = localTags.length ? [] : countryHashtags(input.country, [...hashtags, ...keywords], 2)
+  const idTags = localTags.length ? [] : countryHashtags(input.country, [...hashtags, ...keywords], 3)
   const steerTags = [...localTags, ...idTags]
   const ownTags = steerTags.length ? hashtags.slice(0, MAX_HASHTAGS - steerTags.length) : hashtags
   const sweepHashtags = [...new Set([...ownTags, ...steerTags])]
@@ -302,10 +302,12 @@ export async function runKolSearch(input: KolSearchInput, deps: SearchDeps = {})
     // Every text signal at once: the handle, the bio, up to 20 captions, and any
     // real place tags. Weighted voting, so a food creator who filmed once in Bali
     // is not relocated there.
+    const candidate = discovery.candidates.get(handle)
+    const seenCaptions = candidate?.seenVideos.map((v) => v.caption || '').filter(Boolean) ?? []
     const region = detectRegion({
       handle,
       bio: profile.bio,
-      captions: enrichedRow?.captions ?? [],
+      captions: [...(enrichedRow?.captions ?? []), ...seenCaptions],
       geoTags: enrichedRow?.geoTags ?? [],
     })
     const performance = enrichedRow?.performance ?? null

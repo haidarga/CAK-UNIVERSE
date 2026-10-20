@@ -397,29 +397,24 @@ export function KolFinder() {
                 <span className="font-semibold text-text">{matched.length} cocok</span>
               </div>
 
-              {meta.droppedByTier > 0 && (
-                <p className="border-t border-border pt-2 text-[11px] text-mutedText/70">
-                  {meta.droppedByTier} akun di luar tier yang kamu minta juga ikut diukur. Yang
-                  sempat keukur ada di bagian bawah, ditandai — biar keliatan siapa aja yang ada
-                  di niche ini.
-                </p>
-              )}
-
-              {(meta.truncated || meta.warnings.length > 0) && (
-                <ul className="space-y-1 border-t border-border pt-2">
-                  {meta.truncated && (
-                    <li className="flex items-start gap-2 text-[11px] text-mutedText/70">
-                      <Info size={12} className="mt-px shrink-0 text-mutedText/40" aria-hidden />
-                      {meta.truncated}
-                    </li>
-                  )}
-                  {meta.warnings.map((w) => (
-                    <li key={w} className="flex items-start gap-2 text-[11px] text-mutedText/70">
-                      <Info size={12} className="mt-px shrink-0 text-mutedText/40" aria-hidden />
-                      {w}
-                    </li>
-                  ))}
-                </ul>
+              {(meta.droppedByTier > 0 || meta.truncated || meta.warnings.length > 0) && (
+                <details className="group border-t border-border/50 pt-2 text-[11px] text-mutedText/70">
+                  <summary className="flex cursor-pointer select-none items-center gap-1.5 font-medium text-mutedText/80 transition-colors hover:text-text">
+                    <Info size={12} className="shrink-0 text-mutedText/50" aria-hidden />
+                    <span>Catatan pencarian & filter ({ (meta.droppedByTier > 0 ? 1 : 0) + (meta.truncated ? 1 : 0) + meta.warnings.length })</span>
+                  </summary>
+                  <ul className="mt-2 space-y-1 pl-4 list-disc text-mutedText/70">
+                    {meta.droppedByTier > 0 && (
+                      <li>
+                        {meta.droppedByTier} akun di luar tier yang kamu minta juga ikut diukur (ditampilkan di bagian bawah).
+                      </li>
+                    )}
+                    {meta.truncated && <li>{meta.truncated}</li>}
+                    {meta.warnings.map((w) => (
+                      <li key={w}>{w}</li>
+                    ))}
+                  </ul>
+                </details>
               )}
             </div>
           )}

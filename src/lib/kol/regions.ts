@@ -109,12 +109,13 @@ export function regionHashtags(regionId: string | null, topics: string[], max = 
   for (const topic of topics) {
     const clean = topic.toLowerCase().replace(/[^a-z0-9]/g, '')
     if (clean.length < 3) continue
+    const root = clean.replace(/(indonesia|indo)$/, '').trim() || clean
     // A topic that already names ANY city is left alone. Stapling a second one
     // on produced "kulinerbandungcirebon" — a tag nobody has ever typed, which
     // burns sweep budget and returns nothing.
-    if ([...allPlaces].some((p) => clean.includes(p))) continue
+    if ([...allPlaces].some((p) => root.includes(p))) continue
     for (const place of places) {
-      out.push(`${clean}${place}`)
+      out.push(`${root}${place}`)
       if (out.length >= max) return [...new Set(out)]
     }
   }
@@ -132,21 +133,25 @@ export function regionHashtags(regionId: string | null, topics: string[], max = 
  * Same principle as regionHashtags: steer the sweep instead of trimming its
  * output afterwards.
  */
-export function countryHashtags(country: string | null, topics: string[], max = 2): string[] {
+export function countryHashtags(country: string | null, topics: string[], max = 3): string[] {
   if (!country || country.toUpperCase() !== 'ID') return []
-  const suffixes = ['indonesia', 'indo']
   const out: string[] = []
   for (const topic of topics) {
     const clean = topic.toLowerCase().replace(/[^a-z0-9]/g, '')
     if (clean.length < 3) continue
-    // A topic that already says Indonesia needs no help.
-    if (suffixes.some((sfx) => clean.includes(sfx))) continue
-    for (const sfx of suffixes) {
-      out.push(`${clean}${sfx}`)
-      if (out.length >= max) return [...new Set(out)]
+    const root = clean.replace(/(indonesia|indo)$/, '').trim() || clean
+    if (root.length >= 3) {
+      out.push(`${root}indonesia`)
+      out.push(`${root}lokal`)
+      out.push(`${root}indo`)
+      out.push(root)
+    } else {
+      out.push(`${clean}indonesia`)
+      out.push(`${clean}indo`)
     }
+    if (out.length >= max) break
   }
-  return [...new Set(out)]
+  return [...new Set(out)].slice(0, max)
 }
 
 export function regionLabel(id: string | null): string {
