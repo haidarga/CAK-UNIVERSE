@@ -6,6 +6,7 @@ import {
   type ApifyIgHashtagPost,
   type ApifyIgProfile,
 } from '@/lib/integrations/scrapers/apify'
+import { fetchInstagramPosts, fetchInstagramProfile, zapiConfigured } from '@/lib/integrations/scrapers/zapi'
 import type { EnrichedCreator } from '@/lib/kol/enrich'
 import type { KolCandidate, KolPerformance, KolProfile } from '@/lib/kol/types'
 
@@ -33,7 +34,7 @@ const MS_PER_DAY = 86_400_000
 const PROFILE_BATCH = 25
 
 export function instagramConfigured(): boolean {
-  return apifyConfigured()
+  return apifyConfigured() || zapiConfigured()
 }
 
 function num(v: unknown): number | null {
@@ -138,6 +139,91 @@ export function igPerformanceFrom(posts: NonNullable<ApifyIgProfile['latestPosts
   }
 }
 
+type Rec = Record<string, unknown>
+
+function rec(v: unknown): Rec {
+  return v && typeof v === 'object' ? (v as Rec) : {}
+}
+
+function str(v: unknown): string | undefined {
+  return typeof v === 'string' && v ? v : undefined
+}
+
+function posNum(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined
+}
+
+/**
+ * Reshapes a Zapi profile + posts payload into the Apify profile shape, so the
+ * Apify fallback path reuses igProfileFrom / igPerformanceFrom unchanged and
+ * the two providers can never drift apart on how a number is measured.
+ */
+export function zapiToIgProfile(handle: string, profileRaw: unknown, postsRaw: unknown): ApifyIgProfile | null {
+  const raw = rec(profileRaw)
+  const profile = 'data' in raw && !('followerCount' in raw) ? rec(raw.data) : raw
+  const followers = posNum(profile.followerCount)
+  const postList = rec(postsRaw).posts
+  const posts = Array.isArray(postList) ? postList : []
+  // Neither a readable profile nor any posts means Zapi had nothing either.
+  if (followers === undefined && !posts.length) return null
+
+  return {
+    username: str(profile.username) ?? handle,
+    fullName: str(profile.fullName),
+    biography: str(profile.biography),
+    followersCount: followers,
+    followsCount: posNum(profile.followingCount),
+    postsCount: posNum(profile.postCount),
+    verified: profile.isVerified === true,
+    private: profile.isPrivate === true,
+    profilePicUrl: str(profile.avatar),
+    latestPosts: posts.map((p) => {
+      const post = rec(p)
+      return {
+        id: str(post.postId),
+        type: post.type === 'video' || post.isVideo === true ? 'Video' : 'Image',
+        productType: str(post.productType),
+        shortCode: str(post.shortcode),
+        url: str(post.url),
+        caption: str(post.caption),
+        likesCount: posNum(post.likeCount),
+        commentsCount: posNum(post.commentCount),
+        videoViewCount: posNum(post.viewCount),
+        timestamp: str(post.takenAtIso),
+      }
+    }),
+  }
+}
+
+// Instagram blocks Apify's crawler on some accounts (observed live:
+// "BlockedError: BLOCKED" for a 48k-follower creator), and the actor then
+// returns a row with no username and no posts. That used to surface as the whole
+// account failing to resolve. Zapi reads the same accounts fine, so it backs up
+// exactly the handles Apify could not read.
+const ZAPI_FALLBACK_CONCURRENCY = 3
+
+async function zapiFallbackProfile(handle: string): Promise<ApifyIgProfile | null> {
+  try {
+    // One page (12 posts) is plenty for a KOL snapshot and costs two calls.
+    const [profile, posts] = await Promise.all([
+      fetchInstagramProfile(handle).catch(() => null),
+      fetchInstagramPosts(handle, 1).catch(() => null),
+    ])
+    return zapiToIgProfile(handle, profile, posts)
+  } catch {
+    return null
+  }
+}
+
+async function zapiFallbackProfiles(handles: string[]): Promise<ApifyIgProfile[]> {
+  const out: ApifyIgProfile[] = []
+  for (let i = 0; i < handles.length; i += ZAPI_FALLBACK_CONCURRENCY) {
+    const rows = await Promise.all(handles.slice(i, i + ZAPI_FALLBACK_CONCURRENCY).map(zapiFallbackProfile))
+    for (const r of rows) if (r) out.push(r)
+  }
+  return out
+}
+
 export interface IgDiscoverOutcome {
   candidates: Map<string, KolCandidate>
   warnings: string[]
@@ -199,27 +285,33 @@ export async function resolveAndEnrichInstagram(
   const profiles = new Map<string, KolProfile>()
   const enriched = new Map<string, EnrichedCreator>()
 
+  const absorb = (row: ApifyIgProfile) => {
+    const profile = igProfileFrom(row)
+    if (!profile.handle) return
+    profiles.set(profile.handle, profile)
+    const posts = row.latestPosts || []
+    enriched.set(profile.handle, {
+      handle: profile.handle,
+      performance: posts.length ? igPerformanceFrom(posts) : null,
+      captions: posts.map((p) => p.caption || '').filter(Boolean).slice(0, 20),
+      geoTags: [...new Set(posts.map((p) => p.locationName || '').filter(Boolean))],
+    })
+  }
+
   for (let i = 0; i < handles.length; i += PROFILE_BATCH) {
     const chunk = handles.slice(i, i + PROFILE_BATCH)
-    let rows: ApifyIgProfile[] = []
     try {
-      rows = await fetchApifyInstagramProfiles(chunk)
+      for (const row of await fetchApifyInstagramProfiles(chunk)) absorb(row)
     } catch {
-      // Lose this chunk, keep the rest. The unresolved list below reports it.
+      // Lose this chunk to Apify, keep the rest. Zapi gets a shot below.
       continue
     }
-    for (const row of rows) {
-      const profile = igProfileFrom(row)
-      if (!profile.handle) continue
-      profiles.set(profile.handle, profile)
-      const posts = row.latestPosts || []
-      enriched.set(profile.handle, {
-        handle: profile.handle,
-        performance: posts.length ? igPerformanceFrom(posts) : null,
-        captions: posts.map((p) => p.caption || '').filter(Boolean).slice(0, 20),
-        geoTags: [...new Set(posts.map((p) => p.locationName || '').filter(Boolean))],
-      })
-    }
+  }
+
+  // Back up whatever Apify could not read (blocked, out of credit, run died).
+  const missing = handles.filter((h) => !profiles.has(h.toLowerCase().replace(/^@/, '')))
+  if (missing.length && zapiConfigured()) {
+    for (const row of await zapiFallbackProfiles(missing)) absorb(row)
   }
 
   return { profiles, enriched, unresolved: handles.filter((h) => !profiles.has(h)) }
